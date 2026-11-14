@@ -117,6 +117,22 @@ if(WIN32)
   target_link_options(FPVDesktopWiFiReceiver PRIVATE -static-libgcc -static-libstdc++)
 endif()
 
+# ---- Banco de pruebas de reapertura (no se instala ni se compila por defecto) --------------------------------
+# cmake --build build/release --target reopen_test  ->  build/release/reopen_test[.exe] --help (ver test/)
+if(KP_WITH_RADIO)
+  add_executable(reopen_test EXCLUDE_FROM_ALL test/reopen_test.cpp src/usb3_switch.cpp)
+  target_include_directories(reopen_test PRIVATE src)
+  target_link_libraries(reopen_test PRIVATE kepyur_radio)
+  if(WIN32)
+    target_sources(reopen_test PRIVATE compat/win32/winusb_raw_io.cpp compat/win32/usb_backend.cpp test/diag_wraps.cpp)
+    target_include_directories(reopen_test PRIVATE compat/win32)
+    target_link_libraries(reopen_test PRIVATE winmm)
+    target_link_options(reopen_test PRIVATE -Wl,--wrap=libusb_submit_transfer -Wl,--wrap=libusb_close
+                        -Wl,--wrap=libusb_init -Wl,--wrap=libusb_reset_device
+                        -static-libgcc -static-libstdc++)
+  endif()
+endif()
+
 include(GNUInstallDirs)
 install(TARGETS FPVDesktopWiFiReceiver RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 if(UNIX AND NOT APPLE)

@@ -8,6 +8,8 @@ struct Usb3Result {
 };
 // Como hace la app Android antes de abrir: pasar el primer RTL8812BU del bus de USB 2 a USB 3 si hace falta.
 Usb3Result request_usb3_first_adapter();
+// Diagnostico: devolver el primer RTL8812BU a USB 2 sin desenchufarlo (el chip queda asi hasta un nuevo cambio).
+bool request_usb2_first_adapter(std::string *detail = nullptr);
 // Tras un cambio pedido: esperar a que el adaptador reaparezca (true si esta en el bus; *superspeed = USB 3).
 bool wait_adapter(int timeout_ms, bool *superspeed = nullptr);
 // Hay algun RTL8812BU en el bus (comprobacion barata, sin abrirlo).

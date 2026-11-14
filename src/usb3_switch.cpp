@@ -59,6 +59,15 @@ Usb3Result request_usb3_first_adapter() {
   return out;
 }
 
+bool request_usb2_first_adapter(std::string *detail) {
+  int bus = -1;
+  std::string port;
+  bool ss = false;
+  if (!find_8812bu(bus, port, ss)) return false;
+  const auto r = wsdr::request_usb2(wsdr::kPid8812bu, bus, port, detail);
+  return r == wsdr::Usb3Switch::Requested;
+}
+
 bool adapter_present() {
   int bus;
   std::string port;
