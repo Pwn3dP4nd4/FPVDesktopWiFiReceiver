@@ -19,15 +19,13 @@ namespace {
 // Ayuda que se anade al error de apertura. Fuera de #ifdef para que lupdate vea los tres textos.
 const char *const kHintWinUsb3 = QT_TRANSLATE_NOOP(
     "RadioBackend",
-    "Windows: the adapter has just switched to USB 3 and Windows sees it as a NEW device (another port), with "
-    "the Realtek driver again. Run Zadig again now for this instance (Options > List All Devices > the adapter > "
-    "WinUSB > Replace Driver) and press Connect again.");
+    "Windows: the adapter has just switched to USB 3 and Windows gave it its Realtek driver again. Install the "
+    "WinUSB driver once with File > Install adapter driver: it stays across replugs and USB 2/3 switches. "
+    "Then unplug and replug the adapter and press Connect adapter.");
 const char *const kHintWin = QT_TRANSLATE_NOOP(
     "RadioBackend",
-    "Windows: the adapter needs the WinUSB driver. Open Zadig (https://zadig.akeo.ie), Options > List All "
-    "Devices, pick the adapter (USB ID 0BDA B812 or another RTL8812BU), WinUSB > Replace Driver. Plug it into a "
-    "USB 3 (blue) port. Windows puts its Realtek driver back every time the adapter is plugged in, so this has "
-    "to be repeated after unplugging it.");
+    "Windows: the adapter needs the WinUSB driver. Install it once with File > Install adapter driver "
+    "(administrator permission), then unplug and replug the adapter. Plug it into a USB 3 (blue) port.");
 const char *const kHintLinux = QT_TRANSLATE_NOOP(
     "RadioBackend",
     "Linux: the rtw88_8822bu driver must not hold the adapter and your user needs permission: sudo cp "

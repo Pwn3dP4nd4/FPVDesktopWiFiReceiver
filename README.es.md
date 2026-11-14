@@ -19,8 +19,8 @@ Hace falta un **puerto USB 3** para 40 MS/s (con USB 2 funciona más limitado, a
 
 Windows 10/11 x64: descarga el `.zip` de la última versión en
 [Releases](https://github.com/Pwn3dP4nd4/FPVDesktopWiFiReceiver/releases/latest), descomprímelo y abre
-`FPVDesktopWiFiReceiver.exe` con doble clic. Antes, instala una vez el driver WinUSB para el adaptador
-(ver [Windows 10/11](#windows-1011), paso 3). En Linux hay un binario x64 en el mismo sitio (necesita Qt 6 y
+`FPVDesktopWiFiReceiver.exe` con doble clic. La primera vez, instala el driver WinUSB del adaptador desde la app: *Archivo → Instalar driver del
+adaptador* (ver [Windows 10/11](#windows-1011), paso 3). En Linux hay un binario x64 en el mismo sitio (necesita Qt 6 y
 libusb del sistema), o compílalo como se explica abajo.
 
 ## Cómo funciona la integración con kepyur (Android)
@@ -109,19 +109,26 @@ El driver del kernel `rtw88_8822bu` se desconecta solo al abrir el adaptador.
    [Releases](https://github.com/Pwn3dP4nd4/FPVDesktopWiFiReceiver/releases), y cada push uno en los
    *artifacts* de [Actions](https://github.com/Pwn3dP4nd4/FPVDesktopWiFiReceiver/actions).
 
-3. **Driver WinUSB** con [Zadig](https://zadig.akeo.ie): *Options → List All Devices* → el adaptador
-   ("Realtek 8812BU Wireless LAN 802.11ac USB NIC", USB ID `0BDA B812`) → **WinUSB** → *Replace Driver*.
+3. **Driver WinUSB, una sola vez**: en la app, *Archivo → Instalar driver del adaptador (WinUSB)…* (Windows pide
+   permiso de administrador), y después desenchufa y vuelve a enchufar el adaptador. Sin la app:
+   `powershell -ExecutionPolicy Bypass -File driver\windows-driver.ps1` como administrador (en el repositorio,
+   `scripts\windows-driver.ps1`). `-Status` muestra qué driver tiene el adaptador y `-Uninstall` lo quita todo.
 
-   **Hay que hacerlo dos veces**: el RTL8812BU arranca en USB 2; al pulsar *Conectar adaptador*, la app lo pasa a
-   USB 3 (igual que la app Android) y Windows le vuelve a instalar el driver Realtek. La app avisa con un mensaje:
-   repite Zadig sin desenchufar y vuelve a pulsar *Conectar adaptador*.
+   Por qué no Zadig: Windows trae su propio driver Realtek para este adaptador (`netrtwlanu.inf`), y el WinUSB de
+   Zadig empata con él en puntuación y pierde el desempate por fecha (2012 frente a 2019). Por eso Windows volvía a
+   poner el Realtek **en cada re-enumeración**: cada vez que se enchufaba y en cada cambio de USB 2 a USB 3, que la
+   app hace al conectar. Este paquete (`packaging/windows/driver`) coincide además con el ID más específico del
+   adaptador (`USB\VID_0BDA&PID_B812&REV_0210`), así que gana en puntuación al Realtek, y lleva una fecha más reciente
+   para los otros modelos. Probado: se mantiene al desenchufar y al cambiar entre USB 2 y USB 3 sin pasos extra, y
+   la app se reconecta sola tras desenchufar el adaptador.
 
-   **Limitación conocida: Windows vuelve a poner el driver Realtek cada vez que se enchufa el adaptador** (probado
-   en Windows 11). Ese driver viene con Windows (`netrtwlanu.inf`, firmado por Microsoft), no se puede quitar y
-   Windows lo prefiere al WinUSB de Zadig, así que tras desenchufar hay que repetir los dos pasos de Zadig. Mientras
-   la app siga abierta y el adaptador no se desenchufe, no hay que repetir nada.
+   Windows solo instala drivers firmados, así que el script crea un certificado local de firma de código, firma el
+   paquete, **borra la clave privada** (el certificado ya no puede firmar nada más) y añade el certificado público a
+   los almacenes *Entidades de certificación raíz de confianza* y *Editores de confianza* del equipo, igual que hace
+   Zadig. `-RemoveZadig` borra además las copias que deja Zadig en el almacén de drivers (una por cada uso).
+   Mientras tiene WinUSB, el adaptador no funciona como tarjeta WiFi normal.
 
-   Mientras tiene el driver WinUSB, el adaptador no funciona como tarjeta WiFi normal.
+   No instales UsbDk: mientras está instalado falla el cambio de USB 2 a USB 3 (ver `docs/windows-usb.md`).
 
 ### Notas de Windows
 

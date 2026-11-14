@@ -24,6 +24,11 @@
 #include <QUrl>
 #include <QVBoxLayout>
 
+#ifdef _WIN32
+#include <windows.h>
+#include <shellapi.h>
+#endif
+
 #include "i18n.h"
 #include "spectrum.h"  // kp::fpv_channels(): la tabla de canales de kepyur
 #include "video_widget.h"
@@ -196,6 +201,7 @@ void MainWindow::buildMenus() {
         else
             QMessageBox::warning(this, kAppName, tr("Could not create the shortcut."));
     });
+    driverAct_ = fileMenu_->addAction(QString(), this, &MainWindow::installDriver);
 #endif
     fileMenu_->addSeparator();
     quitAct_ = fileMenu_->addAction(QString(), QKeySequence::Quit, this, &QWidget::close);
@@ -258,6 +264,7 @@ void MainWindow::retranslate() {
     recDirAct_->setText(tr("Open &recordings folder"));
     logDirAct_->setText(tr("Open &log folder"));
     if (shortcutAct_) shortcutAct_->setText(tr("Create &desktop shortcut"));
+    if (driverAct_) driverAct_->setText(tr("Install adapter &driver (WinUSB)..."));
     quitAct_->setText(tr("&Quit"));
     optMenu_->setTitle(tr("&Options"));
     autoConnectAct_->setText(tr("&Connect the adapter on startup"));
@@ -303,6 +310,38 @@ void MainWindow::updatePlaceholder() {
         break;
     }
 }
+
+#ifdef _WIN32
+void MainWindow::installDriver() {
+    // scripts/windows-driver.ps1: en la version portable va en driver\, en una compilacion en el repositorio
+    const QString dir = QApplication::applicationDirPath();
+    QString script;
+    for (const QString &c : {dir + QStringLiteral("/driver/windows-driver.ps1"),
+                             dir + QStringLiteral("/../../scripts/windows-driver.ps1")})
+        if (QFileInfo::exists(c)) {
+            script = QFileInfo(c).absoluteFilePath();
+            break;
+        }
+    if (script.isEmpty()) {
+        QMessageBox::warning(this, kAppName, tr("The driver installer (driver\\windows-driver.ps1) was not found."));
+        return;
+    }
+    const auto answer = QMessageBox::question(
+        this, kAppName,
+        tr("This installs the WinUSB driver for the adapter, once. Windows will ask for administrator permission.\n\n"
+           "It creates a local certificate to sign the driver (its private key is deleted right after signing) "
+           "and adds it to the trusted stores of this PC; it replaces Zadig and survives unplugging the adapter. "
+           "It can be removed with the same script and -Uninstall.\n\n"
+           "Close this program after installing and unplug and replug the adapter. Continue?"));
+    if (answer != QMessageBox::Yes) return;
+    const QString params = QStringLiteral("-NoProfile -ExecutionPolicy Bypass -NoExit -File \"%1\" -RemoveZadig")
+                               .arg(QDir::toNativeSeparators(script));
+    const auto r = reinterpret_cast<intptr_t>(ShellExecuteW(
+        reinterpret_cast<HWND>(winId()), L"runas", L"powershell.exe", reinterpret_cast<const wchar_t *>(params.utf16()),
+        nullptr, SW_SHOWNORMAL));
+    if (r <= 32) statusBar()->showMessage(tr("Driver installation cancelled"), 6000);
+}
+#endif
 
 void MainWindow::showAbout() {
     QMessageBox box(this);

@@ -18,7 +18,7 @@ A **USB 3 port** is needed for 40 MS/s (on USB 2 it works with less, at 20 MS/s 
 
 Windows 10/11 x64: download the `.zip` of the latest version from
 [Releases](https://github.com/Pwn3dP4nd4/FPVDesktopWiFiReceiver/releases/latest), unzip it and double-click
-`FPVDesktopWiFiReceiver.exe`. Before that, install the WinUSB driver for the adapter once (see
+`FPVDesktopWiFiReceiver.exe`. The first time, install the adapter's WinUSB driver from the app: *File → Install adapter driver* (see
 [Windows 10/11](#windows-1011), step 3). The same page has an x64 Linux binary (it needs the system's Qt 6 and
 libusb), or build it as explained below.
 
@@ -108,19 +108,24 @@ The kernel driver `rtw88_8822bu` is detached automatically when the adapter is o
    [Releases](https://github.com/Pwn3dP4nd4/FPVDesktopWiFiReceiver/releases), and every push one in the
    *artifacts* of [Actions](https://github.com/Pwn3dP4nd4/FPVDesktopWiFiReceiver/actions).
 
-3. **WinUSB driver** with [Zadig](https://zadig.akeo.ie): *Options → List All Devices* → the adapter
-   ("Realtek 8812BU Wireless LAN 802.11ac USB NIC", USB ID `0BDA B812`) → **WinUSB** → *Replace Driver*.
+3. **WinUSB driver, once**: in the app, *File → Install adapter driver (WinUSB)…* (Windows asks for
+   administrator permission), then unplug and replug the adapter. Without the app:
+   `powershell -ExecutionPolicy Bypass -File driver\windows-driver.ps1` as administrator (in the repository,
+   `scripts\windows-driver.ps1`). `-Status` shows which driver the adapter has, `-Uninstall` removes everything.
 
-   **It has to be done twice**: the RTL8812BU starts on USB 2; when you press *Connect adapter*, the app switches it to
-   USB 3 (as the Android app does) and Windows reinstalls the Realtek driver. The app says so in a message: run Zadig
-   again without unplugging and press *Connect adapter* again.
+   Why not Zadig: Windows ships its own Realtek driver for this adapter (`netrtwlanu.inf`) and Zadig's WinUSB ties
+   with it in rank and loses the tie on date (2012 against 2019), so Windows put the Realtek driver back **on every
+   re-enumeration**: every replug and every USB 2 → USB 3 switch, which the app does on connect. This package
+   (`packaging/windows/driver`) also matches the adapter's more specific ID (`USB\VID_0BDA&PID_B812&REV_0210`), so
+   it ranks better than the Realtek one, and it carries a newer date for the other models. Tested: it survives
+   replugs and USB 2/3 switches with no further steps, and the app reconnects by itself after unplugging the adapter.
 
-   **Known limitation: Windows puts the Realtek driver back every time the adapter is plugged in** (tested on
-   Windows 11). The Realtek driver ships with Windows (`netrtwlanu.inf`, signed by Microsoft), it cannot be removed and
-   Windows ranks it above Zadig's WinUSB, so after unplugging the adapter both Zadig steps have to be repeated. While
-   the app stays open and the adapter is not unplugged, nothing needs repeating.
+   Windows only installs signed drivers, so the script creates a local code-signing certificate, signs the package,
+   **deletes the private key** (the certificate cannot sign anything else) and adds the public certificate to the
+   PC's *Trusted Root* and *Trusted Publishers* stores, as Zadig does. `-RemoveZadig` also deletes the copies Zadig
+   leaves in the driver store (one per run). The adapter does not work as a normal WiFi card while it has WinUSB.
 
-   The adapter stops working as a normal WiFi card while it has the WinUSB driver.
+   Do not install UsbDk: while it is installed the USB 2 → USB 3 switch fails (see `docs/windows-usb.md`).
 
 ### Windows notes
 

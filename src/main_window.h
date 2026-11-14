@@ -55,6 +55,9 @@ private:
     void toggleFullScreen();
     void watchChannelFromCombo();
     void showAbout();
+#ifdef _WIN32
+    void installDriver();  // lanza scripts/windows-driver.ps1 como administrador
+#endif
     QString recordingsDir() const;
     void updateRecordButton();
     void startRecording();
@@ -68,7 +71,7 @@ private:
     QLabel *info_, *pilotsLabel_, *rateLabel_, *gainLabel_;
     VideoWidget *video_;
     QMenu *fileMenu_ = nullptr, *optMenu_ = nullptr, *langMenu_ = nullptr, *helpMenu_ = nullptr;
-    QAction *recDirAct_ = nullptr, *logDirAct_ = nullptr, *shortcutAct_ = nullptr, *quitAct_ = nullptr;
+    QAction *recDirAct_ = nullptr, *logDirAct_ = nullptr, *shortcutAct_ = nullptr, *driverAct_ = nullptr, *quitAct_ = nullptr;
     QAction *autoConnectAct_ = nullptr, *onConnectSection_ = nullptr, *resumeLastAct_ = nullptr, *scanAct_ = nullptr;
     QAction *langSystemAct_ = nullptr, *manualAct_ = nullptr, *aboutAct_ = nullptr;
     QActionGroup *langGroup_ = nullptr;

@@ -16,8 +16,13 @@ Banco de pruebas: `test/reopen_test.cpp` (`cmake --build build/release --target 
   fecha de WinUSB que Zadig copia en el INF). Por eso **cualquier re-enumeración** (desenchufar, o el cambio
   USB 2 / USB 3) vuelve a poner el Realtek. Cada pasada de Zadig deja otra copia en el almacén
   (`oem100.inf`...`oem109.inf`).
-- Solución posible: un paquete WinUSB propio con fecha posterior a 2019, instalado una vez; Windows lo
-  preferiría en cada enumeración y no haría falta Zadig nunca más.
+- **Solución aplicada** (`packaging/windows/driver`, `scripts/windows-driver.ps1`): paquete WinUSB propio que,
+  para 0BDA:B812, coincide con el ID específico `USB\VID_0BDA&PID_B812&REV_0210` (clasificación `00FF0000`,
+  mejor que el `00FF0001` del Realtek) y lleva fecha 2026 para los IDs genéricos. Catálogo con
+  `New-FileCatalog`, firmado con un certificado local cuya clave privada se borra tras firmar.
+  Comprobado: tras instalarlo, el cambio USB 2 -> USB 3 y el reenchufado conservan WinUSB sin pasos extra
+  (3/3 ciclos recibiendo tras reenchufar), y desenchufar en pleno stream acaba en reconexión automática:
+  8 s después de enchufarlo la app está viendo otra vez el canal, estable al menos 1,5 min.
 
 ## 2. UsbDk como alternativa a Zadig
 
@@ -70,5 +75,7 @@ está armado, pero no envía ningún bloque; wifi-sdr reintenta y se rinde (`str
 - No instalar UsbDk: además de no ser fiable, rompe el cambio a USB 3 mientras está instalado.
 - La recuperación tras fallos de stream (reabrir en el mismo proceso) es válida con WinUSB.
 - Relanzar la app para recuperar no sirve (descartado con datos).
-- Lo que desbloquearía la reconexión automática es el paquete WinUSB con fecha reciente: con él, la app
-  podría recuperar el chip con el cambio USB 2 / USB 3 sin que Windows le cambie el driver.
+- Instalar el driver WinUSB propio en lugar de usar Zadig.
+- El ciclo USB 3 -> USB 2 -> USB 3 no desatasca un chip que ha dejado de enviar datos (probado con el driver
+  propio ya instalado); solo cortar la alimentación lo recupera. Con el driver propio la reconexión tras
+  desenchufar sí funcionó; el atasco observado antes ocurrió con Zadig de por medio y no se ha repetido.

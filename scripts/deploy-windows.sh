@@ -18,6 +18,9 @@ for i in 1 2 3; do
   done
 done
 cp "$ROOT/README.md" "$ROOT/README.es.md" "$ROOT/LICENSE" "$OUT/"
+# Driver WinUSB del adaptador (sustituye a Zadig): Archivo > Instalar driver del adaptador
+mkdir -p "$OUT/driver"
+cp "$ROOT/scripts/windows-driver.ps1" "$ROOT/packaging/windows/driver/fpvdesktopwifireceiver_winusb.inf" "$OUT/driver/"
 
 scripts/collect-licenses.sh "$OUT"
 echo "OK: $OUT"

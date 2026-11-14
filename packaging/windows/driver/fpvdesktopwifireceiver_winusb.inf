@@ -1,0 +1,58 @@
+; FPVDesktopWiFiReceiver: driver WinUSB para los adaptadores RTL8812BU (sustituye a Zadig).
+;
+; Por que existe: Windows trae su propio driver Realtek (netrtwlanu.inf) para 0BDA:B812 y lo vuelve a poner
+; cada vez que el adaptador se enumera (al enchufarlo o al pasar de USB 2 a USB 3). El WinUSB que genera Zadig
+; empata con el en puntuacion y pierde el desempate por fecha (2012 frente a 2019).
+; Este INF gana de dos formas:
+;   - para 0BDA:B812 tambien coincide con el ID mas especifico del dispositivo (&REV_0210): mejor puntuacion
+;     que el driver Realtek, que solo coincide con el ID generico;
+;   - DriverVer posterior al driver Realtek: gana el desempate con los IDs genericos (otros modelos).
+; Se instala con scripts/windows-driver.ps1 (firma local, una sola vez, como administrador).
+
+[Version]
+Signature   = "$Windows NT$"
+Class       = USBDevice
+ClassGuid   = {88BAE032-5A81-49F0-BC3D-A4FF138216D6}
+Provider    = %ProviderName%
+CatalogFile = fpvdesktopwifireceiver_winusb.cat
+DriverVer   = 11/14/2026,10.0.1.0
+PnpLockdown = 1
+
+[Manufacturer]
+%ProviderName% = Devices,NTamd64,NTarm64
+
+[Devices.NTamd64]
+%Dev8812BU%   = WinUsb_Install, USB\VID_0BDA&PID_B812&REV_0210
+%Dev8812BU%   = WinUsb_Install, USB\VID_0BDA&PID_B812
+%DevT4Uv3%    = WinUsb_Install, USB\VID_2357&PID_0115
+%DevT3U%      = WinUsb_Install, USB\VID_2357&PID_012D
+%DevT3UPlus%  = WinUsb_Install, USB\VID_2357&PID_0138
+
+[Devices.NTarm64]
+%Dev8812BU%   = WinUsb_Install, USB\VID_0BDA&PID_B812&REV_0210
+%Dev8812BU%   = WinUsb_Install, USB\VID_0BDA&PID_B812
+%DevT4Uv3%    = WinUsb_Install, USB\VID_2357&PID_0115
+%DevT3U%      = WinUsb_Install, USB\VID_2357&PID_012D
+%DevT3UPlus%  = WinUsb_Install, USB\VID_2357&PID_0138
+
+[WinUsb_Install]
+Include = winusb.inf
+Needs   = WINUSB.NT
+
+[WinUsb_Install.Services]
+Include = winusb.inf
+Needs   = WINUSB.NT.Services
+
+[WinUsb_Install.HW]
+AddReg = WinUsb_AddReg
+
+[WinUsb_AddReg]
+; interfaz de dispositivo para que libusb pueda abrirlo
+HKR,,DeviceInterfaceGUIDs,0x10000,"{5514ADA9-AB6F-4807-B61D-E6A9BBF5B18F}"
+
+[Strings]
+ProviderName = "FPVDesktopWiFiReceiver"
+Dev8812BU    = "RTL8812BU (FPVDesktopWiFiReceiver, WinUSB)"
+DevT4Uv3     = "TP-Link Archer T4U v3 (FPVDesktopWiFiReceiver, WinUSB)"
+DevT3U       = "TP-Link Archer T3U (FPVDesktopWiFiReceiver, WinUSB)"
+DevT3UPlus   = "TP-Link Archer T3U Plus (FPVDesktopWiFiReceiver, WinUSB)"

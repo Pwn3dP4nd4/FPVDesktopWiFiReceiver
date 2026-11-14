@@ -72,6 +72,10 @@
         <translation>Crear acceso directo en el &amp;escritorio</translation>
     </message>
     <message>
+        <source>Install adapter &amp;driver (WinUSB)...</source>
+        <translation>Instalar &amp;driver del adaptador (WinUSB)...</translation>
+    </message>
+    <message>
         <source>&amp;Quit</source>
         <translation>&amp;Salir</translation>
     </message>
@@ -152,6 +156,26 @@ Plug it in and press &quot;Connect adapter&quot;.</source>
 %1
 
 Conéctalo y pulsa &quot;Conectar adaptador&quot;.</translation>
+    </message>
+    <message>
+        <source>The driver installer (driver\windows-driver.ps1) was not found.</source>
+        <translation>No se encuentra el instalador del driver (driver\windows-driver.ps1).</translation>
+    </message>
+    <message>
+        <source>This installs the WinUSB driver for the adapter, once. Windows will ask for administrator permission.
+
+It creates a local certificate to sign the driver (its private key is deleted right after signing) and adds it to the trusted stores of this PC; it replaces Zadig and survives unplugging the adapter. It can be removed with the same script and -Uninstall.
+
+Close this program after installing and unplug and replug the adapter. Continue?</source>
+        <translation>Esto instala el driver WinUSB del adaptador, una sola vez. Windows pedirá permiso de administrador.
+
+Crea un certificado local para firmar el driver (su clave privada se borra nada más firmar) y lo añade a los almacenes de confianza de este PC; sustituye a Zadig y se mantiene al desenchufar el adaptador. Se puede quitar con el mismo script y -Uninstall.
+
+Al terminar, cierra este programa y desenchufa y vuelve a enchufar el adaptador. ¿Continuar?</translation>
+    </message>
+    <message>
+        <source>Driver installation cancelled</source>
+        <translation>Instalación del driver cancelada</translation>
     </message>
     <message>
         <source>About %1</source>
@@ -265,12 +289,12 @@ Conéctalo y pulsa &quot;Conectar adaptador&quot;.</translation>
 <context>
     <name>RadioBackend</name>
     <message>
-        <source>Windows: the adapter has just switched to USB 3 and Windows sees it as a NEW device (another port), with the Realtek driver again. Run Zadig again now for this instance (Options &gt; List All Devices &gt; the adapter &gt; WinUSB &gt; Replace Driver) and press Connect again.</source>
-        <translation>Windows: el adaptador acaba de pasar a USB 3 y Windows lo ve como un dispositivo NUEVO (otro puerto), con el driver Realtek otra vez. Repite Zadig ahora para esta instancia (Options &gt; List All Devices &gt; el adaptador &gt; WinUSB &gt; Replace Driver) y vuelve a pulsar Conectar.</translation>
+        <source>Windows: the adapter has just switched to USB 3 and Windows gave it its Realtek driver again. Install the WinUSB driver once with File &gt; Install adapter driver: it stays across replugs and USB 2/3 switches. Then unplug and replug the adapter and press Connect adapter.</source>
+        <translation>Windows: el adaptador acaba de pasar a USB 3 y Windows le ha vuelto a poner su driver Realtek. Instala una vez el driver WinUSB con Archivo &gt; Instalar driver del adaptador: se mantiene al desenchufar y al cambiar entre USB 2 y USB 3. Después desenchufa y vuelve a enchufar el adaptador y pulsa Conectar adaptador.</translation>
     </message>
     <message>
-        <source>Windows: the adapter needs the WinUSB driver. Open Zadig (https://zadig.akeo.ie), Options &gt; List All Devices, pick the adapter (USB ID 0BDA B812 or another RTL8812BU), WinUSB &gt; Replace Driver. Plug it into a USB 3 (blue) port. Windows puts its Realtek driver back every time the adapter is plugged in, so this has to be repeated after unplugging it.</source>
-        <translation>Windows: el adaptador necesita el driver WinUSB. Abre Zadig (https://zadig.akeo.ie), Options &gt; List All Devices, elige el adaptador (USB ID 0BDA B812 u otro RTL8812BU), WinUSB &gt; Replace Driver. Conéctalo a un puerto USB 3 (azul). Windows vuelve a poner su driver Realtek cada vez que se enchufa el adaptador, así que hay que repetirlo después de desenchufarlo.</translation>
+        <source>Windows: the adapter needs the WinUSB driver. Install it once with File &gt; Install adapter driver (administrator permission), then unplug and replug the adapter. Plug it into a USB 3 (blue) port.</source>
+        <translation>Windows: el adaptador necesita el driver WinUSB. Instálalo una vez con Archivo &gt; Instalar driver del adaptador (permiso de administrador) y después desenchufa y vuelve a enchufar el adaptador. Conéctalo a un puerto USB 3 (azul).</translation>
     </message>
     <message>
         <source>Linux: the rtw88_8822bu driver must not hold the adapter and your user needs permission: sudo cp packaging/linux/60-kepyur.rules /etc/udev/rules.d/ &amp;&amp; sudo udevadm control --reload &amp;&amp; sudo udevadm trigger, then replug it. Use a USB 3 port.</source>
