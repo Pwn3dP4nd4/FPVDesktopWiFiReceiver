@@ -7,6 +7,7 @@
 #include <QApplication>
 #include <QCommandLineParser>
 #include <QDir>
+#include <QIcon>
 #include <QStandardPaths>
 #include <QThread>
 #include <QTimer>
@@ -31,34 +32,40 @@ void file_sink(kp::LogLevel l, const char *line) {
 
 int main(int argc, char **argv) {
     QApplication app(argc, argv);
-    QApplication::setApplicationName(QStringLiteral("kepyur-desktop"));
+    QApplication::setApplicationName(QStringLiteral("FPVDesktopWiFiReceiver"));
     QApplication::setApplicationVersion(QStringLiteral(KP_VERSION));
+    QApplication::setDesktopFileName(QStringLiteral("FPVDesktopWiFiReceiver"));  // Wayland: icono del .desktop
+    QIcon icon;
+    for (int n : {16, 24, 32, 48, 64, 128, 256}) icon.addFile(QStringLiteral(":/icons/app-%1.png").arg(n), QSize(n, n));
+    QApplication::setWindowIcon(icon);
     qRegisterMetaType<Pilot>();
     qRegisterMetaType<QVector<Pilot>>();
     qRegisterMetaType<RadioStatus>();
 
     QCommandLineParser cli;
-    cli.setApplicationDescription(QStringLiteral("Receptor FPV analogico 5.8 GHz con un adaptador RTL8812BU (kepyur)"));
+    cli.setApplicationDescription(QStringLiteral("FPVDesktopWiFiReceiver: receptor FPV analogico 5.8 GHz con un adaptador RTL8812BU. "
+                                                    "Sin opciones conecta el adaptador al abrir (ajustable en Opciones)."));
     cli.addHelpOption();
     cli.addVersionOption();
     QCommandLineOption demo(QStringLiteral("demo"), QStringLiteral("Sin hardware: video y pilotos simulados"));
-    QCommandLineOption autoOpt(QStringLiteral("auto"), QStringLiteral("Conectar y escanear al arrancar"));
+    QCommandLineOption autoOpt(QStringLiteral("auto"), QStringLiteral("Conectar y escanear al arrancar (aunque este desactivado en Opciones)"));
+    QCommandLineOption noAuto(QStringLiteral("no-connect"), QStringLiteral("No conectar el adaptador al abrir"));
     QCommandLineOption verbose(QStringLiteral("verbose"), QStringLiteral("Log de depuracion"));
     QCommandLineOption watchOpt(QStringLiteral("watch"), QStringLiteral("Conectar y ver esta frecuencia al arrancar"),
                                 QStringLiteral("MHz"));
     QCommandLineOption rateOpt(QStringLiteral("rate"), QStringLiteral("Muestreo para ver: 40 o 20 (MS/s)"),
                                QStringLiteral("MSps"));
-    cli.addOptions({demo, autoOpt, verbose, watchOpt, rateOpt});
+    cli.addOptions({demo, autoOpt, noAuto, verbose, watchOpt, rateOpt});
     cli.process(app);
 
     // Log de kepyur/wifi-sdr: stderr + fichero (como kepyur.log en Android)
     const QString logDir = QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation);
     QDir().mkpath(logDir);
-    const QString logPath = logDir + "/kepyur.log";
+    const QString logPath = logDir + "/FPVDesktopWiFiReceiver.log";
     g_log = std::fopen(QFile::encodeName(logPath).constData(), "a");
     kp::set_log_sink(file_sink);
     kp::set_log_debug(cli.isSet(verbose));
-    KP_LOGI("kepyur-desktop %s start, log %s", KP_VERSION, qPrintable(logPath));
+    KP_LOGI("FPVDesktopWiFiReceiver %s start, log %s", KP_VERSION, qPrintable(logPath));
 
     Backend *backend = nullptr;
 #ifdef KP_WITH_RADIO
@@ -73,16 +80,13 @@ int main(int argc, char **argv) {
 
     MainWindow w(backend);
     if (cli.isSet(rateOpt)) w.setRate(cli.value(rateOpt) == QLatin1String("40") ? 1 : 2);
-    w.resize(1100, 640);
     w.show();
+    // Doble clic en el .exe: conecta solo (ajuste "Conectar el adaptador al abrir", activo por defecto) y
+    // vuelve al ultimo canal visto o escanea. La linea de comandos solo hace falta para forzar otra cosa.
     const double watchMHz = cli.value(watchOpt).toDouble();
-    if (cli.isSet(autoOpt) || cli.isSet(demo) || watchMHz > 0) {
-        QTimer::singleShot(0, &w, [&w] { emit w.requestOpen(); });
-        QObject::connect(backend, &Backend::opened, &w, [&w, watchMHz](bool ok) {
-            if (!ok) return;
-            if (watchMHz > 0) emit w.requestWatch(watchMHz);
-            else emit w.requestScan();
-        }, Qt::SingleShotConnection);
+    if (!cli.isSet(noAuto)) {
+        const bool forceScan = cli.isSet(autoOpt) || cli.isSet(demo);
+        QTimer::singleShot(0, &w, [&w, watchMHz, forceScan] { w.startup(forceScan, watchMHz, forceScan); });
     }
 
     const int rc = app.exec();

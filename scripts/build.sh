@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Compila kepyur-desktop. Linux, o Windows dentro de la consola "MSYS2 UCRT64".
-#   scripts/build.sh            backend real (adaptador RTL8812BU) -> build/release/kepyur-desktop[.exe]
+# Compila FPVDesktopWiFiReceiver. Linux, o Windows dentro de la consola "MSYS2 UCRT64".
+#   scripts/build.sh            backend real (adaptador RTL8812BU) -> build/release/FPVDesktopWiFiReceiver[.exe]
 #   scripts/build.sh --demo     solo GUI + backend simulado (sin binutils MIPS ni libusb)
 #   scripts/build.sh --deps     instalar antes las dependencias del sistema (apt / pacman)
 set -euo pipefail
@@ -51,8 +51,16 @@ fi
 BUILD=build/release
 [ "$RADIO" = OFF ] && BUILD=build/demo
 cmake -S . -B "$BUILD" -G Ninja -DCMAKE_BUILD_TYPE=Release "${ARGS[@]}"
-cmake --build "$BUILD" --target kepyur-desktop
-echo
-echo "OK: $ROOT/$BUILD/kepyur-desktop$([ "$OS" = windows ] && echo .exe)"
-[ "$OS" = windows ] && echo "Carpeta portable con las DLL: scripts/deploy-windows.sh"
+cmake --build "$BUILD" --target FPVDesktopWiFiReceiver
+if [ "$OS" = windows ]; then
+  # Carpeta autocontenida (Qt, libusb, runtime): el .exe se abre con doble clic, sin MSYS2 ni consola
+  OUTDIR=dist/FPVDesktopWiFiReceiver
+  [ "$RADIO" = OFF ] && OUTDIR=dist/FPVDesktopWiFiReceiver-demo
+  scripts/deploy-windows.sh "$BUILD" "$OUTDIR"
+  echo
+  echo "OK: $ROOT/$OUTDIR/FPVDesktopWiFiReceiver.exe  (doble clic para abrir)"
+else
+  echo
+  echo "OK: $ROOT/$BUILD/FPVDesktopWiFiReceiver   (instalar con menu e icono: sudo cmake --install $BUILD)"
+fi
 exit 0

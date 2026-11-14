@@ -1,4 +1,6 @@
-# FPVDesktopWiFiReceiver (kepyur-desktop)
+<p align="center"><img src="assets/icons/app-128.png" width="96" alt="logo"></p>
+
+# FPVDesktopWiFiReceiver
 
 Receptor de vídeo FPV analógico de 5,8 GHz para **Windows y Linux** usando un adaptador WiFi USB **RTL8812BU**
 como SDR. Es la versión de escritorio (Qt 6) de [kepyur](https://github.com/gilankpam/kepyur) (de
@@ -14,7 +16,7 @@ Hace falta un **puerto USB 3** para 40 MS/s (con USB 2 funciona más limitado, a
 ## Cómo funciona la integración con kepyur (Android)
 
 ```
-kepyur-desktop/
+FPVDesktopWiFiReceiver/
 ├── src/                     GUI Qt: ventana, vídeo, backend real y backend demo
 ├── third_party/kepyur/      submódulo -> github.com/gilankpam/kepyur  (SIN modificar)
 │   ├── native/dsp, native/radio    el núcleo que también compila la app Android
@@ -22,7 +24,8 @@ kepyur-desktop/
 │       └── external/devourer
 ├── compat/win32/            shim de 2 funciones POSIX para Windows (en vez de parchear kepyur)
 ├── scripts/                 build, actualización de dependencias, binutils MIPS, despliegue Windows
-└── packaging/linux/         regla udev y .desktop
+├── assets/                  logo (logo.svg) e iconos generados (scripts/make-icons.sh)
+└── packaging/               Linux: regla udev y .desktop · Windows: icono y versión del .exe
 ```
 
 - `src/radio_backend.cpp` hace lo mismo que `native/jni/kepyur_jni.cpp` en Android: crea un `kp::Radio`,
@@ -62,7 +65,8 @@ scripts/update-deps.sh --init
 
 ```bash
 scripts/build.sh --deps         # instala Qt6, libusb, binutils-mipsel-linux-gnu, xxd... y compila
-build/release/kepyur-desktop
+build/release/FPVDesktopWiFiReceiver
+sudo cmake --install build/release   # opcional: menú de aplicaciones con icono + regla udev
 ```
 
 Permisos USB (una vez), y desenchufa/enchufa el adaptador:
@@ -84,9 +88,15 @@ El driver del kernel `rtw88_8822bu` se desconecta solo al abrir el adaptador.
 
    La primera vez compila GNU binutils para `mipsel` (wifi-sdr ensambla el programa que corre dentro del chip
    con ellas y MSYS2 no las empaqueta): 5-10 minutos, se guarda en `tools/`. Resultado: carpeta portable
-   `dist\kepyur-desktop\kepyur-desktop.exe` con Qt y libusb incluidos.
+   `dist\FPVDesktopWiFiReceiver\` con Qt y libusb incluidos. **Se abre con doble clic en
+   `FPVDesktopWiFiReceiver.exe`**, sin consola ni MSYS2; se puede copiar a cualquier PC con Windows 10/11 x64.
+   *Archivo → Crear acceso directo en el escritorio* deja un icono para abrirlo.
 
-   (O desde la consola *MSYS2 UCRT64*: `scripts/build.sh --deps && scripts/deploy-windows.sh`.)
+   (O desde la consola *MSYS2 UCRT64*: `scripts/build.sh --deps`, que también deja la carpeta lista.)
+
+   Sin compilar: cada versión publicada (`git tag v0.2.0 && git push --tags`) deja un `.zip` para Windows en
+   [Releases](https://github.com/Pwn3dP4nd4/FPVDesktopWiFiReceiver/releases), y cada push uno en los
+   *artifacts* de [Actions](https://github.com/Pwn3dP4nd4/FPVDesktopWiFiReceiver/actions).
 
 3. **Driver WinUSB** con [Zadig](https://zadig.akeo.ie): *Options → List All Devices* → el adaptador
    ("Realtek 8812BU Wireless LAN 802.11ac USB NIC", USB ID `0BDA B812`) → **WinUSB** → *Replace Driver*.
@@ -116,15 +126,32 @@ El driver del kernel `rtw88_8822bu` se desconecta solo al abrir el adaptador.
 
 ## Uso
 
-- **Conectar adaptador** (tarda ~5 s en arrancar el chip; si estaba en USB 2 primero lo pasa a USB 3).
+Abre `FPVDesktopWiFiReceiver.exe` (o el icono del menú en Linux): **conecta el adaptador solo** y vuelve al
+último canal que estabas viendo, o escanea si es la primera vez. No hace falta ninguna línea de comandos.
+
+- **Conectar adaptador / Desconectar** (tarda ~5 s en arrancar el chip; si estaba en USB 2 primero lo pasa a USB 3).
+  Si al abrir no encuentra el adaptador, lo indica en la zona del vídeo: enchúfalo y pulsa *Conectar adaptador*.
 - **Escanear 5.8 GHz**: barre las bandas A/B/E/F/R y L, lista los pilotos y sintoniza el más fuerte.
   Clic en un piloto para verlo, o elige un canal fijo en el desplegable.
-- Muestreo 40/20 MS/s y ganancia (AGC o fija). **Grabar IQ 5 s** guarda `Documentos/kepyur/rec-*.cs16`
-  (+ `.json`), que se puede reproducir con `kp_replay` de kepyur.
-- **F** o doble clic: pantalla completa · **O**: OSD · **Esc**: salir de pantalla completa.
-- `kepyur-desktop --demo`: sin hardware (barras de color). `--auto`: conecta y escanea al arrancar. `--watch 5800`: conecta y sintoniza esa frecuencia. `--rate 20|40`: muestreo al ver. `--verbose`: log
-  de depuración.
-- Log: Windows `%LOCALAPPDATA%\kepyur-desktop\kepyur.log`, Linux `~/.local/share/kepyur-desktop/kepyur.log`.
+- Muestreo 40/20 MS/s y ganancia (AGC o fija); se recuerdan entre sesiones. **Grabar IQ 5 s** guarda
+  `Documentos/FPVDesktopWiFiReceiver/rec-*.cs16` (+ `.json`), reproducible con `kp_replay` de kepyur.
+- **F** o doble clic en el vídeo: pantalla completa · **O**: OSD · **Esc**: salir de pantalla completa.
+- Menú **Opciones**: *Conectar el adaptador al abrir* (activado por defecto) y qué hacer al conectar
+  (*volver al último canal* o *escanear*). Menú **Archivo**: carpetas de grabaciones y log, acceso directo
+  en el escritorio (Windows).
+- Ajustes: Windows `%APPDATA%\FPVDesktopWiFiReceiver\FPVDesktopWiFiReceiver.ini`, Linux
+  `~/.config/FPVDesktopWiFiReceiver/FPVDesktopWiFiReceiver.ini`.
+- Log: Windows `%LOCALAPPDATA%\FPVDesktopWiFiReceiver\FPVDesktopWiFiReceiver.log`, Linux
+  `~/.local/share/FPVDesktopWiFiReceiver/FPVDesktopWiFiReceiver.log`.
+
+Opciones de línea de comandos (opcionales, para pruebas): `--demo` sin hardware (barras de color) ·
+`--auto` conectar y escanear · `--watch 5800` conectar y ver esa frecuencia · `--rate 20|40` muestreo al ver ·
+`--no-connect` no conectar al abrir · `--verbose` log de depuración.
+
+## Logo
+
+`assets/logo.svg` (un quad FPV emitiendo). Tras modificarlo, `scripts/make-icons.sh` regenera
+`assets/icons/app-*.png` y `app.ico` (necesita el módulo Qt SVG solo para eso; el programa no).
 
 ## Licencia
 

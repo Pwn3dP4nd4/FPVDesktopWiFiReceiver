@@ -1,5 +1,5 @@
-# Compila kepyur-desktop en Windows desde PowerShell usando MSYS2 (UCRT64).
-#   .\scripts\build-windows.ps1            backend real + carpeta portable dist\kepyur-desktop
+# Compila FPVDesktopWiFiReceiver en Windows desde PowerShell usando MSYS2 (UCRT64).
+#   .\scripts\build-windows.ps1            backend real + carpeta portable dist\FPVDesktopWiFiReceiver
 #   .\scripts\build-windows.ps1 -Deps      instala antes los paquetes de MSYS2
 #   .\scripts\build-windows.ps1 -Demo      solo GUI con backend simulado
 param([switch]$Deps, [switch]$Demo, [string]$Msys = "C:\msys64")
@@ -10,15 +10,12 @@ if (-not (Test-Path $bash)) {
 }
 $root = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $unixRoot = (& $bash -lc "cygpath -u '$root'").Trim()
-$args = @()
-if ($Deps) { $args += "--deps" }
-if ($Demo) { $args += "--demo" }
+$bargs = @()
+if ($Deps) { $bargs += "--deps" }
+if ($Demo) { $bargs += "--demo" }
 $env:MSYSTEM = "UCRT64"
 $env:CHERE_INVOKING = "1"
-& $bash -lc "cd '$unixRoot' && scripts/build.sh $($args -join ' ')"
+& $bash -lc "cd '$unixRoot' && scripts/build.sh $($bargs -join ' ')"
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-if (-not $Demo) {
-    & $bash -lc "cd '$unixRoot' && scripts/deploy-windows.sh"
-    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-    Write-Host "Ejecutable: $root\dist\kepyur-desktop\kepyur-desktop.exe"
-}
+$dir = if ($Demo) { "FPVDesktopWiFiReceiver-demo" } else { "FPVDesktopWiFiReceiver" }
+Write-Host "Ejecutable (doble clic): $root\dist\$dir\FPVDesktopWiFiReceiver.exe"

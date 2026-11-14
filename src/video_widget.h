@@ -1,5 +1,6 @@
 #pragma once
 #include <QImage>
+#include <QPixmap>
 #include <QWidget>
 
 // Pinta el ultimo fotograma escalado manteniendo 4:3 (720x480 NTSC / 720x576 PAL son pixeles no cuadrados)
@@ -12,6 +13,7 @@ public:
     void setOsdVisible(bool on) { osdOn_ = on; update(); }
     bool osdVisible() const { return osdOn_; }
     void setPlaceholder(const QString &text) { placeholder_ = text; update(); }
+    void setLogo(const QPixmap &logo) { logo_ = logo; update(); }
     void clear() { frame_ = QImage(); update(); }
 
 public slots:
@@ -27,5 +29,6 @@ protected:
 private:
     QImage frame_;
     QString osd_, placeholder_;
+    QPixmap logo_;
     bool osdOn_ = true;
 };

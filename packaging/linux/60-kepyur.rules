@@ -1,4 +1,4 @@
-# kepyur-desktop: acceso USB sin root a los adaptadores RTL8812BU / 8812CU / 8812EU que usa wifi-sdr.
+# FPVDesktopWiFiReceiver: acceso USB sin root a los adaptadores RTL8812BU / 8812CU / 8812EU que usa wifi-sdr.
 #   sudo cp 60-kepyur.rules /etc/udev/rules.d/ && sudo udevadm control --reload && sudo udevadm trigger
 # El driver del kernel (rtw88_8822bu) se desconecta solo al abrir el adaptador (libusb detach).
 # Realtek: 8812BU (BrosTrend AC1200 AC1L/AC3L/AC5L y otros), 8812CU, 8812EU

@@ -1,9 +1,10 @@
 cmake_minimum_required(VERSION 3.22)
-project(kepyur_desktop VERSION 0.1.0 LANGUAGES C CXX)
+project(FPVDesktopWiFiReceiver VERSION 0.2.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_AUTOMOC ON)
+set(CMAKE_AUTORCC ON)
 if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
   set(CMAKE_BUILD_TYPE Release CACHE STRING "" FORCE)
 endif()
@@ -60,38 +61,55 @@ if(KP_WITH_RADIO AND WIN32)
   # radio.cpp incluye <sys/resource.h> + gettid()/setpriority(): shim en compat/win32 (sin tocar upstream)
   target_include_directories(kepyur_radio PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/compat/win32")
 endif()
+if(WIN32)
+  # GCC/MinGW comprueba printf con las reglas de msvcrt y avisa de %zu, que UCRT si soporta: falso positivo.
+  foreach(t kepyur_dsp kepyur_radio)
+    if(TARGET ${t})
+      target_compile_options(${t} PRIVATE -Wno-format -Wno-format-extra-args)
+    endif()
+  endforeach()
+endif()
 
 # ---- GUI ----------------------------------------------------------------------------------------------------
-add_executable(kepyur-desktop
+add_executable(FPVDesktopWiFiReceiver
   src/main.cpp
   src/main_window.cpp src/main_window.h
   src/video_widget.cpp src/video_widget.h
   src/backend.h
   src/stub_backend.cpp src/stub_backend.h
+  assets/icons.qrc
 )
-target_link_libraries(kepyur-desktop PRIVATE Qt6::Widgets kepyur_dsp)
-target_compile_definitions(kepyur-desktop PRIVATE KP_VERSION="${PROJECT_VERSION}")
+target_link_libraries(FPVDesktopWiFiReceiver PRIVATE Qt6::Widgets kepyur_dsp)
+target_compile_definitions(FPVDesktopWiFiReceiver PRIVATE KP_VERSION="${PROJECT_VERSION}")
 if(KP_WITH_RADIO)
-  target_sources(kepyur-desktop PRIVATE src/radio_backend.cpp src/radio_backend.h src/usb3_switch.cpp src/usb3_switch.h)
-  target_link_libraries(kepyur-desktop PRIVATE kepyur_radio)
-  target_compile_definitions(kepyur-desktop PRIVATE KP_WITH_RADIO=1)
+  target_sources(FPVDesktopWiFiReceiver PRIVATE src/radio_backend.cpp src/radio_backend.h src/usb3_switch.cpp src/usb3_switch.h)
+  target_link_libraries(FPVDesktopWiFiReceiver PRIVATE kepyur_radio)
+  target_compile_definitions(FPVDesktopWiFiReceiver PRIVATE KP_WITH_RADIO=1)
   if(WIN32)
     # WinUSB RAW_IO en el endpoint de streaming (sin el, 40 MS/s pierde el deadline del chip): se envuelve
     # libusb_submit_transfer en el enlazado, wifi-sdr/devourer quedan sin modificar.
-    target_sources(kepyur-desktop PRIVATE compat/win32/winusb_raw_io.cpp)
-    target_link_options(kepyur-desktop PRIVATE -Wl,--wrap=libusb_submit_transfer -Wl,--wrap=libusb_close)
+    target_sources(FPVDesktopWiFiReceiver PRIVATE compat/win32/winusb_raw_io.cpp)
+    target_link_options(FPVDesktopWiFiReceiver PRIVATE -Wl,--wrap=libusb_submit_transfer -Wl,--wrap=libusb_close)
   endif()
 endif()
 
 if(WIN32)
-  set_target_properties(kepyur-desktop PROPERTIES WIN32_EXECUTABLE ON)
+  # Aplicacion de ventana (doble clic, sin consola) con icono y version en el .exe
+  enable_language(RC)
+  configure_file(packaging/windows/app.rc.in "${CMAKE_CURRENT_BINARY_DIR}/app.rc" @ONLY)
+  target_sources(FPVDesktopWiFiReceiver PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/app.rc")
+  set_target_properties(FPVDesktopWiFiReceiver PROPERTIES WIN32_EXECUTABLE ON)
   # Ejecutable autocontenido respecto al runtime de GCC (Qt y libusb se copian con scripts/deploy-windows.sh)
-  target_link_options(kepyur-desktop PRIVATE -static-libgcc -static-libstdc++)
+  target_link_options(FPVDesktopWiFiReceiver PRIVATE -static-libgcc -static-libstdc++)
 endif()
 
 include(GNUInstallDirs)
-install(TARGETS kepyur-desktop RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+install(TARGETS FPVDesktopWiFiReceiver RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 if(UNIX AND NOT APPLE)
-  install(FILES packaging/linux/kepyur-desktop.desktop DESTINATION ${CMAKE_INSTALL_DATADIR}/applications)
+  install(FILES packaging/linux/FPVDesktopWiFiReceiver.desktop DESTINATION ${CMAKE_INSTALL_DATADIR}/applications)
+  foreach(n 16 24 32 48 64 128 256 512)
+    install(FILES assets/icons/app-${n}.png DESTINATION ${CMAKE_INSTALL_DATADIR}/icons/hicolor/${n}x${n}/apps
+            RENAME FPVDesktopWiFiReceiver.png)
+  endforeach()
   install(FILES packaging/linux/60-kepyur.rules DESTINATION lib/udev/rules.d)
 endif()

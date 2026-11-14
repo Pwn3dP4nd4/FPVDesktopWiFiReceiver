@@ -21,9 +21,18 @@ void VideoWidget::paintEvent(QPaintEvent *) {
     QPainter p(this);
     p.fillRect(rect(), Qt::black);
     if (frame_.isNull()) {
+        QRect textRect = rect().adjusted(20, 20, -20, -20);
+        if (!logo_.isNull() && height() > 300) {
+            const QSize ls = logo_.size() / logo_.devicePixelRatio();
+            const QRect lr(QPoint((width() - ls.width()) / 2, height() / 2 - ls.height() - 10), ls);
+            p.setOpacity(0.9);
+            p.drawPixmap(lr, logo_);
+            p.setOpacity(1.0);
+            textRect.setTop(lr.bottom() + 20);
+        }
         if (!placeholder_.isEmpty()) {
             p.setPen(QColor(180, 180, 180));
-            p.drawText(rect().adjusted(20, 20, -20, -20), Qt::AlignCenter | Qt::TextWordWrap, placeholder_);
+            p.drawText(textRect, Qt::AlignHCenter | Qt::AlignTop | Qt::TextWordWrap, placeholder_);
         }
     } else {
         // Analogico: 4:3 sea cual sea la resolucion del fotograma

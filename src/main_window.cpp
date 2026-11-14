@@ -1,24 +1,45 @@
 #include "main_window.h"
 
+#include <QActionGroup>
+#include <QApplication>
+#include <QCloseEvent>
 #include <QComboBox>
 #include <QDateTime>
+#include <QDesktopServices>
 #include <QDir>
+#include <QFile>
 #include <QFormLayout>
 #include <QHBoxLayout>
 #include <QKeyEvent>
 #include <QLabel>
 #include <QListWidget>
+#include <QMenuBar>
 #include <QMessageBox>
 #include <QPushButton>
+#include <QSettings>
 #include <QStandardPaths>
 #include <QStatusBar>
+#include <QUrl>
 #include <QVBoxLayout>
 
 #include "spectrum.h"  // kp::fpv_channels(): la tabla de canales de kepyur
 #include "video_widget.h"
 
+namespace {
+const char *kAppName = "FPVDesktopWiFiReceiver";
+const char *kRepoUrl = "https://github.com/Pwn3dP4nd4/FPVDesktopWiFiReceiver";
+}  // namespace
+
+QSettings &MainWindow::settings() {
+    // INI en %APPDATA%\FPVDesktopWiFiReceiver (Windows) o ~/.config/FPVDesktopWiFiReceiver (Linux)
+    static QSettings s(QSettings::IniFormat, QSettings::UserScope, kAppName, kAppName);
+    return s;
+}
+
 MainWindow::MainWindow(Backend *backend, QWidget *parent) : QMainWindow(parent), backend_(backend) {
-    setWindowTitle(QStringLiteral("kepyur desktop %1 [%2]").arg(KP_VERSION, backend->name()));
+    setWindowTitle(backend->name() == QLatin1String("demo")
+                       ? QStringLiteral("%1 %2 [demo]").arg(kAppName, KP_VERSION)
+                       : QStringLiteral("%1 %2").arg(kAppName, KP_VERSION));
 
     auto *central = new QWidget;
     auto *h = new QHBoxLayout(central);
@@ -52,12 +73,16 @@ MainWindow::MainWindow(Backend *backend, QWidget *parent) : QMainWindow(parent),
 #ifdef _WIN32
     // WinUSB no sostiene de forma estable las ~24.400 transferencias/s de 40 MS/s (la version web de kepyur
     // tambien ve a 20). Misma imagen: el filtro RX deja +-10 MHz en ambos casos. El escaneo sigue a 40 MS/s.
-    rate_->setCurrentIndex(1);
+    const int defaultRate = 1;
+#else
+    const int defaultRate = 0;
 #endif
+    rate_->setCurrentIndex(qBound(0, settings().value("rateIndex", defaultRate).toInt(), 1));
     rate_->setToolTip(tr("Muestreo al ver un canal. 20 MS/s da la misma imagen; 40 MS/s necesita USB 3 y un host rapido."));
     gain_ = new QComboBox;
     gain_->addItem(tr("AGC"), -1.0);
     for (int db : {10, 20, 30, 40, 50}) gain_->addItem(QStringLiteral("%1 dB").arg(db), double(db));
+    gain_->setCurrentIndex(qBound(0, settings().value("gainIndex", 0).toInt(), gain_->count() - 1));
     form->addRow(tr("Muestreo"), rate_);
     form->addRow(tr("Ganancia"), gain_);
     left->addLayout(form);
@@ -73,11 +98,13 @@ MainWindow::MainWindow(Backend *backend, QWidget *parent) : QMainWindow(parent),
     left->addWidget(info_);
 
     video_ = new VideoWidget;
+    video_->setLogo(QPixmap(QStringLiteral(":/icons/app-128.png")));
     video_->setPlaceholder(tr("Pulsa \"Conectar adaptador\" y luego \"Escanear\".\n\n"
                               "F / doble clic: pantalla completa   O: OSD   Esc: salir de pantalla completa"));
     h->addWidget(side_);
     h->addWidget(video_, 1);
     setCentralWidget(central);
+    buildMenus();
 
     // GUI -> backend (otro hilo: conexiones en cola)
     connect(this, &MainWindow::requestOpen, backend, &Backend::openDevice);
@@ -108,10 +135,7 @@ MainWindow::MainWindow(Backend *backend, QWidget *parent) : QMainWindow(parent),
             onOpened(false, {});
             return;
         }
-        opening_ = true;
-        connectBtn_->setEnabled(false);
-        connectBtn_->setText(tr("Conectando..."));
-        emit requestOpen();
+        connectAdapter(true);
     });
     connect(scanBtn_, &QPushButton::clicked, this, [this] {
         list_->clear();
@@ -126,15 +150,17 @@ MainWindow::MainWindow(Backend *backend, QWidget *parent) : QMainWindow(parent),
     });
     connect(channels_, &QComboBox::activated, this, [this] { watchChannelFromCombo(); });
     connect(rate_, &QComboBox::activated, this, [this] {
+        settings().setValue("rateIndex", rate_->currentIndex());
         emit requestWatchRate(rate_->currentData().toInt());
         if (watching_ > 0) emit requestWatch(watching_);  // la tasa se aplica en el siguiente watch()
     });
     connect(gain_, &QComboBox::activated, this, [this] {
+        settings().setValue("gainIndex", gain_->currentIndex());
         emit requestGain(gain_->currentData().toDouble());
         if (watching_ > 0) emit requestWatch(watching_);
     });
     connect(recBtn_, &QPushButton::clicked, this, [this] {
-        QString dir = QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation) + "/kepyur";
+        const QString dir = recordingsDir();
         QDir().mkpath(dir);
         const QString prefix = dir + "/rec-" + QDateTime::currentDateTime().toString("yyyyMMdd-HHmmss");
         emit requestRecord(5.0, prefix);
@@ -143,6 +169,96 @@ MainWindow::MainWindow(Backend *backend, QWidget *parent) : QMainWindow(parent),
     connect(video_, &VideoWidget::doubleClicked, this, &MainWindow::toggleFullScreen);
 
     onOpened(false, {});
+    if (!restoreGeometry(settings().value("geometry").toByteArray())) resize(1100, 660);
+}
+
+MainWindow::~MainWindow() = default;
+
+void MainWindow::buildMenus() {
+    QMenu *file = menuBar()->addMenu(tr("&Archivo"));
+    file->addAction(tr("Abrir carpeta de &grabaciones"), this, [this] {
+        QDir().mkpath(recordingsDir());
+        QDesktopServices::openUrl(QUrl::fromLocalFile(recordingsDir()));
+    });
+    file->addAction(tr("Abrir carpeta del &log"), this, [] {
+        QDesktopServices::openUrl(QUrl::fromLocalFile(QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation)));
+    });
+#ifdef _WIN32
+    file->addAction(tr("Crear acceso directo en el &escritorio"), this, [this] {
+        const QString lnk = QStandardPaths::writableLocation(QStandardPaths::DesktopLocation) +
+                            QStringLiteral("/%1.lnk").arg(kAppName);
+        QFile::remove(lnk);
+        if (QFile::link(QApplication::applicationFilePath(), lnk))
+            statusBar()->showMessage(tr("Acceso directo creado en el escritorio"), 6000);
+        else
+            QMessageBox::warning(this, kAppName, tr("No se pudo crear el acceso directo."));
+    });
+#endif
+    file->addSeparator();
+    file->addAction(tr("&Salir"), QKeySequence::Quit, this, &QWidget::close);
+
+    QMenu *opt = menuBar()->addMenu(tr("&Opciones"));
+    autoConnectAct_ = opt->addAction(tr("&Conectar el adaptador al abrir"));
+    autoConnectAct_->setCheckable(true);
+    autoConnectAct_->setChecked(settings().value("autoConnect", true).toBool());
+    connect(autoConnectAct_, &QAction::toggled, this, [](bool on) { settings().setValue("autoConnect", on); });
+    opt->addSeparator();
+    opt->addSection(tr("Al conectar"));
+    auto *grp = new QActionGroup(this);
+    resumeLastAct_ = opt->addAction(tr("Volver al &ultimo canal visto"));
+    QAction *scanAct = opt->addAction(tr("&Escanear las bandas"));
+    for (QAction *a : {resumeLastAct_, scanAct}) {
+        a->setCheckable(true);
+        grp->addAction(a);
+    }
+    (settings().value("resumeLast", true).toBool() ? resumeLastAct_ : scanAct)->setChecked(true);
+    connect(resumeLastAct_, &QAction::toggled, this, [](bool on) { settings().setValue("resumeLast", on); });
+
+    QMenu *help = menuBar()->addMenu(tr("A&yuda"));
+    help->addAction(tr("&Manual y codigo (GitHub)"), this, [] { QDesktopServices::openUrl(QUrl(QString::fromLatin1(kRepoUrl))); });
+    help->addAction(tr("&Acerca de %1").arg(kAppName), this, &MainWindow::showAbout);
+}
+
+void MainWindow::showAbout() {
+    QMessageBox box(this);
+    box.setWindowTitle(tr("Acerca de %1").arg(kAppName));
+    box.setIconPixmap(QPixmap(QStringLiteral(":/icons/app-128.png")));
+    box.setTextFormat(Qt::RichText);
+    box.setText(tr("<h3>%1 %2</h3>"
+                   "<p>Receptor de video FPV analogico de 5.8 GHz con un adaptador WiFi USB RTL8812BU, "
+                   "para Windows y Linux.</p>"
+                   "<p>Usa el mismo nucleo que la app Android "
+                   "<a href='https://github.com/gilankpam/kepyur'>kepyur</a> (gilankpam), con "
+                   "<a href='https://github.com/gilankpam/wifi-sdr'>wifi-sdr</a>, "
+                   "<a href='https://github.com/snokvist/devourer'>devourer</a> y libusb.</p>"
+                   "<p>Licencia GPL-2.0 &middot; <a href='%3'>%3</a></p>")
+                    .arg(kAppName, KP_VERSION, QString::fromLatin1(kRepoUrl)));
+    box.exec();
+}
+
+QString MainWindow::recordingsDir() const {
+    return QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation) + QLatin1Char('/') + kAppName;
+}
+
+void MainWindow::startup(bool autoConnect, double watchMHz, bool forceScan) {
+    if (!autoConnect && watchMHz <= 0 && !forceScan && !autoConnectAct_->isChecked()) return;
+    pendingWatch_ = watchMHz;
+    pendingScan_ = forceScan;
+    if (pendingWatch_ <= 0 && !pendingScan_) {
+        const double last = settings().value("lastMHz", 0.0).toDouble();
+        if (resumeLastAct_->isChecked() && last > 0) pendingWatch_ = last;
+        else pendingScan_ = true;
+    }
+    connectAdapter(false);
+}
+
+void MainWindow::connectAdapter(bool userInitiated) {
+    userConnect_ = userInitiated;
+    opening_ = true;
+    connectBtn_->setEnabled(false);
+    connectBtn_->setText(tr("Conectando..."));
+    video_->setPlaceholder(tr("Conectando con el adaptador..."));
+    emit requestOpen();
 }
 
 void MainWindow::setRate(int rateSel) { rate_->setCurrentIndex(rateSel == 1 ? 0 : 1); }
@@ -163,12 +279,26 @@ void MainWindow::onOpened(bool ok, const QString &err) {
         w->setEnabled(ok);
     if (ok) {
         statusBar()->showMessage(tr("Adaptador listo"), 5000);
+        video_->setPlaceholder(tr("Adaptador listo. Escanea o elige un canal."));
         emit requestWatchRate(rate_->currentData().toInt());
+        emit requestGain(gain_->currentData().toDouble());
+        if (pendingWatch_ > 0) emit requestWatch(pendingWatch_);
+        else if (pendingScan_) emit requestScan();
+        pendingWatch_ = 0;
+        pendingScan_ = false;
+        return;
     }
-    if (!ok && !err.isEmpty()) {
-        statusBar()->showMessage(tr("No se pudo abrir el adaptador"));
-        QMessageBox::warning(this, tr("kepyur"), err);
+    pendingWatch_ = 0;
+    pendingScan_ = false;
+    if (err.isEmpty()) {
+        video_->setPlaceholder(tr("Pulsa \"Conectar adaptador\" y luego \"Escanear\".\n\n"
+                                  "F / doble clic: pantalla completa   O: OSD   Esc: salir de pantalla completa"));
+        return;
     }
+    statusBar()->showMessage(tr("No se pudo abrir el adaptador"));
+    // Al abrir el programa (conexion automatica) no se interrumpe con un dialogo: el aviso queda en el video.
+    video_->setPlaceholder(tr("No se pudo abrir el adaptador:\n%1\n\nConectalo y pulsa \"Conectar adaptador\".").arg(err));
+    if (userConnect_) QMessageBox::warning(this, kAppName, err);
 }
 
 void MainWindow::onPilots(const QVector<Pilot> &pilots) {
@@ -184,6 +314,10 @@ void MainWindow::onPilots(const QVector<Pilot> &pilots) {
 
 void MainWindow::onStatus(const RadioStatus &s) {
     watching_ = s.mode == QLatin1String("watch") ? s.watchMHz : 0;
+    if (watching_ > 0 && qAbs(watching_ - lastSaved_) > 0.5 && s.chip != QLatin1String("demo")) {
+        lastSaved_ = watching_;
+        settings().setValue("lastMHz", watching_);
+    }
     QString osd;
     if (s.mode == QLatin1String("scan")) {
         osd = tr("Escaneando %1/%2").arg(s.scanStep + 1).arg(qMax(1, s.scanSteps));
@@ -206,7 +340,11 @@ void MainWindow::onStatus(const RadioStatus &s) {
                      .arg(s.fallback ? " (fallback)" : "")
                      .arg(s.lock * 100, 0, 'f', 0)
                      .arg(s.fps, 0, 'f', 1);
-        t += QStringLiteral("perdidos: %1  reinicios: %2").arg(s.dropped).arg(s.restarts);
+        // Al escanear, cada cambio de frecuencia reinicia el stream: el contador solo dice algo al ver un canal.
+        if (s.mode == QLatin1String("watch"))
+            t += QStringLiteral("perdidos: %1  reinicios: %2").arg(s.dropped).arg(s.restarts);
+        else
+            t += QStringLiteral("perdidos: %1").arg(s.dropped);
         if (!s.rxError.isEmpty()) t += QStringLiteral("\nerror: ") + s.rxError;
         if (!s.usb3 && s.chip != QLatin1String("demo"))
             t += tr("\nAVISO: USB 2, sin 40 MS/s. Usa un puerto USB 3.");
@@ -215,15 +353,19 @@ void MainWindow::onStatus(const RadioStatus &s) {
 }
 
 void MainWindow::toggleFullScreen() {
-    if (isFullScreen()) {
-        showNormal();
-        side_->show();
-        statusBar()->show();
-    } else {
-        side_->hide();
-        statusBar()->hide();
-        showFullScreen();
-    }
+    const bool fs = !isFullScreen();
+    side_->setVisible(!fs);
+    statusBar()->setVisible(!fs);
+    menuBar()->setVisible(!fs);
+    if (fs) showFullScreen();
+    else showNormal();
+}
+
+void MainWindow::closeEvent(QCloseEvent *e) {
+    if (isFullScreen()) toggleFullScreen();
+    settings().setValue("geometry", saveGeometry());
+    settings().sync();
+    e->accept();
 }
 
 void MainWindow::keyPressEvent(QKeyEvent *e) {

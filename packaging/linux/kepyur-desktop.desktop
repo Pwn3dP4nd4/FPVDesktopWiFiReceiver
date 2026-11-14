@@ -1,8 +1,0 @@
-[Desktop Entry]
-Type=Application
-Name=kepyur desktop
-Comment=Receptor FPV analogico 5.8 GHz con adaptador RTL8812BU
-Exec=kepyur-desktop
-Icon=video-display
-Terminal=false
-Categories=AudioVideo;Video;HamRadio;

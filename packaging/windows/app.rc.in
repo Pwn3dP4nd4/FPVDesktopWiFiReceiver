@@ -1,0 +1,29 @@
+// Icono del .exe (Explorador, barra de tareas, accesos directos) y datos de version.
+#include <winver.h>
+IDI_ICON1 ICON "@CMAKE_SOURCE_DIR@/assets/icons/app.ico"
+
+VS_VERSION_INFO VERSIONINFO
+FILEVERSION @PROJECT_VERSION_MAJOR@,@PROJECT_VERSION_MINOR@,@PROJECT_VERSION_PATCH@,0
+PRODUCTVERSION @PROJECT_VERSION_MAJOR@,@PROJECT_VERSION_MINOR@,@PROJECT_VERSION_PATCH@,0
+FILEOS VOS_NT_WINDOWS32
+FILETYPE VFT_APP
+BEGIN
+  BLOCK "StringFileInfo"
+  BEGIN
+    BLOCK "040904B0"
+    BEGIN
+      VALUE "CompanyName", "FPVDesktopWiFiReceiver"
+      VALUE "FileDescription", "FPVDesktopWiFiReceiver - receptor FPV analogico 5.8 GHz"
+      VALUE "FileVersion", "@PROJECT_VERSION@"
+      VALUE "InternalName", "FPVDesktopWiFiReceiver"
+      VALUE "LegalCopyright", "GPL-2.0 (basado en kepyur, wifi-sdr y devourer)"
+      VALUE "OriginalFilename", "FPVDesktopWiFiReceiver.exe"
+      VALUE "ProductName", "FPVDesktopWiFiReceiver"
+      VALUE "ProductVersion", "@PROJECT_VERSION@"
+    END
+  END
+  BLOCK "VarFileInfo"
+  BEGIN
+    VALUE "Translation", 0x409, 1200
+  END
+END

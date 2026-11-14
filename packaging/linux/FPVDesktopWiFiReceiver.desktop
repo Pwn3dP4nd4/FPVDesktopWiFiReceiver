@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=FPVDesktopWiFiReceiver
+GenericName=Receptor FPV analogico
+Comment=Video FPV analogico 5.8 GHz con un adaptador WiFi RTL8812BU
+Exec=FPVDesktopWiFiReceiver
+Icon=FPVDesktopWiFiReceiver
+Terminal=false
+Categories=AudioVideo;Video;HamRadio;
+StartupWMClass=FPVDesktopWiFiReceiver
