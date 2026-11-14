@@ -10,6 +10,14 @@ Banco de pruebas: `test/reopen_test.cpp` (`cmake --build build/release --target 
   `oem100..103.inf`, proveedor libwdi).
 - Comprobado: tras desenchufar y enchufar, el dispositivo vuelve a tener `RtlWlanu`. Hay que pasar Zadig
   dos veces (instancia USB 2 y, tras el cambio a USB 3 que hace la app, instancia USB 3).
+- **Causa** (`pnputil /enum-devices /instanceid "USB\VID_0BDA&PID_B812S456" /drivers`): el driver
+  Realtek y el WinUSB de Zadig empatan en clasificación (`00FF0001`, mismo ID coincidente). En empate
+  Windows elige el de fecha más reciente: Realtek 2019-07-29 frente a WinUSB de libwdi 2012-06-02 (la
+  fecha de WinUSB que Zadig copia en el INF). Por eso **cualquier re-enumeración** (desenchufar, o el cambio
+  USB 2 / USB 3) vuelve a poner el Realtek. Cada pasada de Zadig deja otra copia en el almacén
+  (`oem100.inf`...`oem109.inf`).
+- Solución posible: un paquete WinUSB propio con fecha posterior a 2019, instalado una vez; Windows lo
+  preferiría en cada enumeración y no haría falta Zadig nunca más.
 
 ## 2. UsbDk como alternativa a Zadig
 
@@ -43,14 +51,16 @@ está armado, pero no envía ningún bloque; wifi-sdr reintenta y se rinde (`str
 | WinUSB (sin UsbDk instalado), 6 procesos nuevos seguidos | 6/6 |
 | WinUSB, 6 reaperturas en el mismo proceso | 6/6 |
 | WinUSB, 20 s a 40 MS/s (4 fallos de stream) y 4 reaperturas en el mismo proceso | 4/4 |
-| WinUSB, reconexión en el mismo proceso tras desenchufar en pleno stream (con Zadig por medio) | 0/1 |
+| WinUSB, reconexión en el mismo proceso tras desenchufar en pleno stream (dos veces, con y sin UsbDk instalado) | 0/2 |
+| WinUSB, proceso nuevo después de esa reconexión fallida | 0/3 |
 
 - Los fallos en rachas eran de UsbDk: con WinUSB, reabrir en el mismo proceso funciona (10/10), también
   después de fallos de stream.
-- Queda un caso sin explicar con WinUSB: tras **desenchufar en pleno stream**, la reconexión en el mismo
-  proceso abrió el chip pero el stream no arrancó, y ese proceso luego no se podía terminar (un hilo
-  bloqueado en el kernel con E/S pendiente del dispositivo desaparecido) hasta volver a desenchufar. Si es
-  eso, relanzar la app tampoco ayudaría, porque el proceso viejo no termina. Falta repetirlo sin UsbDk.
+- **Desenchufar en pleno stream deja el chip mal** (no el proceso): tras reconectar, la app recibió 85
+  bloques, llegó un paquete truncado (15.528 bytes) y desde ahí ninguno; un proceso nuevo tampoco recibe
+  nada. Relanzar la app no lo arregla. Lo único comprobado que lo recupera es cortar la alimentación
+  (desenchufar). Probar un "apagado por software" (cambio USB 3 -> USB 2 -> USB 3) no fue posible porque
+  la re-enumeración vuelve a poner el driver Realtek.
 - Descartado como causa: el reset USB, la espera entre cierre y apertura, la resolución del temporizador,
   el canal sintonizado.
 
@@ -59,5 +69,6 @@ está armado, pero no envía ningún bloque; wifi-sdr reintenta y se rinde (`str
 - Mantener WinUSB + RAW_IO (lo único estable medido) y no activar UsbDk en la app.
 - No instalar UsbDk: además de no ser fiable, rompe el cambio a USB 3 mientras está instalado.
 - La recuperación tras fallos de stream (reabrir en el mismo proceso) es válida con WinUSB.
-- Pendiente: repetir sin UsbDk la prueba de desenchufar en pleno stream antes de decidir si la
-  reconexión necesita relanzar la app.
+- Relanzar la app para recuperar no sirve (descartado con datos).
+- Lo que desbloquearía la reconexión automática es el paquete WinUSB con fecha reciente: con él, la app
+  podría recuperar el chip con el cambio USB 2 / USB 3 sin que Windows le cambie el driver.
