@@ -1,0 +1,70 @@
+name: build
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      update_deps:
+        description: "Actualizar kepyur (y lo que fije) a lo ultimo antes de compilar"
+        type: boolean
+        default: false
+  schedule:
+    - cron: "0 5 * * 1"   # lunes: comprobar que el kepyur de upstream sigue compilando
+
+jobs:
+  linux:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Submodulos
+        run: |
+          if [ "${{ github.event_name }}" = schedule ] || [ "${{ inputs.update_deps }}" = true ]; then
+            scripts/update-deps.sh
+          else
+            scripts/update-deps.sh --init
+          fi
+      - name: Dependencias
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake ninja-build pkg-config xxd qt6-base-dev \
+            libusb-1.0-0-dev binutils-mipsel-linux-gnu libgl1-mesa-dev
+      - run: scripts/build.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kepyur-desktop-linux-x64
+          path: build/release/kepyur-desktop
+
+  windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            git make curl tar xz vim
+            mingw-w64-ucrt-x86_64-gcc mingw-w64-ucrt-x86_64-cmake mingw-w64-ucrt-x86_64-ninja
+            mingw-w64-ucrt-x86_64-pkgconf mingw-w64-ucrt-x86_64-qt6-base mingw-w64-ucrt-x86_64-libusb
+      - name: Submodulos
+        run: |
+          git config --global --add safe.directory '*'
+          if [ "${{ github.event_name }}" = schedule ] || [ "${{ inputs.update_deps }}" = true ]; then
+            scripts/update-deps.sh
+          else
+            scripts/update-deps.sh --init
+          fi
+      - name: Cache binutils mipsel
+        uses: actions/cache@v4
+        with:
+          path: tools/mipsel-binutils
+          key: mipsel-binutils-2.43.1-ucrt64-${{ hashFiles('scripts/get-mips-binutils.sh') }}
+      - run: scripts/build.sh
+      - run: scripts/deploy-windows.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kepyur-desktop-windows-x64
+          path: dist/kepyur-desktop

@@ -1,0 +1,58 @@
+#!/usr/bin/env bash
+# Compila kepyur-desktop. Linux, o Windows dentro de la consola "MSYS2 UCRT64".
+#   scripts/build.sh            backend real (adaptador RTL8812BU) -> build/release/kepyur-desktop[.exe]
+#   scripts/build.sh --demo     solo GUI + backend simulado (sin binutils MIPS ni libusb)
+#   scripts/build.sh --deps     instalar antes las dependencias del sistema (apt / pacman)
+set -euo pipefail
+ROOT=$(cd "$(dirname "$0")/.." && pwd)
+cd "$ROOT"
+RADIO=ON
+DEPS=0
+for a in "$@"; do
+  case "$a" in
+    --demo) RADIO=OFF ;;
+    --deps) DEPS=1 ;;
+    *) echo "uso: $0 [--demo] [--deps]" >&2; exit 2 ;;
+  esac
+done
+
+case "$(uname -s)" in
+  MINGW*|MSYS*) OS=windows ;;
+  Linux) OS=linux ;;
+  *) OS=other ;;
+esac
+
+if [ "$DEPS" = 1 ]; then
+  if [ "$OS" = windows ]; then
+    [ "${MSYSTEM:-}" = UCRT64 ] || { echo "Abre la consola 'MSYS2 UCRT64'" >&2; exit 1; }
+    pacman -S --needed --noconfirm git make curl tar xz vim \
+      mingw-w64-ucrt-x86_64-{gcc,cmake,ninja,pkgconf,qt6-base,libusb}
+  elif command -v apt-get >/dev/null; then
+    sudo apt-get update
+    sudo apt-get install -y build-essential cmake ninja-build pkg-config git xxd qt6-base-dev \
+      libusb-1.0-0-dev binutils-mipsel-linux-gnu libgl1-mesa-dev
+  elif command -v dnf >/dev/null; then
+    sudo dnf install -y gcc-c++ cmake ninja-build pkgconf git vim-common qt6-qtbase-devel libusb1-devel \
+      make curl texinfo
+  elif command -v pacman >/dev/null; then
+    sudo pacman -S --needed --noconfirm base-devel cmake ninja pkgconf git vim qt6-base libusb
+  else
+    echo "Gestor de paquetes no reconocido: instala Qt6 (Widgets), libusb-1.0, cmake, ninja, xxd." >&2
+  fi
+fi
+
+[ -f third_party/kepyur/native/CMakeLists.txt ] || scripts/update-deps.sh --init
+
+ARGS=(-DKP_WITH_RADIO=$RADIO)
+if [ "$RADIO" = ON ]; then
+  PREFIX=$(scripts/get-mips-binutils.sh || BUILD_ANYWAY=1 scripts/get-mips-binutils.sh)
+  ARGS+=(-DKEPYUR_MIPS_PREFIX="$PREFIX")
+fi
+BUILD=build/release
+[ "$RADIO" = OFF ] && BUILD=build/demo
+cmake -S . -B "$BUILD" -G Ninja -DCMAKE_BUILD_TYPE=Release "${ARGS[@]}"
+cmake --build "$BUILD" --target kepyur-desktop
+echo
+echo "OK: $ROOT/$BUILD/kepyur-desktop$([ "$OS" = windows ] && echo .exe)"
+[ "$OS" = windows ] && echo "Carpeta portable con las DLL: scripts/deploy-windows.sh"
+exit 0
