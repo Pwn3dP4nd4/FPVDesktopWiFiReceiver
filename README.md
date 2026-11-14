@@ -1,59 +1,68 @@
 <p align="center"><img src="assets/icons/app-128.png" width="96" alt="logo"></p>
 
+<p align="center"><b>English</b> · <a href="README.es.md">Español</a></p>
+
 # FPVDesktopWiFiReceiver
 
-Receptor de vídeo FPV analógico de 5,8 GHz para **Windows y Linux** usando un adaptador WiFi USB **RTL8812BU**
-como SDR. Es la versión de escritorio (Qt 6) de [kepyur](https://github.com/gilankpam/kepyur) (de
-gilankpam): usa **exactamente el mismo núcleo nativo que la app Android** (`native/dsp` para decodificar el
-vídeo y `native/radio` con [wifi-sdr](https://github.com/gilankpam/wifi-sdr) +
-[devourer](https://github.com/snokvist/devourer) + libusb). La GUI sustituye a la parte JNI/Kotlin de
-Android.
+Analog 5.8 GHz FPV video receiver for **Windows and Linux** that uses an **RTL8812BU** USB WiFi adapter as an
+SDR. It is the desktop (Qt 6) version of [kepyur](https://github.com/gilankpam/kepyur) (by gilankpam): it uses
+**exactly the same native core as the Android app** (`native/dsp` decodes the video, `native/radio` drives the
+adapter through [wifi-sdr](https://github.com/gilankpam/wifi-sdr) + [devourer](https://github.com/snokvist/devourer)
++ libusb). The GUI replaces the Android app's JNI/Kotlin layer.
 
-Adaptadores: cualquier RTL8812BU — BrosTrend AC1200 (AC1L/AC3L/AC5L, USB `0bda:b812`), TP-Link Archer T4U v3
-(`2357:0115`), T3U (`2357:012d`), T3U Plus (`2357:0138`). Probado con un BrosTrend AC1200 (`0bda:b812`).
-Hace falta un **puerto USB 3** para 40 MS/s (con USB 2 funciona más limitado, a 20 MS/s o menos).
+Adapters: any RTL8812BU — BrosTrend AC1200 (AC1L/AC3L/AC5L, USB `0bda:b812`), TP-Link Archer T4U v3
+(`2357:0115`), T3U (`2357:012d`), T3U Plus (`2357:0138`). Tested with a BrosTrend AC1200 (`0bda:b812`).
+A **USB 3 port** is needed for 40 MS/s (on USB 2 it works with less, at 20 MS/s or lower).
 
-## Cómo funciona la integración con kepyur (Android)
+## Download
+
+Windows 10/11 x64: download the `.zip` of the latest version from
+[Releases](https://github.com/Pwn3dP4nd4/FPVDesktopWiFiReceiver/releases/latest), unzip it and double-click
+`FPVDesktopWiFiReceiver.exe`. Before that, install the WinUSB driver for the adapter once (see
+[Windows 10/11](#windows-1011), step 3). The same page has an x64 Linux binary (it needs the system's Qt 6 and
+libusb), or build it as explained below.
+
+## How the integration with kepyur (Android) works
 
 ```
 FPVDesktopWiFiReceiver/
-├── src/                     GUI Qt: ventana, vídeo, backend real y backend demo
-├── third_party/kepyur/      submódulo -> github.com/gilankpam/kepyur  (SIN modificar)
-│   ├── native/dsp, native/radio    el núcleo que también compila la app Android
-│   └── third_party/wifi-sdr, libusb (submódulos fijados por kepyur)
+├── src/                     Qt GUI: window, video, real backend and demo backend
+├── third_party/kepyur/      submodule -> github.com/gilankpam/kepyur  (UNMODIFIED)
+│   ├── native/dsp, native/radio    the core the Android app also builds
+│   └── third_party/wifi-sdr, libusb (submodules pinned by kepyur)
 │       └── external/devourer
-├── compat/win32/            shim de 2 funciones POSIX para Windows (en vez de parchear kepyur)
-├── scripts/                 build, actualización de dependencias, binutils MIPS, despliegue Windows
-├── assets/                  logo (logo.svg) e iconos generados (scripts/make-icons.sh)
-└── packaging/               Linux: regla udev y .desktop · Windows: icono y versión del .exe
+├── compat/win32/            shim for 2 POSIX functions on Windows (instead of patching kepyur)
+├── scripts/                 build, dependency updates, MIPS binutils, Windows deployment
+├── assets/                  logo (logo.svg) and generated icons (scripts/make-icons.sh)
+└── packaging/               Linux: udev rule and .desktop · Windows: .exe icon and version info
 ```
 
-- `src/radio_backend.cpp` hace lo mismo que `native/jni/kepyur_jni.cpp` en Android: crea un `kp::Radio`,
-  pide el cambio USB 2 → USB 3 (`wsdr::request_usb3`), abre el adaptador, y lanza `scan()` / `watch()`.
-  Los fotogramas (`kp::Frame`, RGBX 720×480/576) salen como `QImage` hacia la ventana en vez de a una
-  `Surface`; el estado se lee de `Radio::status_json()` igual que la app.
-- La tabla de canales (`kp::fpv_channels()`) y la detección de pilotos son las de kepyur.
-- Ninguna dependencia está forkeada ni parcheada: todo upstream se compila tal cual con
-  `add_subdirectory(third_party/kepyur/native)`. Lo único específico de Windows es `compat/win32/sys/resource.h`
-  (`gettid`/`setpriority` → `SetThreadPriority`), que solo entra en el include path en Windows.
+- `src/radio_backend.cpp` does what `native/jni/kepyur_jni.cpp` does on Android: it creates a `kp::Radio`,
+  requests the USB 2 → USB 3 switch (`wsdr::request_usb3`), opens the adapter and runs `scan()` / `watch()`.
+  Frames (`kp::Frame`, RGBX 720×480/576) go to the window as a `QImage` instead of to a `Surface`; status is
+  read from `Radio::status_json()`, as the app does.
+- The channel table (`kp::fpv_channels()`) and pilot detection are kepyur's.
+- No dependency is forked or patched: all upstream code is built as is with
+  `add_subdirectory(third_party/kepyur/native)`. The only Windows-specific piece is `compat/win32/sys/resource.h`
+  (`gettid`/`setpriority` → `SetThreadPriority`), which is only on the include path on Windows.
 
-## Actualizar las dependencias cuando haya mejoras en los repos originales
+## Updating the dependencies when the original repositories improve
 
 ```bash
-scripts/update-deps.sh          # kepyur -> último main; wifi-sdr/devourer/libusb -> lo que kepyur fije
-scripts/build.sh                # recompilar y probar
+scripts/update-deps.sh          # kepyur -> latest main; wifi-sdr/devourer/libusb -> whatever kepyur pins
+scripts/build.sh                # rebuild and test
 git commit -am "deps: kepyur $(git -C third_party/kepyur rev-parse --short HEAD)"
 ```
 
-`scripts/update-deps.sh --latest` además lleva wifi-sdr y devourer a la última versión de sus ramas (sin
-esperar a que kepyur las fije; experimental). El CI de GitHub (`.github/workflows/build.yml`) también se puede
-lanzar a mano con la opción "actualizar dependencias" para comprobar que lo último sigue compilando en
-Linux y Windows.
+`scripts/update-deps.sh --latest` also moves wifi-sdr and devourer to the latest version of their branches
+(without waiting for kepyur to pin them; experimental). The GitHub CI (`.github/workflows/build.yml`) can also be
+run by hand with the "update dependencies" option to check that the latest code still builds on Linux and
+Windows, and it does so every Monday on its own.
 
-## Compilar
+## Building
 
-Primero clona con los submódulos (no uses `--recursive`: devourer arrastra GBs de drivers de referencia
-que no hacen falta):
+First clone with the submodules (don't use `--recursive`: devourer pulls in GBs of reference drivers that are
+not needed):
 
 ```bash
 git clone https://github.com/Pwn3dP4nd4/FPVDesktopWiFiReceiver.git
@@ -61,98 +70,102 @@ cd FPVDesktopWiFiReceiver
 scripts/update-deps.sh --init
 ```
 
-### Linux (Debian/Ubuntu; Fedora/Arch también vía `--deps`)
+### Linux (Debian/Ubuntu; Fedora/Arch also through `--deps`)
 
 ```bash
-scripts/build.sh --deps         # instala Qt6, libusb, binutils-mipsel-linux-gnu, xxd... y compila
+scripts/build.sh --deps         # installs Qt6, libusb, binutils-mipsel-linux-gnu, xxd... and builds
 build/release/FPVDesktopWiFiReceiver
-sudo cmake --install build/release   # opcional: menú de aplicaciones con icono + regla udev
+sudo cmake --install build/release   # optional: application menu entry with icon + udev rule
 ```
 
-Permisos USB (una vez), y desenchufa/enchufa el adaptador:
+USB permissions (once), then unplug and replug the adapter:
 
 ```bash
 sudo cp packaging/linux/60-kepyur.rules /etc/udev/rules.d/ && sudo udevadm control --reload && sudo udevadm trigger
 ```
 
-El driver del kernel `rtw88_8822bu` se desconecta solo al abrir el adaptador.
+The kernel driver `rtw88_8822bu` is detached automatically when the adapter is opened.
 
 ### Windows 10/11
 
-1. Instala [MSYS2](https://www.msys2.org) (`winget install MSYS2.MSYS2`).
-2. Desde PowerShell, en la carpeta del repo:
+1. Install [MSYS2](https://www.msys2.org) (`winget install MSYS2.MSYS2`).
+2. From PowerShell, in the repository folder:
 
    ```powershell
    .\scripts\build-windows.ps1 -Deps
    ```
 
-   La primera vez compila GNU binutils para `mipsel` (wifi-sdr ensambla el programa que corre dentro del chip
-   con ellas y MSYS2 no las empaqueta): 5-10 minutos, se guarda en `tools/`. Resultado: carpeta portable
-   `dist\FPVDesktopWiFiReceiver\` con Qt y libusb incluidos. **Se abre con doble clic en
-   `FPVDesktopWiFiReceiver.exe`**, sin consola ni MSYS2; se puede copiar a cualquier PC con Windows 10/11 x64.
-   *Archivo → Crear acceso directo en el escritorio* deja un icono para abrirlo.
+   The first time it builds GNU binutils for `mipsel` (wifi-sdr assembles the program that runs inside the chip
+   with them, and MSYS2 does not package them): 5-10 minutes, cached in `tools/`. Result: the portable folder
+   `dist\FPVDesktopWiFiReceiver\` with Qt and libusb included. **Open it by double-clicking
+   `FPVDesktopWiFiReceiver.exe`**, with no console or MSYS2; the folder can be copied to any Windows 10/11 x64
+   PC. *Archivo → Crear acceso directo en el escritorio* (File → Create desktop shortcut) adds an icon to open it.
 
-   (O desde la consola *MSYS2 UCRT64*: `scripts/build.sh --deps`, que también deja la carpeta lista.)
+   (Or from the *MSYS2 UCRT64* console: `scripts/build.sh --deps`, which also leaves the folder ready.)
 
-   Sin compilar: cada versión publicada (`git tag v0.2.0 && git push --tags`) deja un `.zip` para Windows en
-   [Releases](https://github.com/Pwn3dP4nd4/FPVDesktopWiFiReceiver/releases), y cada push uno en los
-   *artifacts* de [Actions](https://github.com/Pwn3dP4nd4/FPVDesktopWiFiReceiver/actions).
+   Without building: every published version (`git tag v0.2.0 && git push --tags`) leaves a Windows `.zip` in
+   [Releases](https://github.com/Pwn3dP4nd4/FPVDesktopWiFiReceiver/releases), and every push one in the
+   *artifacts* of [Actions](https://github.com/Pwn3dP4nd4/FPVDesktopWiFiReceiver/actions).
 
-3. **Driver WinUSB** con [Zadig](https://zadig.akeo.ie): *Options → List All Devices* → el adaptador
+3. **WinUSB driver** with [Zadig](https://zadig.akeo.ie): *Options → List All Devices* → the adapter
    ("Realtek 8812BU Wireless LAN 802.11ac USB NIC", USB ID `0BDA B812`) → **WinUSB** → *Replace Driver*.
 
-   **Hay que hacerlo dos veces la primera vez**: el RTL8812BU arranca en USB 2; al pulsar *Conectar*, la app
-   lo pasa a USB 3 (igual que la app Android) y Windows lo ve como un dispositivo *nuevo*, otra vez con el
-   driver Realtek. La app avisa con un mensaje: repite Zadig sin desenchufar y vuelve a pulsar *Conectar*.
-   Después ya queda WinUSB para ese puerto USB (si cambias de puerto, puede tocar repetirlo).
+   **The first time it has to be done twice**: the RTL8812BU starts on USB 2; when you press *Conectar adaptador* (Connect adapter), the app
+   switches it to USB 3 (as the Android app does) and Windows sees it as a *new* device, with the Realtek driver
+   again. The app says so in a message: run Zadig again without unplugging and press *Conectar adaptador* again. After that
+   it stays on WinUSB for that USB port (on a different port you may have to repeat it).
 
-   El adaptador deja de funcionar como tarjeta WiFi normal en ese PC; para volver atrás: Administrador de
-   dispositivos → el dispositivo → Desinstalar (marcando eliminar el driver) y reenchufar.
+   The adapter stops working as a normal WiFi card on that PC; to go back: Device Manager → the device →
+   Uninstall (ticking "delete the driver") and replug it.
 
-### Notas de Windows
+### Windows notes
 
-- **WinUSB RAW_IO**: sin él, WinUSB entrega las lecturas bulk de una en una y el chip pierde su deadline
-  (`deadline: bank 0 ended ... us after due`) incluso a 20 MS/s. `compat/win32/winusb_raw_io.cpp` lo activa en
-  el endpoint de streaming (0x84) envolviendo `libusb_submit_transfer` al enlazar (`-Wl,--wrap`), sin tocar
-  wifi-sdr. Necesita libusb ≥ 1.0.30 (la de MSYS2 lo es). `KP_RAW_IO=0` lo desactiva (diagnóstico).
-- **20 MS/s por defecto al ver un canal** (seleccionable en la GUI o con `--rate 40`): a 40 MS/s hacen falta
-  ~24.400 transferencias USB/s y en Windows aparecen fallos de deadline cada pocos segundos (kepyur entonces
-  cae a 20 MS/s solo). La imagen es la misma: el filtro RX deja ±10 MHz en ambos casos. El escaneo sí va a
-  40 MS/s (capturas cortas) sin problemas.
-- Si el receptor de wifi-sdr se rinde tras varios fallos seguidos, la app reabre el adaptador sola y vuelve al
-  canal (como mucho una vez cada 15 s).
-- Probado con BrosTrend AC1200 (`0bda:b812`) en USB 3, Windows 11: escaneo completo de 29 pasos a 40 MS/s sin
-  fallos; 2 minutos viendo a 20 MS/s con 0 bancos perdidos y 0 reinicios.
+- **WinUSB RAW_IO**: without it, WinUSB hands the bulk reads to the USB stack one at a time and the chip misses
+  its deadline (`deadline: bank 0 ended ... us after due`) even at 20 MS/s. `compat/win32/winusb_raw_io.cpp`
+  turns it on for the streaming endpoint (0x84) by wrapping `libusb_submit_transfer` at link time
+  (`-Wl,--wrap`), without touching wifi-sdr. It needs libusb ≥ 1.0.30 (MSYS2's is). `KP_RAW_IO=0` turns it off
+  (diagnostics).
+- **20 MS/s by default when watching a channel** (selectable in the GUI or with `--rate 40`): 40 MS/s needs
+  ~24,400 USB transfers/s, and on Windows deadline faults show up every few seconds (kepyur then falls back to
+  20 MS/s on its own). The picture is the same: the RX filter passes ±10 MHz in both cases. Scanning does run
+  at 40 MS/s (short captures) without problems.
+- If the wifi-sdr receiver gives up after several faults in a row, the app reopens the adapter by itself and
+  goes back to the channel (at most once every 15 s).
+- Tested with a BrosTrend AC1200 (`0bda:b812`) on USB 3, Windows 11: full 29-step scan at 40 MS/s with no
+  faults; 2 minutes watching at 20 MS/s with 0 banks dropped and 0 restarts.
 
-## Uso
+## Usage
 
-Abre `FPVDesktopWiFiReceiver.exe` (o el icono del menú en Linux): **conecta el adaptador solo** y vuelve al
-último canal que estabas viendo, o escanea si es la primera vez. No hace falta ninguna línea de comandos.
+Open `FPVDesktopWiFiReceiver.exe` (or the menu icon on Linux): it **connects the adapter by itself** and goes
+back to the last channel you were watching, or scans the first time. No command line needed.
 
-- **Conectar adaptador / Desconectar** (tarda ~5 s en arrancar el chip; si estaba en USB 2 primero lo pasa a USB 3).
-  Si al abrir no encuentra el adaptador, lo indica en la zona del vídeo: enchúfalo y pulsa *Conectar adaptador*.
-- **Escanear 5.8 GHz**: barre las bandas A/B/E/F/R y L, lista los pilotos y sintoniza el más fuerte.
-  Clic en un piloto para verlo, o elige un canal fijo en el desplegable.
-- Muestreo 40/20 MS/s y ganancia (AGC o fija); se recuerdan entre sesiones. **Grabar IQ 5 s** guarda
-  `Documentos/FPVDesktopWiFiReceiver/rec-*.cs16` (+ `.json`), reproducible con `kp_replay` de kepyur.
-- **F** o doble clic en el vídeo: pantalla completa · **O**: OSD · **Esc**: salir de pantalla completa.
-- Menú **Opciones**: *Conectar el adaptador al abrir* (activado por defecto) y qué hacer al conectar
-  (*volver al último canal* o *escanear*). Menú **Archivo**: carpetas de grabaciones y log, acceso directo
-  en el escritorio (Windows).
-- Ajustes: Windows `%APPDATA%\FPVDesktopWiFiReceiver\FPVDesktopWiFiReceiver.ini`, Linux
+The interface is in Spanish (*Conectar adaptador* = connect adapter, *Escanear* = scan, *Parar* = stop,
+*Muestreo* = sample rate, *Ganancia* = gain, *Grabar* = record).
+
+- **Connect adapter / Disconnect** (the chip takes ~5 s to start; if it was on USB 2 it is switched to USB 3
+  first). If the adapter is not found at startup, the video area says so: plug it in and press *Conectar adaptador*.
+- **Scan 5.8 GHz**: sweeps the A/B/E/F/R and L bands, lists the pilots and tunes the strongest one.
+  Click a pilot to watch it, or pick a fixed channel in the drop-down.
+- Sample rate 40/20 MS/s and gain (AGC or fixed), remembered between sessions. **Record IQ 5 s** saves
+  `Documents/FPVDesktopWiFiReceiver/rec-*.cs16` (+ `.json`), which kepyur's `kp_replay` can play back.
+- **F** or double-click on the video: full screen · **O**: OSD · **Esc**: leave full screen.
+- **Opciones** (Options) menu: *Conectar el adaptador al abrir* (connect the adapter on startup, on by default) and
+  what to do on connect (*Volver al último canal visto* = go back to the last channel, or *Escanear* = scan).
+  **Archivo** (File) menu: recordings and log folders, desktop shortcut (Windows).
+- Settings: Windows `%APPDATA%\FPVDesktopWiFiReceiver\FPVDesktopWiFiReceiver.ini`, Linux
   `~/.config/FPVDesktopWiFiReceiver/FPVDesktopWiFiReceiver.ini`.
 - Log: Windows `%LOCALAPPDATA%\FPVDesktopWiFiReceiver\FPVDesktopWiFiReceiver.log`, Linux
   `~/.local/share/FPVDesktopWiFiReceiver/FPVDesktopWiFiReceiver.log`.
 
-Opciones de línea de comandos (opcionales, para pruebas): `--demo` sin hardware (barras de color) ·
-`--auto` conectar y escanear · `--watch 5800` conectar y ver esa frecuencia · `--rate 20|40` muestreo al ver ·
-`--no-connect` no conectar al abrir · `--verbose` log de depuración.
+Command-line options (optional, for testing): `--demo` no hardware (colour bars) · `--auto` connect and scan ·
+`--watch 5800` connect and watch that frequency · `--rate 20|40` sample rate when watching · `--no-connect` don't
+connect on startup · `--verbose` debug log.
 
 ## Logo
 
-`assets/logo.svg` (un quad FPV emitiendo). Tras modificarlo, `scripts/make-icons.sh` regenera
-`assets/icons/app-*.png` y `app.ico` (necesita el módulo Qt SVG solo para eso; el programa no).
+`assets/logo.svg` (an FPV quad transmitting). After changing it, `scripts/make-icons.sh` regenerates
+`assets/icons/app-*.png` and `app.ico` (it needs the Qt SVG module only for that; the program doesn't).
 
-## Licencia
+## License
 
-GPL-2.0 (como kepyur y wifi-sdr, que es GPL-2.0-only).
+GPL-2.0 (like kepyur and wifi-sdr, which is GPL-2.0-only).

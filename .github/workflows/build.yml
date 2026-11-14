@@ -88,4 +88,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --title "FPVDesktopWiFiReceiver $GITHUB_REF_NAME"             --notes "Windows: descomprime el zip y abre FPVDesktopWiFiReceiver.exe con doble clic (driver WinUSB con Zadig: ver README). Linux: binario x64 (necesita Qt 6 y libusb del sistema)."             FPVDesktopWiFiReceiver-*.zip FPVDesktopWiFiReceiver-*.tar.gz
+          cat > notes.md <<'NOTES'
+          **English** — **Windows 10/11 x64:** unzip and double-click `FPVDesktopWiFiReceiver.exe`. Install the WinUSB driver for the adapter with Zadig first ([README](https://github.com/${{ github.repository }}/blob/main/README.md#windows-1011), step 3). **Linux x64:** binary that needs the system's Qt 6 and libusb, plus the udev rule from the README.
+
+          **Español** — **Windows 10/11 x64:** descomprime y abre `FPVDesktopWiFiReceiver.exe` con doble clic. Antes instala el driver WinUSB del adaptador con Zadig ([README](https://github.com/${{ github.repository }}/blob/main/README.es.md#windows-1011), paso 3). **Linux x64:** binario que necesita Qt 6 y libusb del sistema, y la regla udev del README.
+          NOTES
+          gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" \
+            --title "FPVDesktopWiFiReceiver $GITHUB_REF_NAME" --notes-file notes.md \
+            FPVDesktopWiFiReceiver-*.zip FPVDesktopWiFiReceiver-*.tar.gz

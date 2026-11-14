@@ -15,5 +15,5 @@ for i in 1 2 3; do
     [ -f "$OUT/$(basename "$d")" ] || cp "$d" "$OUT/"
   done
 done
-cp "$ROOT/README.md" "$OUT/"
+cp "$ROOT/README.md" "$ROOT/README.es.md" "$ROOT/LICENSE" "$OUT/"
 echo "OK: $OUT"
