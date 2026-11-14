@@ -34,6 +34,7 @@ FPVDesktopWiFiReceiver/
 ├── compat/win32/            shim for 2 POSIX functions on Windows (instead of patching kepyur)
 ├── scripts/                 build, dependency updates, MIPS binutils, Windows deployment
 ├── assets/                  logo (logo.svg) and generated icons (scripts/make-icons.sh)
+├── translations/            UI translations (Spanish: FPVDesktopWiFiReceiver_es.ts)
 └── packaging/               Linux: udev rule and .desktop · Windows: .exe icon and version info
 ```
 
@@ -99,7 +100,7 @@ The kernel driver `rtw88_8822bu` is detached automatically when the adapter is o
    with them, and MSYS2 does not package them): 5-10 minutes, cached in `tools/`. Result: the portable folder
    `dist\FPVDesktopWiFiReceiver\` with Qt and libusb included. **Open it by double-clicking
    `FPVDesktopWiFiReceiver.exe`**, with no console or MSYS2; the folder can be copied to any Windows 10/11 x64
-   PC. *Archivo → Crear acceso directo en el escritorio* (File → Create desktop shortcut) adds an icon to open it.
+   PC. *File → Create desktop shortcut* adds an icon to open it.
 
    (Or from the *MSYS2 UCRT64* console: `scripts/build.sh --deps`, which also leaves the folder ready.)
 
@@ -110,9 +111,9 @@ The kernel driver `rtw88_8822bu` is detached automatically when the adapter is o
 3. **WinUSB driver** with [Zadig](https://zadig.akeo.ie): *Options → List All Devices* → the adapter
    ("Realtek 8812BU Wireless LAN 802.11ac USB NIC", USB ID `0BDA B812`) → **WinUSB** → *Replace Driver*.
 
-   **The first time it has to be done twice**: the RTL8812BU starts on USB 2; when you press *Conectar adaptador* (Connect adapter), the app
+   **The first time it has to be done twice**: the RTL8812BU starts on USB 2; when you press *Connect adapter*, the app
    switches it to USB 3 (as the Android app does) and Windows sees it as a *new* device, with the Realtek driver
-   again. The app says so in a message: run Zadig again without unplugging and press *Conectar adaptador* again. After that
+   again. The app says so in a message: run Zadig again without unplugging and press *Connect adapter* again. After that
    it stays on WinUSB for that USB port (on a different port you may have to repeat it).
 
    The adapter stops working as a normal WiFi card on that PC; to go back: Device Manager → the device →
@@ -139,19 +140,19 @@ The kernel driver `rtw88_8822bu` is detached automatically when the adapter is o
 Open `FPVDesktopWiFiReceiver.exe` (or the menu icon on Linux): it **connects the adapter by itself** and goes
 back to the last channel you were watching, or scans the first time. No command line needed.
 
-The interface is in Spanish (*Conectar adaptador* = connect adapter, *Escanear* = scan, *Parar* = stop,
-*Muestreo* = sample rate, *Ganancia* = gain, *Grabar* = record).
+The interface is available in **English and Spanish**: **Language** menu (*System default*, *English*,
+*Español*). It changes at once, without restarting, and is remembered. By default it follows the system
+language (Spanish on a Spanish Windows/Linux, English otherwise).
 
 - **Connect adapter / Disconnect** (the chip takes ~5 s to start; if it was on USB 2 it is switched to USB 3
-  first). If the adapter is not found at startup, the video area says so: plug it in and press *Conectar adaptador*.
+  first). If the adapter is not found at startup, the video area says so: plug it in and press *Connect adapter*.
 - **Scan 5.8 GHz**: sweeps the A/B/E/F/R and L bands, lists the pilots and tunes the strongest one.
   Click a pilot to watch it, or pick a fixed channel in the drop-down.
 - Sample rate 40/20 MS/s and gain (AGC or fixed), remembered between sessions. **Record IQ 5 s** saves
   `Documents/FPVDesktopWiFiReceiver/rec-*.cs16` (+ `.json`), which kepyur's `kp_replay` can play back.
 - **F** or double-click on the video: full screen · **O**: OSD · **Esc**: leave full screen.
-- **Opciones** (Options) menu: *Conectar el adaptador al abrir* (connect the adapter on startup, on by default) and
-  what to do on connect (*Volver al último canal visto* = go back to the last channel, or *Escanear* = scan).
-  **Archivo** (File) menu: recordings and log folders, desktop shortcut (Windows).
+- **Options** menu: *Connect the adapter on startup* (on by default) and what to do on connect (*Go back to the
+  last channel* or *Scan the bands*). **File** menu: recordings and log folders, desktop shortcut (Windows).
 - Settings: Windows `%APPDATA%\FPVDesktopWiFiReceiver\FPVDesktopWiFiReceiver.ini`, Linux
   `~/.config/FPVDesktopWiFiReceiver/FPVDesktopWiFiReceiver.ini`.
 - Log: Windows `%LOCALAPPDATA%\FPVDesktopWiFiReceiver\FPVDesktopWiFiReceiver.log`, Linux
@@ -159,12 +160,22 @@ The interface is in Spanish (*Conectar adaptador* = connect adapter, *Escanear* 
 
 Command-line options (optional, for testing): `--demo` no hardware (colour bars) · `--auto` connect and scan ·
 `--watch 5800` connect and watch that frequency · `--rate 20|40` sample rate when watching · `--no-connect` don't
-connect on startup · `--verbose` debug log.
+connect on startup · `--lang en|es|system` interface language (saved) · `--verbose` debug log.
 
 ## Logo
 
 `assets/logo.svg` (an FPV quad transmitting). After changing it, `scripts/make-icons.sh` regenerates
 `assets/icons/app-*.png` and `app.ico` (it needs the Qt SVG module only for that; the program doesn't).
+
+## Translations
+
+UI texts are written in English in the code (`tr()`); the Spanish translation is
+`translations/FPVDesktopWiFiReceiver_es.ts` and is compiled into the executable. After changing texts, update the
+`.ts` files with `cmake --build build/release --target update_translations` and translate the new entries with Qt
+Linguist (or any editor). Another language: add `translations/FPVDesktopWiFiReceiver_<code>.ts` to
+`KP_TS_FILES` in `CMakeLists.txt` and an entry in the Language menu (`src/main_window.cpp`, `src/i18n.cpp`).
+Building needs Qt Linguist (`lrelease`): MSYS2 `qt6-tools`, Debian/Ubuntu `qt6-tools-dev qt6-l10n-tools`; without
+it the program builds in English only.
 
 ## License
 

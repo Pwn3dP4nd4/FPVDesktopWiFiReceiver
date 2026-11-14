@@ -26,16 +26,16 @@ if [ "$DEPS" = 1 ]; then
   if [ "$OS" = windows ]; then
     [ "${MSYSTEM:-}" = UCRT64 ] || { echo "Abre la consola 'MSYS2 UCRT64'" >&2; exit 1; }
     pacman -S --needed --noconfirm git make curl tar xz vim \
-      mingw-w64-ucrt-x86_64-{gcc,cmake,ninja,pkgconf,qt6-base,libusb}
+      mingw-w64-ucrt-x86_64-{gcc,cmake,ninja,pkgconf,qt6-base,qt6-tools,qt6-translations,libusb}
   elif command -v apt-get >/dev/null; then
     sudo apt-get update
     sudo apt-get install -y build-essential cmake ninja-build pkg-config git xxd qt6-base-dev \
-      libusb-1.0-0-dev binutils-mipsel-linux-gnu libgl1-mesa-dev
+      qt6-tools-dev qt6-l10n-tools qt6-translations-l10n libusb-1.0-0-dev binutils-mipsel-linux-gnu libgl1-mesa-dev
   elif command -v dnf >/dev/null; then
-    sudo dnf install -y gcc-c++ cmake ninja-build pkgconf git vim-common qt6-qtbase-devel libusb1-devel \
+    sudo dnf install -y gcc-c++ cmake ninja-build pkgconf git vim-common qt6-qtbase-devel qt6-linguist qt6-qttranslations libusb1-devel \
       make curl texinfo
   elif command -v pacman >/dev/null; then
-    sudo pacman -S --needed --noconfirm base-devel cmake ninja pkgconf git vim qt6-base libusb
+    sudo pacman -S --needed --noconfirm base-devel cmake ninja pkgconf git vim qt6-base qt6-tools qt6-translations libusb
   else
     echo "Gestor de paquetes no reconocido: instala Qt6 (Widgets), libusb-1.0, cmake, ninja, xxd." >&2
   fi

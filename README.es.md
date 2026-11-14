@@ -35,6 +35,7 @@ FPVDesktopWiFiReceiver/
 ├── compat/win32/            shim de 2 funciones POSIX para Windows (en vez de parchear kepyur)
 ├── scripts/                 build, actualización de dependencias, binutils MIPS, despliegue Windows
 ├── assets/                  logo (logo.svg) e iconos generados (scripts/make-icons.sh)
+├── translations/            traducciones de la interfaz (español: FPVDesktopWiFiReceiver_es.ts)
 └── packaging/               Linux: regla udev y .desktop · Windows: icono y versión del .exe
 ```
 
@@ -139,6 +140,10 @@ El driver del kernel `rtw88_8822bu` se desconecta solo al abrir el adaptador.
 Abre `FPVDesktopWiFiReceiver.exe` (o el icono del menú en Linux): **conecta el adaptador solo** y vuelve al
 último canal que estabas viendo, o escanea si es la primera vez. No hace falta ninguna línea de comandos.
 
+La interfaz está en **español e inglés**: menú **Idioma** (*Idioma del sistema*, *English*, *Español*). Cambia al
+momento, sin reiniciar, y se recuerda. Por defecto sigue el idioma del sistema (español en un Windows/Linux en
+español, inglés en otro caso).
+
 - **Conectar adaptador / Desconectar** (tarda ~5 s en arrancar el chip; si estaba en USB 2 primero lo pasa a USB 3).
   Si al abrir no encuentra el adaptador, lo indica en la zona del vídeo: enchúfalo y pulsa *Conectar adaptador*.
 - **Escanear 5.8 GHz**: barre las bandas A/B/E/F/R y L, lista los pilotos y sintoniza el más fuerte.
@@ -147,7 +152,7 @@ Abre `FPVDesktopWiFiReceiver.exe` (o el icono del menú en Linux): **conecta el 
   `Documentos/FPVDesktopWiFiReceiver/rec-*.cs16` (+ `.json`), reproducible con `kp_replay` de kepyur.
 - **F** o doble clic en el vídeo: pantalla completa · **O**: OSD · **Esc**: salir de pantalla completa.
 - Menú **Opciones**: *Conectar el adaptador al abrir* (activado por defecto) y qué hacer al conectar
-  (*volver al último canal* o *escanear*). Menú **Archivo**: carpetas de grabaciones y log, acceso directo
+  (*Volver al último canal visto* o *Escanear las bandas*). Menú **Archivo**: carpetas de grabaciones y log, acceso directo
   en el escritorio (Windows).
 - Ajustes: Windows `%APPDATA%\FPVDesktopWiFiReceiver\FPVDesktopWiFiReceiver.ini`, Linux
   `~/.config/FPVDesktopWiFiReceiver/FPVDesktopWiFiReceiver.ini`.
@@ -156,12 +161,23 @@ Abre `FPVDesktopWiFiReceiver.exe` (o el icono del menú en Linux): **conecta el 
 
 Opciones de línea de comandos (opcionales, para pruebas): `--demo` sin hardware (barras de color) ·
 `--auto` conectar y escanear · `--watch 5800` conectar y ver esa frecuencia · `--rate 20|40` muestreo al ver ·
-`--no-connect` no conectar al abrir · `--verbose` log de depuración.
+`--no-connect` no conectar al abrir · `--lang en|es|system` idioma de la interfaz (se guarda) ·
+`--verbose` log de depuración.
 
 ## Logo
 
 `assets/logo.svg` (un quad FPV emitiendo). Tras modificarlo, `scripts/make-icons.sh` regenera
 `assets/icons/app-*.png` y `app.ico` (necesita el módulo Qt SVG solo para eso; el programa no).
+
+## Traducciones
+
+Los textos de la interfaz están en inglés en el código (`tr()`); la traducción al español es
+`translations/FPVDesktopWiFiReceiver_es.ts` y va compilada dentro del ejecutable. Tras cambiar textos, actualiza
+los `.ts` con `cmake --build build/release --target update_translations` y traduce las entradas nuevas con Qt
+Linguist (o cualquier editor). Otro idioma: añade `translations/FPVDesktopWiFiReceiver_<código>.ts` a
+`KP_TS_FILES` en `CMakeLists.txt` y una entrada en el menú Idioma (`src/main_window.cpp`, `src/i18n.cpp`).
+Para compilar hace falta Qt Linguist (`lrelease`): MSYS2 `qt6-tools`, Debian/Ubuntu `qt6-tools-dev
+qt6-l10n-tools`; sin él el programa se compila solo en inglés.
 
 ## Licencia
 

@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.22)
-project(FPVDesktopWiFiReceiver VERSION 0.2.0 LANGUAGES C CXX)
+project(FPVDesktopWiFiReceiver VERSION 0.3.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -14,6 +14,7 @@ if(MSVC)
 endif()
 
 find_package(Qt6 REQUIRED COMPONENTS Widgets)
+find_package(Qt6 QUIET COMPONENTS LinguistTools)  # traducciones (lupdate/lrelease)
 
 # ---- upstream kepyur (git submodule third_party/kepyur, sin modificar) -----------------------------------------
 # native/dsp (decodificador de video) y native/radio (wifi-sdr + devourer + libusb) son exactamente los
@@ -77,10 +78,22 @@ add_executable(FPVDesktopWiFiReceiver
   src/video_widget.cpp src/video_widget.h
   src/backend.h
   src/stub_backend.cpp src/stub_backend.h
+  src/i18n.cpp src/i18n.h
   assets/icons.qrc
 )
 target_link_libraries(FPVDesktopWiFiReceiver PRIVATE Qt6::Widgets kepyur_dsp)
 target_compile_definitions(FPVDesktopWiFiReceiver PRIVATE KP_VERSION="${PROJECT_VERSION}")
+
+# ---- Idiomas: textos fuente en ingles; espanol en translations/*.ts, compilado (.qm) dentro del ejecutable ----
+# Tras cambiar textos: cmake --build build/release --target update_translations (actualiza los .ts con lupdate)
+set(KP_TS_FILES translations/FPVDesktopWiFiReceiver_es.ts)
+if(TARGET Qt6::lrelease)
+  qt_add_translations(FPVDesktopWiFiReceiver TS_FILES ${KP_TS_FILES} RESOURCE_PREFIX "/i18n"
+                      LUPDATE_OPTIONS -no-obsolete -locations none)
+else()
+  message(WARNING "Qt LinguistTools no encontrado: la interfaz solo estara en ingles "
+                  "(MSYS2: pacman -S mingw-w64-ucrt-x86_64-qt6-tools; Debian/Ubuntu: apt install qt6-tools-dev qt6-l10n-tools)")
+endif()
 if(KP_WITH_RADIO)
   target_sources(FPVDesktopWiFiReceiver PRIVATE src/radio_backend.cpp src/radio_backend.h src/usb3_switch.cpp src/usb3_switch.h)
   target_link_libraries(FPVDesktopWiFiReceiver PRIVATE kepyur_radio)

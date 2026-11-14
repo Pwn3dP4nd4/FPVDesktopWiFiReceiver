@@ -3,7 +3,9 @@
 #include <QMainWindow>
 
 class QAction;
+class QActionGroup;
 class QListWidget;
+class QMenu;
 class QPushButton;
 class QComboBox;
 class QLabel;
@@ -35,9 +37,14 @@ signals:
 protected:
     void keyPressEvent(QKeyEvent *e) override;
     void closeEvent(QCloseEvent *e) override;
+    void changeEvent(QEvent *e) override;
 
 private:
+    enum class Screen { Idle, Connecting, Ready, Error };
     void buildMenus();
+    void retranslate();  // todos los textos visibles; se llama al crear y al cambiar de idioma
+    void updatePlaceholder();
+    void updateConnectButton();
     void connectAdapter(bool userInitiated);
     void onOpened(bool ok, const QString &err);
     void onPilots(const QVector<Pilot> &p);
@@ -52,11 +59,18 @@ private:
     QPushButton *connectBtn_, *scanBtn_, *stopBtn_, *recBtn_;
     QComboBox *channels_, *rate_, *gain_;
     QListWidget *list_;
-    QLabel *info_;
+    QLabel *info_, *pilotsLabel_, *rateLabel_, *gainLabel_;
     VideoWidget *video_;
-    QAction *autoConnectAct_ = nullptr, *resumeLastAct_ = nullptr;
+    QMenu *fileMenu_ = nullptr, *optMenu_ = nullptr, *langMenu_ = nullptr, *helpMenu_ = nullptr;
+    QAction *recDirAct_ = nullptr, *logDirAct_ = nullptr, *shortcutAct_ = nullptr, *quitAct_ = nullptr;
+    QAction *autoConnectAct_ = nullptr, *onConnectSection_ = nullptr, *resumeLastAct_ = nullptr, *scanAct_ = nullptr;
+    QAction *langSystemAct_ = nullptr, *manualAct_ = nullptr, *aboutAct_ = nullptr;
+    QActionGroup *langGroup_ = nullptr;
     bool open_ = false, opening_ = false, userConnect_ = false;
     double watching_ = 0, lastSaved_ = 0;
     double pendingWatch_ = 0;   // canal a ver al terminar de conectar
     bool pendingScan_ = false;  // escanear al terminar de conectar
+    Screen screen_ = Screen::Idle;
+    QString openError_;
+    RadioStatus lastStatus_;
 };

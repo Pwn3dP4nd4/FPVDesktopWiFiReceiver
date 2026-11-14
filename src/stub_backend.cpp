@@ -15,14 +15,14 @@ void StubBackend::ensureTimer() {
 void StubBackend::openDevice() {
     ensureTimer();
     emit opened(true, {});
-    emit message(QStringLiteral("Modo demo (sin adaptador)"));
+    emit message(tr("Demo mode (no adapter)"));
 }
 
 void StubBackend::closeDevice() { stop(); }
 
 void StubBackend::startScan() {
     ensureTimer();
-    emit message(QStringLiteral("Escaneando (simulado)..."));
+    emit message(tr("Scanning (simulated)..."));
     QVector<Pilot> p;
     p.push_back({5769, 18.5, "R4", "NTSC", 0});
     p.push_back({5806, 11.2, "R5", "PAL", 0});

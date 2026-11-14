@@ -29,7 +29,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential cmake ninja-build pkg-config xxd qt6-base-dev \
-            libusb-1.0-0-dev binutils-mipsel-linux-gnu libgl1-mesa-dev
+            qt6-tools-dev qt6-l10n-tools libusb-1.0-0-dev binutils-mipsel-linux-gnu libgl1-mesa-dev
       - run: scripts/build.sh
       - uses: actions/upload-artifact@v4
         with:
@@ -51,6 +51,7 @@ jobs:
             git make curl tar xz vim
             mingw-w64-ucrt-x86_64-gcc mingw-w64-ucrt-x86_64-cmake mingw-w64-ucrt-x86_64-ninja
             mingw-w64-ucrt-x86_64-pkgconf mingw-w64-ucrt-x86_64-qt6-base mingw-w64-ucrt-x86_64-libusb
+            mingw-w64-ucrt-x86_64-qt6-tools mingw-w64-ucrt-x86_64-qt6-translations
       - name: Submodulos
         run: |
           git config --global --add safe.directory '*'

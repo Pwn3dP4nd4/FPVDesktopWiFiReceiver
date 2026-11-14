@@ -1,5 +1,6 @@
 #include "radio_backend.h"
 
+#include <QCoreApplication>
 #include <QDateTime>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -15,25 +16,31 @@
 #include "usb3_switch.h"
 
 namespace {
+// Ayuda que se anade al error de apertura. Fuera de #ifdef para que lupdate vea los tres textos.
+const char *const kHintWinUsb3 = QT_TRANSLATE_NOOP(
+    "RadioBackend",
+    "Windows: the adapter has just switched to USB 3 and Windows sees it as a NEW device (another port), with "
+    "the Realtek driver again. Run Zadig again now for this instance (Options > List All Devices > the adapter > "
+    "WinUSB > Replace Driver) and press Connect again. This is only needed once per USB port.");
+const char *const kHintWin = QT_TRANSLATE_NOOP(
+    "RadioBackend",
+    "Windows: the adapter needs the WinUSB driver. Open Zadig (https://zadig.akeo.ie), Options > List All "
+    "Devices, pick the adapter (USB ID 0BDA B812 or another RTL8812BU), WinUSB > Replace Driver. Plug it into a "
+    "USB 3 (blue) port.");
+const char *const kHintLinux = QT_TRANSLATE_NOOP(
+    "RadioBackend",
+    "Linux: the rtw88_8822bu driver must not hold the adapter and your user needs permission: sudo cp "
+    "packaging/linux/60-kepyur.rules /etc/udev/rules.d/ && sudo udevadm control --reload && sudo udevadm "
+    "trigger, then replug it. Use a USB 3 port.");
+
 QString hint(bool switchedToUsb3) {
 #ifdef _WIN32
-    if (switchedToUsb3)
-        return QStringLiteral(
-            "\n\nWindows: el adaptador acaba de pasar a USB 3 y Windows lo ve como un dispositivo NUEVO (otro "
-            "puerto), con el driver Realtek otra vez. Repite Zadig ahora para esta instancia (Options > List All "
-            "Devices > el adaptador > WinUSB > Replace Driver) y vuelve a pulsar Conectar. Solo hace falta una "
-            "vez por puerto USB.");
-    return QStringLiteral(
-        "\n\nWindows: el adaptador necesita el driver WinUSB. Abre Zadig (https://zadig.akeo.ie), "
-        "Options > List All Devices, elige el adaptador (USB ID 0BDA B812 u otro RTL8812BU), "
-        "WinUSB > Replace Driver. Conectalo a un puerto USB 3 (azul).");
+    const char *h = switchedToUsb3 ? kHintWinUsb3 : kHintWin;
 #else
-    return QStringLiteral(
-        "\n\nLinux: el driver rtw88_8822bu no debe tener el adaptador y tu usuario necesita permiso: "
-        "sudo cp packaging/linux/60-kepyur.rules /etc/udev/rules.d/ && sudo udevadm control --reload "
-        "&& sudo udevadm trigger, y vuelve a enchufarlo. Usa un puerto USB 3.");
     Q_UNUSED(switchedToUsb3);
+    const char *h = kHintLinux;
 #endif
+    return QStringLiteral("\n\n") + QCoreApplication::translate("RadioBackend", h);
 }
 }  // namespace
 
@@ -55,14 +62,14 @@ void RadioBackend::openDevice() {
 
     // Igual que la app Android: el 8812BU arranca en USB 2 tras enchufarlo; pedir el cambio a USB 3
     // (registros en RAM, nada permanente) y esperar a que se re-enumere. 40 MS/s no cabe en USB 2.
-    emit message(QStringLiteral("Buscando adaptador..."));
+    emit message(tr("Looking for the adapter..."));
     const auto sw = kpd::request_usb3_first_adapter();
     if (sw.requested) {
-        emit message(QStringLiteral("Cambiando el adaptador a USB 3..."));
+        emit message(tr("Switching the adapter to USB 3..."));
         kpd::wait_adapter(10000);
     }
 
-    emit message(QStringLiteral("Arrancando el chip (~5 s)..."));
+    emit message(tr("Starting the chip (~5 s)..."));
     try {
         radio_->open(-1);
     } catch (const std::exception &e) {
@@ -79,7 +86,7 @@ void RadioBackend::openDevice() {
 
 void RadioBackend::recover(const QString &mode, double watchMHz) {
     KP_LOGW("receptor en error (%s): reabriendo el adaptador", qPrintable(mode));
-    emit message(QStringLiteral("Receptor bloqueado: reabriendo el adaptador..."));
+    emit message(tr("Receiver stuck: reopening the adapter..."));
     poll_->stop();
     radio_->close();
     try {
@@ -92,7 +99,7 @@ void RadioBackend::recover(const QString &mode, double watchMHz) {
     if (mode == QLatin1String("watch") && watchMHz > 0) radio_->watch(watchMHz * 1e6);
     else if (mode == QLatin1String("scan")) radio_->scan();
     poll_->start();
-    emit message(QStringLiteral("Adaptador recuperado"));
+    emit message(tr("Adapter recovered"));
 }
 
 void RadioBackend::closeDevice() {

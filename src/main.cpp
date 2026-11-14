@@ -15,6 +15,7 @@
 #include <cstdio>
 #include <mutex>
 
+#include "i18n.h"
 #include "log.h"
 
 namespace {
@@ -42,21 +43,32 @@ int main(int argc, char **argv) {
     qRegisterMetaType<QVector<Pilot>>();
     qRegisterMetaType<RadioStatus>();
 
+    // Idioma guardado (o el del sistema) antes de crear ningun texto
+    i18n::apply(i18n::setting());
+
     QCommandLineParser cli;
-    cli.setApplicationDescription(QStringLiteral("FPVDesktopWiFiReceiver: receptor FPV analogico 5.8 GHz con un adaptador RTL8812BU. "
-                                                    "Sin opciones conecta el adaptador al abrir (ajustable en Opciones)."));
+    cli.setApplicationDescription(QCoreApplication::translate(
+        "main", "FPVDesktopWiFiReceiver: analog 5.8 GHz FPV receiver with an RTL8812BU adapter. "
+                "Without options it connects the adapter on startup (configurable in Options)."));
     cli.addHelpOption();
     cli.addVersionOption();
-    QCommandLineOption demo(QStringLiteral("demo"), QStringLiteral("Sin hardware: video y pilotos simulados"));
-    QCommandLineOption autoOpt(QStringLiteral("auto"), QStringLiteral("Conectar y escanear al arrancar (aunque este desactivado en Opciones)"));
-    QCommandLineOption noAuto(QStringLiteral("no-connect"), QStringLiteral("No conectar el adaptador al abrir"));
-    QCommandLineOption verbose(QStringLiteral("verbose"), QStringLiteral("Log de depuracion"));
-    QCommandLineOption watchOpt(QStringLiteral("watch"), QStringLiteral("Conectar y ver esta frecuencia al arrancar"),
+    QCommandLineOption demo(QStringLiteral("demo"), QCoreApplication::translate("main", "No hardware: simulated video and pilots"));
+    QCommandLineOption autoOpt(QStringLiteral("auto"),
+                               QCoreApplication::translate("main", "Connect and scan on startup (even if disabled in Options)"));
+    QCommandLineOption noAuto(QStringLiteral("no-connect"), QCoreApplication::translate("main", "Don't connect the adapter on startup"));
+    QCommandLineOption verbose(QStringLiteral("verbose"), QCoreApplication::translate("main", "Debug log"));
+    QCommandLineOption watchOpt(QStringLiteral("watch"), QCoreApplication::translate("main", "Connect and watch this frequency on startup"),
                                 QStringLiteral("MHz"));
-    QCommandLineOption rateOpt(QStringLiteral("rate"), QStringLiteral("Muestreo para ver: 40 o 20 (MS/s)"),
+    QCommandLineOption rateOpt(QStringLiteral("rate"), QCoreApplication::translate("main", "Sample rate when watching: 40 or 20 (MS/s)"),
                                QStringLiteral("MSps"));
-    cli.addOptions({demo, autoOpt, noAuto, verbose, watchOpt, rateOpt});
+    QCommandLineOption langOpt(QStringLiteral("lang"), QCoreApplication::translate("main", "Interface language: en, es or system (saved)"),
+                               QStringLiteral("lang"));
+    cli.addOptions({demo, autoOpt, noAuto, verbose, watchOpt, rateOpt, langOpt});
     cli.process(app);
+    if (cli.isSet(langOpt)) {
+        const QString l = cli.value(langOpt).toLower();
+        i18n::apply(l == QLatin1String("en") || l == QLatin1String("es") ? l : QString());
+    }
 
     // Log de kepyur/wifi-sdr: stderr + fichero (como kepyur.log en Android)
     const QString logDir = QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation);

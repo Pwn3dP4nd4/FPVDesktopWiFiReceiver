@@ -22,6 +22,7 @@
 #include <QUrl>
 #include <QVBoxLayout>
 
+#include "i18n.h"
 #include "spectrum.h"  // kp::fpv_channels(): la tabla de canales de kepyur
 #include "video_widget.h"
 
@@ -46,30 +47,32 @@ MainWindow::MainWindow(Backend *backend, QWidget *parent) : QMainWindow(parent),
     h->setContentsMargins(6, 6, 6, 6);
 
     side_ = new QWidget;
-    side_->setFixedWidth(250);
+    side_->setFixedWidth(260);
     auto *left = new QVBoxLayout(side_);
     left->setContentsMargins(0, 0, 0, 0);
 
-    connectBtn_ = new QPushButton(tr("Conectar adaptador"));
-    scanBtn_ = new QPushButton(tr("Escanear 5.8 GHz"));
-    stopBtn_ = new QPushButton(tr("Parar"));
+    connectBtn_ = new QPushButton;
+    scanBtn_ = new QPushButton;
+    stopBtn_ = new QPushButton;
+    recBtn_ = new QPushButton;
     left->addWidget(connectBtn_);
     left->addWidget(scanBtn_);
 
-    left->addWidget(new QLabel(tr("Pilotos encontrados (clic = ver):")));
+    pilotsLabel_ = new QLabel;
+    left->addWidget(pilotsLabel_);
     list_ = new QListWidget;
     left->addWidget(list_, 1);
 
     channels_ = new QComboBox;
-    channels_->addItem(tr("Canal manual..."), 0.0);
+    channels_->addItem(QString(), 0.0);  // "Canal manual..." (retranslate)
     for (const auto &c : kp::fpv_channels())
         channels_->addItem(QStringLiteral("%1  %2 MHz").arg(c.name).arg(c.mhz, 0, 'f', 0), c.mhz);
     left->addWidget(channels_);
 
     auto *form = new QFormLayout;
     rate_ = new QComboBox;
-    rate_->addItem(tr("40 MS/s (USB 3)"), 1);
-    rate_->addItem(tr("20 MS/s"), 2);
+    rate_->addItem(QString(), 1);
+    rate_->addItem(QStringLiteral("20 MS/s"), 2);
 #ifdef _WIN32
     // WinUSB no sostiene de forma estable las ~24.400 transferencias/s de 40 MS/s (la version web de kepyur
     // tambien ve a 20). Misma imagen: el filtro RX deja +-10 MHz en ambos casos. El escaneo sigue a 40 MS/s.
@@ -78,16 +81,16 @@ MainWindow::MainWindow(Backend *backend, QWidget *parent) : QMainWindow(parent),
     const int defaultRate = 0;
 #endif
     rate_->setCurrentIndex(qBound(0, settings().value("rateIndex", defaultRate).toInt(), 1));
-    rate_->setToolTip(tr("Muestreo al ver un canal. 20 MS/s da la misma imagen; 40 MS/s necesita USB 3 y un host rapido."));
     gain_ = new QComboBox;
-    gain_->addItem(tr("AGC"), -1.0);
+    gain_->addItem(QString(), -1.0);  // "AGC"
     for (int db : {10, 20, 30, 40, 50}) gain_->addItem(QStringLiteral("%1 dB").arg(db), double(db));
     gain_->setCurrentIndex(qBound(0, settings().value("gainIndex", 0).toInt(), gain_->count() - 1));
-    form->addRow(tr("Muestreo"), rate_);
-    form->addRow(tr("Ganancia"), gain_);
+    rateLabel_ = new QLabel;
+    gainLabel_ = new QLabel;
+    form->addRow(rateLabel_, rate_);
+    form->addRow(gainLabel_, gain_);
     left->addLayout(form);
 
-    recBtn_ = new QPushButton(tr("Grabar IQ 5 s"));
     left->addWidget(stopBtn_);
     left->addWidget(recBtn_);
 
@@ -99,8 +102,6 @@ MainWindow::MainWindow(Backend *backend, QWidget *parent) : QMainWindow(parent),
 
     video_ = new VideoWidget;
     video_->setLogo(QPixmap(QStringLiteral(":/icons/app-128.png")));
-    video_->setPlaceholder(tr("Pulsa \"Conectar adaptador\" y luego \"Escanear\".\n\n"
-                              "F / doble clic: pantalla completa   O: OSD   Esc: salir de pantalla completa"));
     h->addWidget(side_);
     h->addWidget(video_, 1);
     setCentralWidget(central);
@@ -164,10 +165,11 @@ MainWindow::MainWindow(Backend *backend, QWidget *parent) : QMainWindow(parent),
         QDir().mkpath(dir);
         const QString prefix = dir + "/rec-" + QDateTime::currentDateTime().toString("yyyyMMdd-HHmmss");
         emit requestRecord(5.0, prefix);
-        statusBar()->showMessage(tr("Grabando 5 s en %1.cs16 (+ .json)").arg(QDir::toNativeSeparators(prefix)), 10000);
+        statusBar()->showMessage(tr("Recording 5 s to %1.cs16 (+ .json)").arg(QDir::toNativeSeparators(prefix)), 10000);
     });
     connect(video_, &VideoWidget::doubleClicked, this, &MainWindow::toggleFullScreen);
 
+    retranslate();
     onOpened(false, {});
     if (!restoreGeometry(settings().value("geometry").toByteArray())) resize(1100, 660);
 }
@@ -175,63 +177,142 @@ MainWindow::MainWindow(Backend *backend, QWidget *parent) : QMainWindow(parent),
 MainWindow::~MainWindow() = default;
 
 void MainWindow::buildMenus() {
-    QMenu *file = menuBar()->addMenu(tr("&Archivo"));
-    file->addAction(tr("Abrir carpeta de &grabaciones"), this, [this] {
+    fileMenu_ = menuBar()->addMenu(QString());
+    recDirAct_ = fileMenu_->addAction(QString(), this, [this] {
         QDir().mkpath(recordingsDir());
         QDesktopServices::openUrl(QUrl::fromLocalFile(recordingsDir()));
     });
-    file->addAction(tr("Abrir carpeta del &log"), this, [] {
+    logDirAct_ = fileMenu_->addAction(QString(), this, [] {
         QDesktopServices::openUrl(QUrl::fromLocalFile(QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation)));
     });
 #ifdef _WIN32
-    file->addAction(tr("Crear acceso directo en el &escritorio"), this, [this] {
+    shortcutAct_ = fileMenu_->addAction(QString(), this, [this] {
         const QString lnk = QStandardPaths::writableLocation(QStandardPaths::DesktopLocation) +
                             QStringLiteral("/%1.lnk").arg(kAppName);
         QFile::remove(lnk);
         if (QFile::link(QApplication::applicationFilePath(), lnk))
-            statusBar()->showMessage(tr("Acceso directo creado en el escritorio"), 6000);
+            statusBar()->showMessage(tr("Desktop shortcut created"), 6000);
         else
-            QMessageBox::warning(this, kAppName, tr("No se pudo crear el acceso directo."));
+            QMessageBox::warning(this, kAppName, tr("Could not create the shortcut."));
     });
 #endif
-    file->addSeparator();
-    file->addAction(tr("&Salir"), QKeySequence::Quit, this, &QWidget::close);
+    fileMenu_->addSeparator();
+    quitAct_ = fileMenu_->addAction(QString(), QKeySequence::Quit, this, &QWidget::close);
 
-    QMenu *opt = menuBar()->addMenu(tr("&Opciones"));
-    autoConnectAct_ = opt->addAction(tr("&Conectar el adaptador al abrir"));
+    optMenu_ = menuBar()->addMenu(QString());
+    autoConnectAct_ = optMenu_->addAction(QString());
     autoConnectAct_->setCheckable(true);
     autoConnectAct_->setChecked(settings().value("autoConnect", true).toBool());
     connect(autoConnectAct_, &QAction::toggled, this, [](bool on) { settings().setValue("autoConnect", on); });
-    opt->addSeparator();
-    opt->addSection(tr("Al conectar"));
+    onConnectSection_ = optMenu_->addSection(QString());
     auto *grp = new QActionGroup(this);
-    resumeLastAct_ = opt->addAction(tr("Volver al &ultimo canal visto"));
-    QAction *scanAct = opt->addAction(tr("&Escanear las bandas"));
-    for (QAction *a : {resumeLastAct_, scanAct}) {
+    resumeLastAct_ = optMenu_->addAction(QString());
+    scanAct_ = optMenu_->addAction(QString());
+    for (QAction *a : {resumeLastAct_, scanAct_}) {
         a->setCheckable(true);
         grp->addAction(a);
     }
-    (settings().value("resumeLast", true).toBool() ? resumeLastAct_ : scanAct)->setChecked(true);
+    (settings().value("resumeLast", true).toBool() ? resumeLastAct_ : scanAct_)->setChecked(true);
     connect(resumeLastAct_, &QAction::toggled, this, [](bool on) { settings().setValue("resumeLast", on); });
 
-    QMenu *help = menuBar()->addMenu(tr("A&yuda"));
-    help->addAction(tr("&Manual y codigo (GitHub)"), this, [] { QDesktopServices::openUrl(QUrl(QString::fromLatin1(kRepoUrl))); });
-    help->addAction(tr("&Acerca de %1").arg(kAppName), this, &MainWindow::showAbout);
+    // Idioma: los nombres de cada idioma van siempre en ese idioma
+    langMenu_ = menuBar()->addMenu(QString());
+    langGroup_ = new QActionGroup(this);
+    langSystemAct_ = langMenu_->addAction(QString());
+    langSystemAct_->setData(QString());
+    langMenu_->addSeparator();
+    QAction *en = langMenu_->addAction(QStringLiteral("English"));
+    en->setData(QStringLiteral("en"));
+    QAction *es = langMenu_->addAction(QStringLiteral("Español"));
+    es->setData(QStringLiteral("es"));
+    const QString cur = i18n::setting();
+    for (QAction *a : {langSystemAct_, en, es}) {
+        a->setCheckable(true);
+        langGroup_->addAction(a);
+        if (a->data().toString() == cur) a->setChecked(true);
+    }
+    connect(langGroup_, &QActionGroup::triggered, this, [](QAction *a) { i18n::apply(a->data().toString()); });
+
+    helpMenu_ = menuBar()->addMenu(QString());
+    manualAct_ = helpMenu_->addAction(QString(), this, [] { QDesktopServices::openUrl(QUrl(QString::fromLatin1(kRepoUrl))); });
+    aboutAct_ = helpMenu_->addAction(QString(), this, &MainWindow::showAbout);
+}
+
+void MainWindow::retranslate() {
+    scanBtn_->setText(tr("Scan 5.8 GHz"));
+    stopBtn_->setText(tr("Stop"));
+    recBtn_->setText(tr("Record IQ 5 s"));
+    updateConnectButton();
+    pilotsLabel_->setText(tr("Pilots found (click to watch):"));
+    channels_->setItemText(0, tr("Manual channel..."));
+    rate_->setItemText(0, tr("40 MS/s (USB 3)"));
+    rate_->setToolTip(tr("Sample rate while watching a channel. 20 MS/s gives the same picture; "
+                         "40 MS/s needs USB 3 and a fast host."));
+    gain_->setItemText(0, tr("AGC"));
+    gain_->setToolTip(tr("Receiver gain: automatic (AGC) or fixed."));
+    rateLabel_->setText(tr("Sample rate"));
+    gainLabel_->setText(tr("Gain"));
+
+    fileMenu_->setTitle(tr("&File"));
+    recDirAct_->setText(tr("Open &recordings folder"));
+    logDirAct_->setText(tr("Open &log folder"));
+    if (shortcutAct_) shortcutAct_->setText(tr("Create &desktop shortcut"));
+    quitAct_->setText(tr("&Quit"));
+    optMenu_->setTitle(tr("&Options"));
+    autoConnectAct_->setText(tr("&Connect the adapter on startup"));
+    onConnectSection_->setText(tr("On connect"));
+    resumeLastAct_->setText(tr("Go back to the &last channel"));
+    scanAct_->setText(tr("&Scan the bands"));
+    langMenu_->setTitle(tr("&Language"));
+    langSystemAct_->setText(tr("&System default"));
+    helpMenu_->setTitle(tr("&Help"));
+    manualAct_->setText(tr("&Manual and source code (GitHub)"));
+    aboutAct_->setText(tr("&About %1").arg(kAppName));
+
+    updatePlaceholder();
+    onStatus(lastStatus_);
+}
+
+void MainWindow::changeEvent(QEvent *e) {
+    if (e->type() == QEvent::LanguageChange) retranslate();
+    QMainWindow::changeEvent(e);
+}
+
+void MainWindow::updateConnectButton() {
+    connectBtn_->setText(opening_ ? tr("Connecting...") : open_ ? tr("Disconnect") : tr("Connect adapter"));
+}
+
+void MainWindow::updatePlaceholder() {
+    switch (screen_) {
+    case Screen::Idle:
+        video_->setPlaceholder(tr("Press \"Connect adapter\" and then \"Scan\".\n\n"
+                                  "F / double-click: full screen   O: OSD   Esc: leave full screen"));
+        break;
+    case Screen::Connecting:
+        video_->setPlaceholder(tr("Connecting to the adapter..."));
+        break;
+    case Screen::Ready:
+        video_->setPlaceholder(tr("Adapter ready. Scan or pick a channel."));
+        break;
+    case Screen::Error:
+        video_->setPlaceholder(tr("Could not open the adapter:\n%1\n\nPlug it in and press \"Connect adapter\".").arg(openError_));
+        break;
+    }
 }
 
 void MainWindow::showAbout() {
     QMessageBox box(this);
-    box.setWindowTitle(tr("Acerca de %1").arg(kAppName));
+    box.setWindowTitle(tr("About %1").arg(kAppName));
     box.setIconPixmap(QPixmap(QStringLiteral(":/icons/app-128.png")));
     box.setTextFormat(Qt::RichText);
     box.setText(tr("<h3>%1 %2</h3>"
-                   "<p>Receptor de video FPV analogico de 5.8 GHz con un adaptador WiFi USB RTL8812BU, "
-                   "para Windows y Linux.</p>"
-                   "<p>Usa el mismo nucleo que la app Android "
-                   "<a href='https://github.com/gilankpam/kepyur'>kepyur</a> (gilankpam), con "
+                   "<p>Analog 5.8 GHz FPV video receiver with an RTL8812BU USB WiFi adapter, "
+                   "for Windows and Linux.</p>"
+                   "<p>It uses the same core as the Android app "
+                   "<a href='https://github.com/gilankpam/kepyur'>kepyur</a> (gilankpam), with "
                    "<a href='https://github.com/gilankpam/wifi-sdr'>wifi-sdr</a>, "
-                   "<a href='https://github.com/snokvist/devourer'>devourer</a> y libusb.</p>"
-                   "<p>Licencia GPL-2.0 &middot; <a href='%3'>%3</a></p>")
+                   "<a href='https://github.com/snokvist/devourer'>devourer</a> and libusb.</p>"
+                   "<p>GPL-2.0 license &middot; <a href='%3'>%3</a></p>")
                     .arg(kAppName, KP_VERSION, QString::fromLatin1(kRepoUrl)));
     box.exec();
 }
@@ -256,8 +337,9 @@ void MainWindow::connectAdapter(bool userInitiated) {
     userConnect_ = userInitiated;
     opening_ = true;
     connectBtn_->setEnabled(false);
-    connectBtn_->setText(tr("Conectando..."));
-    video_->setPlaceholder(tr("Conectando con el adaptador..."));
+    updateConnectButton();
+    screen_ = Screen::Connecting;
+    updatePlaceholder();
     emit requestOpen();
 }
 
@@ -272,14 +354,15 @@ void MainWindow::onOpened(bool ok, const QString &err) {
     opening_ = false;
     open_ = ok;
     connectBtn_->setEnabled(true);
-    connectBtn_->setText(ok ? tr("Desconectar") : tr("Conectar adaptador"));
+    updateConnectButton();
     for (QWidget *w : {static_cast<QWidget *>(scanBtn_), static_cast<QWidget *>(stopBtn_),
                        static_cast<QWidget *>(recBtn_), static_cast<QWidget *>(channels_),
                        static_cast<QWidget *>(list_)})
         w->setEnabled(ok);
     if (ok) {
-        statusBar()->showMessage(tr("Adaptador listo"), 5000);
-        video_->setPlaceholder(tr("Adaptador listo. Escanea o elige un canal."));
+        statusBar()->showMessage(tr("Adapter ready"), 5000);
+        screen_ = Screen::Ready;
+        updatePlaceholder();
         emit requestWatchRate(rate_->currentData().toInt());
         emit requestGain(gain_->currentData().toDouble());
         if (pendingWatch_ > 0) emit requestWatch(pendingWatch_);
@@ -291,13 +374,15 @@ void MainWindow::onOpened(bool ok, const QString &err) {
     pendingWatch_ = 0;
     pendingScan_ = false;
     if (err.isEmpty()) {
-        video_->setPlaceholder(tr("Pulsa \"Conectar adaptador\" y luego \"Escanear\".\n\n"
-                                  "F / doble clic: pantalla completa   O: OSD   Esc: salir de pantalla completa"));
+        screen_ = Screen::Idle;
+        updatePlaceholder();
         return;
     }
-    statusBar()->showMessage(tr("No se pudo abrir el adaptador"));
+    statusBar()->showMessage(tr("Could not open the adapter"));
     // Al abrir el programa (conexion automatica) no se interrumpe con un dialogo: el aviso queda en el video.
-    video_->setPlaceholder(tr("No se pudo abrir el adaptador:\n%1\n\nConectalo y pulsa \"Conectar adaptador\".").arg(err));
+    openError_ = err;
+    screen_ = Screen::Error;
+    updatePlaceholder();
     if (userConnect_) QMessageBox::warning(this, kAppName, err);
 }
 
@@ -313,6 +398,7 @@ void MainWindow::onPilots(const QVector<Pilot> &pilots) {
 }
 
 void MainWindow::onStatus(const RadioStatus &s) {
+    lastStatus_ = s;
     watching_ = s.mode == QLatin1String("watch") ? s.watchMHz : 0;
     if (watching_ > 0 && qAbs(watching_ - lastSaved_) > 0.5 && s.chip != QLatin1String("demo")) {
         lastSaved_ = watching_;
@@ -320,34 +406,40 @@ void MainWindow::onStatus(const RadioStatus &s) {
     }
     QString osd;
     if (s.mode == QLatin1String("scan")) {
-        osd = tr("Escaneando %1/%2").arg(s.scanStep + 1).arg(qMax(1, s.scanSteps));
+        osd = tr("Scanning %1/%2").arg(s.scanStep + 1).arg(qMax(1, s.scanSteps));
     } else if (s.mode == QLatin1String("watch")) {
         const auto *ch = kp::nearest_channel(s.watchMHz);
         osd = QStringLiteral("%1%2 MHz").arg(ch ? QString::fromLatin1(ch->name) + "  " : QString())
                   .arg(s.watchMHz, 0, 'f', 0);
         if (s.snrDb >= 0) osd += QStringLiteral("  SNR %1 dB").arg(s.snrDb, 0, 'f', 0);
-        osd += s.locked ? QStringLiteral("  %1%2").arg(s.videoStd, s.colour ? "" : " B/N") : tr("  sin sincronismo");
+        osd += QStringLiteral("  ") + (s.locked ? (s.colour ? s.videoStd : tr("%1 B/W").arg(s.videoStd)) : tr("no sync"));
     }
     video_->setOsd(osd);
+
+    QString mode = s.mode;
+    if (s.mode == QLatin1String("idle")) mode = tr("idle");
+    else if (s.mode == QLatin1String("scan")) mode = tr("scan");
+    else if (s.mode == QLatin1String("watch")) mode = tr("watch");
+    else if (s.mode == QLatin1String("test")) mode = tr("test");
 
     QString t;
     if (s.open) {
         t += QStringLiteral("chip: %1  USB %2\n").arg(s.chip, s.usb3 ? "3" : "2");
-        t += QStringLiteral("modo: %1  rx: %2\n").arg(s.mode, s.rxState);
+        t += tr("mode: %1  rx: %2").arg(mode, s.rxState) + QLatin1Char('\n');
         if (s.mode == QLatin1String("watch"))
-            t += QStringLiteral("%1 MS/s%2  lock %3%  %4 fps\n")
+            t += tr("%1 MS/s%2  lock %3%  %4 fps")
                      .arg(s.msps, 0, 'f', 0)
-                     .arg(s.fallback ? " (fallback)" : "")
+                     .arg(s.fallback ? tr(" (fallback)") : QString())
                      .arg(s.lock * 100, 0, 'f', 0)
-                     .arg(s.fps, 0, 'f', 1);
+                     .arg(s.fps, 0, 'f', 1) + QLatin1Char('\n');
         // Al escanear, cada cambio de frecuencia reinicia el stream: el contador solo dice algo al ver un canal.
         if (s.mode == QLatin1String("watch"))
-            t += QStringLiteral("perdidos: %1  reinicios: %2").arg(s.dropped).arg(s.restarts);
+            t += tr("dropped: %1  restarts: %2").arg(s.dropped).arg(s.restarts);
         else
-            t += QStringLiteral("perdidos: %1").arg(s.dropped);
-        if (!s.rxError.isEmpty()) t += QStringLiteral("\nerror: ") + s.rxError;
+            t += tr("dropped: %1").arg(s.dropped);
+        if (!s.rxError.isEmpty()) t += QLatin1Char('\n') + tr("error: %1").arg(s.rxError);
         if (!s.usb3 && s.chip != QLatin1String("demo"))
-            t += tr("\nAVISO: USB 2, sin 40 MS/s. Usa un puerto USB 3.");
+            t += QLatin1Char('\n') + tr("WARNING: USB 2, no 40 MS/s. Use a USB 3 port.");
     }
     info_->setText(t);
 }
