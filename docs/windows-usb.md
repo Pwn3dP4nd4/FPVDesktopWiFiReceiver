@@ -79,3 +79,15 @@ está armado, pero no envía ningún bloque; wifi-sdr reintenta y se rinde (`str
 - El ciclo USB 3 -> USB 2 -> USB 3 no desatasca un chip que ha dejado de enviar datos (probado con el driver
   propio ya instalado); solo cortar la alimentación lo recupera. Con el driver propio la reconexión tras
   desenchufar sí funcionó; el atasco observado antes ocurrió con Zadig de por medio y no se ha repetido.
+
+## 4. Apertura lenta en la app (v0.3.0)
+
+devourer arranca el 8812BU con ~24.000 escrituras de banda base y ~20.000 de RF, cada una seguida de
+`std::this_thread::sleep_for(1 us)` (en esta versión no usa la descarga en firmware: el log no muestra
+`[fw-offload]`). En Linux esas esperas son microsegundos; en Windows duran lo que permita el temporizador del
+proceso, y la app (proceso GUI, sujeto al ahorro de energía EcoQoS de Windows 11) tardaba ~51 s en abrir el
+adaptador frente a ~8 s del banco de pruebas de consola, a veces más (dos aperturas pasaron de 20 s sin
+terminar). Arreglo en `src/main.cpp`: `SetProcessInformation(ProcessPowerThrottling)` sin ahorro de velocidad
+ni de resolución de temporizador, y `timeBeginPeriod(1)` mientras la app está abierta. Medido sobre el mismo
+adaptador: 9,3 s minimizada, 13,9 s en primer plano y 9 s en una tercera apertura, frente a 51,1 s y 51,2 s
+de la v0.3.0. No se ha medido el consumo extra del temporizador a 1 ms (mientras la app está abierta).

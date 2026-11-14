@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.22)
-project(FPVDesktopWiFiReceiver VERSION 0.3.0 LANGUAGES C CXX)
+project(FPVDesktopWiFiReceiver VERSION 0.3.1 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -113,6 +113,7 @@ if(WIN32)
   configure_file(packaging/windows/app.rc.in "${CMAKE_CURRENT_BINARY_DIR}/app.rc" @ONLY)
   target_sources(FPVDesktopWiFiReceiver PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/app.rc")
   set_target_properties(FPVDesktopWiFiReceiver PROPERTIES WIN32_EXECUTABLE ON)
+  target_link_libraries(FPVDesktopWiFiReceiver PRIVATE winmm)  # timeBeginPeriod
   # Ejecutable autocontenido respecto al runtime de GCC (Qt y libusb se copian con scripts/deploy-windows.sh)
   target_link_options(FPVDesktopWiFiReceiver PRIVATE -static-libgcc -static-libstdc++)
 endif()

@@ -15,6 +15,7 @@
 #include <cstdio>
 #ifdef _WIN32
 #include <windows.h>
+#include <timeapi.h>
 #endif
 #include <mutex>
 
@@ -84,6 +85,20 @@ int main(int argc, char **argv) {
 #ifdef _WIN32
     // 65001 = UTF-8 (manifiesto): las rutas con tildes/enes funcionan tambien en el fopen() de kepyur/wifi-sdr
     KP_LOGI("windows code page %u%s", GetACP(), GetACP() == CP_UTF8 ? "" : " (no UTF-8: rutas no ASCII pueden fallar)");
+    {
+        // devourer escribe ~45.000 registros al arrancar el chip con un sleep_for(1 us) tras cada uno. En
+        // Windows cada sleep dura lo que diga el temporizador del proceso: con EcoQoS (ahorro de energia de
+        // Windows 11) o la resolucion por defecto (15,6 ms) la apertura pasa de ~8 s a minutos. Se pide no
+        // aplicar el ahorro a este proceso y temporizador de 1 ms mientras la app este abierta.
+        PROCESS_POWER_THROTTLING_STATE pt{};
+        pt.Version = PROCESS_POWER_THROTTLING_CURRENT_VERSION;
+        pt.ControlMask = PROCESS_POWER_THROTTLING_EXECUTION_SPEED | PROCESS_POWER_THROTTLING_IGNORE_TIMER_RESOLUTION;
+        pt.StateMask = 0;  // ninguno de los dos ahorros
+        const bool ptOk = SetProcessInformation(GetCurrentProcess(), ProcessPowerThrottling, &pt, sizeof pt);
+        const MMRESULT tr = timeBeginPeriod(1);
+        KP_LOGI("windows: power throttling off %s, timer 1 ms %s", ptOk ? "ok" : "fallo",
+                tr == TIMERR_NOERROR ? "ok" : "fallo");
+    }
 #endif
 
     Backend *backend = nullptr;
