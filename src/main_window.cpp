@@ -8,9 +8,11 @@
 #include <QDesktopServices>
 #include <QDir>
 #include <QFile>
+#include <QFileInfo>
+#include <QStorageInfo>
+#include <QTimer>
 #include <QFormLayout>
 #include <QHBoxLayout>
-#include <QKeyEvent>
 #include <QLabel>
 #include <QListWidget>
 #include <QMenuBar>
@@ -106,6 +108,7 @@ MainWindow::MainWindow(Backend *backend, QWidget *parent) : QMainWindow(parent),
     h->addWidget(video_, 1);
     setCentralWidget(central);
     buildMenus();
+    setupShortcuts();
 
     // GUI -> backend (otro hilo: conexiones en cola)
     connect(this, &MainWindow::requestOpen, backend, &Backend::openDevice);
@@ -122,6 +125,7 @@ MainWindow::MainWindow(Backend *backend, QWidget *parent) : QMainWindow(parent),
         backend_->frameConsumed();
     });
     connect(backend, &Backend::opened, this, &MainWindow::onOpened);
+    connect(backend, &Backend::lost, this, &MainWindow::onLost);
     connect(backend, &Backend::pilotsChanged, this, &MainWindow::onPilots);
     connect(backend, &Backend::statusChanged, this, &MainWindow::onStatus);
     connect(backend, &Backend::message, this, [this](const QString &s) { statusBar()->showMessage(s, 8000); });
@@ -160,13 +164,10 @@ MainWindow::MainWindow(Backend *backend, QWidget *parent) : QMainWindow(parent),
         emit requestGain(gain_->currentData().toDouble());
         if (watching_ > 0) emit requestWatch(watching_);
     });
-    connect(recBtn_, &QPushButton::clicked, this, [this] {
-        const QString dir = recordingsDir();
-        QDir().mkpath(dir);
-        const QString prefix = dir + "/rec-" + QDateTime::currentDateTime().toString("yyyyMMdd-HHmmss");
-        emit requestRecord(5.0, prefix);
-        statusBar()->showMessage(tr("Recording 5 s to %1.cs16 (+ .json)").arg(QDir::toNativeSeparators(prefix)), 10000);
-    });
+    connect(recBtn_, &QPushButton::clicked, this, &MainWindow::startRecording);
+    recCheck_ = new QTimer(this);
+    recCheck_->setInterval(500);
+    connect(recCheck_, &QTimer::timeout, this, &MainWindow::checkRecording);
     connect(video_, &VideoWidget::doubleClicked, this, &MainWindow::toggleFullScreen);
 
     retranslate();
@@ -241,7 +242,7 @@ void MainWindow::buildMenus() {
 void MainWindow::retranslate() {
     scanBtn_->setText(tr("Scan 5.8 GHz"));
     stopBtn_->setText(tr("Stop"));
-    recBtn_->setText(tr("Record IQ 5 s"));
+    updateRecordButton();
     updateConnectButton();
     pilotsLabel_->setText(tr("Pilots found (click to watch):"));
     channels_->setItemText(0, tr("Manual channel..."));
@@ -296,6 +297,9 @@ void MainWindow::updatePlaceholder() {
         break;
     case Screen::Error:
         video_->setPlaceholder(tr("Could not open the adapter:\n%1\n\nPlug it in and press \"Connect adapter\".").arg(openError_));
+        break;
+    case Screen::Lost:
+        video_->setPlaceholder(openError_);
         break;
     }
 }
@@ -356,9 +360,9 @@ void MainWindow::onOpened(bool ok, const QString &err) {
     connectBtn_->setEnabled(true);
     updateConnectButton();
     for (QWidget *w : {static_cast<QWidget *>(scanBtn_), static_cast<QWidget *>(stopBtn_),
-                       static_cast<QWidget *>(recBtn_), static_cast<QWidget *>(channels_),
-                       static_cast<QWidget *>(list_)})
+                       static_cast<QWidget *>(channels_), static_cast<QWidget *>(list_)})
         w->setEnabled(ok);
+    updateRecordButton();
     if (ok) {
         statusBar()->showMessage(tr("Adapter ready"), 5000);
         screen_ = Screen::Ready;
@@ -386,6 +390,81 @@ void MainWindow::onOpened(bool ok, const QString &err) {
     if (userConnect_) QMessageBox::warning(this, kAppName, err);
 }
 
+void MainWindow::updateRecordButton() {
+    // kepyur solo graba la senal que se esta viendo: sin canal sintonizado no haria nada
+    const bool watchingNow = open_ && lastStatus_.open && lastStatus_.mode == QLatin1String("watch") && lastStatus_.msps > 0;
+    recBtn_->setEnabled(watchingNow && recPrefix_.isEmpty());
+    if (!recPrefix_.isEmpty()) {
+        recBtn_->setText(tr("Recording..."));
+    } else {
+        recBtn_->setText(tr("Record IQ 5 s"));
+        const double msps = lastStatus_.msps > 0 ? lastStatus_.msps : 20;
+        recBtn_->setToolTip(tr("Saves 5 s of the raw signal of the channel being watched (about %1 MB at %2 MS/s), "
+                               "for analysis or replay with kepyur's kp_replay.")
+                                .arg(qRound(msps * 1e6 * 4 * kRecSeconds / 1e6))
+                                .arg(msps, 0, 'f', 0));
+    }
+}
+
+void MainWindow::startRecording() {
+    if (lastStatus_.msps <= 0 || !recPrefix_.isEmpty()) return;
+    const QString dir = recordingsDir();
+    QDir().mkpath(dir);
+    // complejos int16: 4 bytes por muestra (kepyur Radio::record_bank)
+    const qint64 bytes = qint64(lastStatus_.msps * 1e6) * 4 * kRecSeconds;
+    const qint64 avail = QStorageInfo(dir).bytesAvailable();
+    if (avail >= 0 && avail < bytes + bytes / 5) {
+        QMessageBox::warning(this, kAppName,
+                             tr("Not enough free space in %1: the recording needs about %2 MB and there are %3 MB free.")
+                                 .arg(QDir::toNativeSeparators(dir)).arg(bytes / 1000000).arg(avail / 1000000));
+        return;
+    }
+    recPrefix_ = dir + "/rec-" + QDateTime::currentDateTime().toString("yyyyMMdd-HHmmss");
+    recStarted_.start();
+    emit requestRecord(kRecSeconds, recPrefix_);
+    statusBar()->showMessage(tr("Recording %1 s (about %2 MB) to %3.cs16...")
+                                 .arg(kRecSeconds).arg(bytes / 1000000).arg(QDir::toNativeSeparators(recPrefix_)));
+    recCheck_->start();
+    updateRecordButton();
+}
+
+void MainWindow::checkRecording() {
+    // kepyur escribe el .json al cerrar la grabacion: es la senal de que ha terminado bien
+    const QFileInfo cs(recPrefix_ + ".cs16"), js(recPrefix_ + ".json");
+    const bool done = js.exists();
+    const bool timedOut = recStarted_.elapsed() > (kRecSeconds + 20) * 1000;
+    if (!done && !timedOut) return;
+    recCheck_->stop();
+    if (done) {
+        statusBar()->showMessage(tr("Recorded: %1 (%2 MB)").arg(QDir::toNativeSeparators(cs.absoluteFilePath()))
+                                     .arg(cs.size() / 1000000), 15000);
+    } else {
+        const QString why = cs.exists() ? tr("incomplete, the channel was left while recording")
+                                        : tr("the file could not be created, see the log (File > Open log folder)");
+        statusBar()->showMessage(tr("Recording failed: %1").arg(why), 15000);
+    }
+    recPrefix_.clear();
+    updateRecordButton();
+}
+
+void MainWindow::onLost(const QString &msg) {
+    // El backend sigue intentando reconectar solo; "Conectar adaptador" queda disponible para hacerlo a mano.
+    opening_ = false;
+    open_ = false;
+    connectBtn_->setEnabled(true);
+    updateConnectButton();
+    for (QWidget *w : {static_cast<QWidget *>(scanBtn_), static_cast<QWidget *>(stopBtn_),
+                       static_cast<QWidget *>(channels_), static_cast<QWidget *>(list_)})
+        w->setEnabled(false);
+    updateRecordButton();
+    video_->clear();
+    list_->clear();
+    openError_ = msg;
+    screen_ = Screen::Lost;
+    updatePlaceholder();
+    statusBar()->showMessage(tr("Adapter disconnected"));
+}
+
 void MainWindow::onPilots(const QVector<Pilot> &pilots) {
     const double sel = list_->currentItem() ? list_->currentItem()->data(Qt::UserRole).toDouble() : 0;
     list_->clear();
@@ -399,6 +478,7 @@ void MainWindow::onPilots(const QVector<Pilot> &pilots) {
 
 void MainWindow::onStatus(const RadioStatus &s) {
     lastStatus_ = s;
+    updateRecordButton();
     watching_ = s.mode == QLatin1String("watch") ? s.watchMHz : 0;
     if (watching_ > 0 && qAbs(watching_ - lastSaved_) > 0.5 && s.chip != QLatin1String("demo")) {
         lastSaved_ = watching_;
@@ -460,11 +540,18 @@ void MainWindow::closeEvent(QCloseEvent *e) {
     e->accept();
 }
 
-void MainWindow::keyPressEvent(QKeyEvent *e) {
-    switch (e->key()) {
-    case Qt::Key_F: toggleFullScreen(); return;
-    case Qt::Key_Escape: if (isFullScreen()) toggleFullScreen(); return;
-    case Qt::Key_O: video_->setOsdVisible(!video_->osdVisible()); return;
-    default: QMainWindow::keyPressEvent(e);
-    }
+void MainWindow::setupShortcuts() {
+    // Acciones de la ventana (no keyPressEvent): Qt resuelve los atajos antes de entregar la tecla al widget con
+    // foco, asi funcionan aunque el foco este en la lista de pilotos o en un desplegable (que buscan por letra).
+    // Anadidas a la propia ventana y no a un menu: la barra de menus se oculta en pantalla completa.
+    auto add = [this](std::initializer_list<QKeySequence> keys, auto fn) {
+        auto *a = new QAction(this);
+        a->setShortcuts(QList<QKeySequence>(keys));
+        a->setShortcutContext(Qt::WindowShortcut);
+        connect(a, &QAction::triggered, this, fn);
+        addAction(a);
+    };
+    add({QKeySequence(Qt::Key_F), QKeySequence(Qt::Key_F11)}, [this] { toggleFullScreen(); });
+    add({QKeySequence(Qt::Key_Escape)}, [this] { if (isFullScreen()) toggleFullScreen(); });
+    add({QKeySequence(Qt::Key_O)}, [this] { video_->setOsdVisible(!video_->osdVisible()); });
 }

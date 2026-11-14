@@ -13,6 +13,9 @@
 #include <QTimer>
 
 #include <cstdio>
+#ifdef _WIN32
+#include <windows.h>
+#endif
 #include <mutex>
 
 #include "i18n.h"
@@ -78,6 +81,10 @@ int main(int argc, char **argv) {
     kp::set_log_sink(file_sink);
     kp::set_log_debug(cli.isSet(verbose));
     KP_LOGI("FPVDesktopWiFiReceiver %s start, log %s", KP_VERSION, qPrintable(logPath));
+#ifdef _WIN32
+    // 65001 = UTF-8 (manifiesto): las rutas con tildes/enes funcionan tambien en el fopen() de kepyur/wifi-sdr
+    KP_LOGI("windows code page %u%s", GetACP(), GetACP() == CP_UTF8 ? "" : " (no UTF-8: rutas no ASCII pueden fallar)");
+#endif
 
     Backend *backend = nullptr;
 #ifdef KP_WITH_RADIO

@@ -3,15 +3,35 @@
 #include <QFontMetrics>
 #include <QPainter>
 #include <QPainterPath>
+#include <QTimer>
 
 VideoWidget::VideoWidget(QWidget *parent) : QWidget(parent) {
     setMinimumSize(360, 270);
     setAttribute(Qt::WA_OpaquePaintEvent);
     setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+    staleCheck_ = new QTimer(this);
+    staleCheck_->setInterval(200);
+    connect(staleCheck_, &QTimer::timeout, this, [this] {
+        if (frame_.isNull()) return;
+        if (sinceFrame_.elapsed() > kStaleMs) {
+            stale_ = true;
+            update();  // tambien refresca el contador de segundos
+        }
+    });
 }
 
 void VideoWidget::setFrame(const QImage &f) {
     frame_ = f;
+    sinceFrame_.start();
+    stale_ = false;
+    if (!staleCheck_->isActive()) staleCheck_->start();
+    update();
+}
+
+void VideoWidget::clear() {
+    frame_ = QImage();
+    stale_ = false;
+    staleCheck_->stop();
     update();
 }
 
@@ -42,6 +62,26 @@ void VideoWidget::paintEvent(QPaintEvent *) {
         r.moveCenter(rect().center());
         p.setRenderHint(QPainter::SmoothPixmapTransform);
         p.drawImage(r, frame_);
+        if (stale_) {
+            p.fillRect(r, QColor(0, 0, 0, 170));
+            QFont big = font();
+            big.setBold(true);
+            big.setPixelSize(qMax(18, r.height() / 9));
+            p.setFont(big);
+            p.setPen(QColor(255, 80, 60));
+            const QFontMetrics bm(big);
+            QRect nr = r;
+            nr.setBottom(r.center().y() + bm.height() / 2);
+            p.drawText(nr, Qt::AlignHCenter | Qt::AlignBottom, tr("NO SIGNAL"));
+            QFont small = font();
+            small.setPixelSize(qMax(12, r.height() / 30));
+            p.setFont(small);
+            p.setPen(QColor(220, 220, 220));
+            QRect sr = r;
+            sr.setTop(nr.bottom() + 8);
+            p.drawText(sr, Qt::AlignHCenter | Qt::AlignTop,
+                       tr("Last picture %1 s ago").arg(sinceFrame_.elapsed() / 1000.0, 0, 'f', 1));
+        }
     }
     if (osdOn_ && !osd_.isEmpty()) {
         QFont f = font();

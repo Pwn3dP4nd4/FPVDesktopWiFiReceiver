@@ -77,7 +77,7 @@ scripts/update-deps.sh --init
 ```bash
 scripts/build.sh --deps         # instala Qt6, libusb, binutils-mipsel-linux-gnu, xxd... y compila
 build/release/FPVDesktopWiFiReceiver
-sudo cmake --install build/release   # opcional: menú de aplicaciones con icono + regla udev
+sudo cmake --install build/release   # opcional: menú con icono + regla udev en /etc/udev/rules.d (recarga udev)
 ```
 
 Permisos USB (una vez), y desenchufa/enchufa el adaptador:
@@ -112,13 +112,16 @@ El driver del kernel `rtw88_8822bu` se desconecta solo al abrir el adaptador.
 3. **Driver WinUSB** con [Zadig](https://zadig.akeo.ie): *Options → List All Devices* → el adaptador
    ("Realtek 8812BU Wireless LAN 802.11ac USB NIC", USB ID `0BDA B812`) → **WinUSB** → *Replace Driver*.
 
-   **Hay que hacerlo dos veces la primera vez**: el RTL8812BU arranca en USB 2; al pulsar *Conectar*, la app
-   lo pasa a USB 3 (igual que la app Android) y Windows lo ve como un dispositivo *nuevo*, otra vez con el
-   driver Realtek. La app avisa con un mensaje: repite Zadig sin desenchufar y vuelve a pulsar *Conectar*.
-   Después ya queda WinUSB para ese puerto USB (si cambias de puerto, puede tocar repetirlo).
+   **Hay que hacerlo dos veces**: el RTL8812BU arranca en USB 2; al pulsar *Conectar adaptador*, la app lo pasa a
+   USB 3 (igual que la app Android) y Windows le vuelve a instalar el driver Realtek. La app avisa con un mensaje:
+   repite Zadig sin desenchufar y vuelve a pulsar *Conectar adaptador*.
 
-   El adaptador deja de funcionar como tarjeta WiFi normal en ese PC; para volver atrás: Administrador de
-   dispositivos → el dispositivo → Desinstalar (marcando eliminar el driver) y reenchufar.
+   **Limitación conocida: Windows vuelve a poner el driver Realtek cada vez que se enchufa el adaptador** (probado
+   en Windows 11). Ese driver viene con Windows (`netrtwlanu.inf`, firmado por Microsoft), no se puede quitar y
+   Windows lo prefiere al WinUSB de Zadig, así que tras desenchufar hay que repetir los dos pasos de Zadig. Mientras
+   la app siga abierta y el adaptador no se desenchufe, no hay que repetir nada.
+
+   Mientras tiene el driver WinUSB, el adaptador no funciona como tarjeta WiFi normal.
 
 ### Notas de Windows
 

@@ -76,7 +76,7 @@ scripts/update-deps.sh --init
 ```bash
 scripts/build.sh --deps         # installs Qt6, libusb, binutils-mipsel-linux-gnu, xxd... and builds
 build/release/FPVDesktopWiFiReceiver
-sudo cmake --install build/release   # optional: application menu entry with icon + udev rule
+sudo cmake --install build/release   # optional: menu entry with icon + udev rule in /etc/udev/rules.d (reloads udev)
 ```
 
 USB permissions (once), then unplug and replug the adapter:
@@ -111,13 +111,16 @@ The kernel driver `rtw88_8822bu` is detached automatically when the adapter is o
 3. **WinUSB driver** with [Zadig](https://zadig.akeo.ie): *Options → List All Devices* → the adapter
    ("Realtek 8812BU Wireless LAN 802.11ac USB NIC", USB ID `0BDA B812`) → **WinUSB** → *Replace Driver*.
 
-   **The first time it has to be done twice**: the RTL8812BU starts on USB 2; when you press *Connect adapter*, the app
-   switches it to USB 3 (as the Android app does) and Windows sees it as a *new* device, with the Realtek driver
-   again. The app says so in a message: run Zadig again without unplugging and press *Connect adapter* again. After that
-   it stays on WinUSB for that USB port (on a different port you may have to repeat it).
+   **It has to be done twice**: the RTL8812BU starts on USB 2; when you press *Connect adapter*, the app switches it to
+   USB 3 (as the Android app does) and Windows reinstalls the Realtek driver. The app says so in a message: run Zadig
+   again without unplugging and press *Connect adapter* again.
 
-   The adapter stops working as a normal WiFi card on that PC; to go back: Device Manager → the device →
-   Uninstall (ticking "delete the driver") and replug it.
+   **Known limitation: Windows puts the Realtek driver back every time the adapter is plugged in** (tested on
+   Windows 11). The Realtek driver ships with Windows (`netrtwlanu.inf`, signed by Microsoft), it cannot be removed and
+   Windows ranks it above Zadig's WinUSB, so after unplugging the adapter both Zadig steps have to be repeated. While
+   the app stays open and the adapter is not unplugged, nothing needs repeating.
+
+   The adapter stops working as a normal WiFi card while it has the WinUSB driver.
 
 ### Windows notes
 

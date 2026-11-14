@@ -10,4 +10,6 @@ struct Usb3Result {
 Usb3Result request_usb3_first_adapter();
 // Tras un cambio pedido: esperar a que el adaptador reaparezca (true si esta en el bus; *superspeed = USB 3).
 bool wait_adapter(int timeout_ms, bool *superspeed = nullptr);
+// Hay algun RTL8812BU en el bus (comprobacion barata, sin abrirlo).
+bool adapter_present();
 }  // namespace kpd

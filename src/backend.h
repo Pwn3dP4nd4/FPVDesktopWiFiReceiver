@@ -80,4 +80,5 @@ signals:
     void pilotsChanged(const QVector<Pilot> &pilots);
     void statusChanged(const RadioStatus &status);
     void message(const QString &text);        // linea para la barra de estado / log
+    void lost(const QString &text);           // adaptador desenchufado: se reconecta solo al volver
 };

@@ -59,6 +59,13 @@ Usb3Result request_usb3_first_adapter() {
   return out;
 }
 
+bool adapter_present() {
+  int bus;
+  std::string port;
+  bool ss;
+  return find_8812bu(bus, port, ss);
+}
+
 bool wait_adapter(int timeout_ms, bool *superspeed) {
   const auto t_end = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeout_ms);
   std::this_thread::sleep_for(std::chrono::milliseconds(1500));  // dejar que desaparezca el dispositivo USB 2

@@ -30,12 +30,20 @@ public slots:
     void record(double seconds, const QString &prefix) override;
 
 private:
+    void ensureObjects();
+    QString openRadio();  // cambio a USB 3 + apertura; "" si fue bien, si no el error con la ayuda
     void poll();
     void recover(const QString &mode, double watchMHz);
+    void adapterLost(const QString &mode, double watchMHz);
+    void tryReconnect();
     void onFrame(const kp::Frame &f);  // hilo decodificador de kp::Radio
     std::unique_ptr<kp::Radio> radio_;
     QTimer *poll_ = nullptr;
-    QByteArray lastPilotsJson_;
+    QTimer *reconnect_ = nullptr;  // tras desenchufar: comprobar cada 2 s si el adaptador ha vuelto
+    QString resumeMode_;           // lo que se hacia al perderlo, para retomarlo
+    double resumeMHz_ = 0, lastWatchMHz_ = 0;
+    QByteArray lastPilotsKey_;  // lo que se muestra de los pilotos (sin la edad)
+    bool forcePilots_ = false;
     unsigned polls_ = 0;
     qint64 lastRecoverMs_ = 0;
 };

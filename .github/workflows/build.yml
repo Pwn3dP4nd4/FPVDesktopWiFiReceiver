@@ -30,11 +30,18 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y build-essential cmake ninja-build pkg-config xxd qt6-base-dev \
             qt6-tools-dev qt6-l10n-tools libusb-1.0-0-dev binutils-mipsel-linux-gnu libgl1-mesa-dev
-      - run: scripts/build.sh
+      - run: scripts/build.sh && scripts/package-linux.sh
+      - name: Comprobar instalacion (regla udev en /etc/udev/rules.d)
+        run: |
+          DESTDIR="$PWD/stage" cmake --install build/release
+          find stage -type f | sort
+          test -f stage/etc/udev/rules.d/60-kepyur.rules
+          test -f stage/usr/local/share/applications/FPVDesktopWiFiReceiver.desktop
+          test -f stage/usr/local/share/icons/hicolor/256x256/apps/FPVDesktopWiFiReceiver.png
       - uses: actions/upload-artifact@v4
         with:
           name: FPVDesktopWiFiReceiver-linux-x64
-          path: build/release/FPVDesktopWiFiReceiver
+          path: dist/FPVDesktopWiFiReceiver-linux
 
   windows:
     runs-on: windows-latest
@@ -84,7 +91,7 @@ jobs:
         run: |
           (cd FPVDesktopWiFiReceiver-windows-x64 && zip -qr "../FPVDesktopWiFiReceiver-${GITHUB_REF_NAME}-windows-x64.zip" .)
           chmod +x FPVDesktopWiFiReceiver-linux-x64/FPVDesktopWiFiReceiver
-          tar -C FPVDesktopWiFiReceiver-linux-x64 -czf "FPVDesktopWiFiReceiver-${GITHUB_REF_NAME}-linux-x64.tar.gz" .
+          tar -C FPVDesktopWiFiReceiver-linux-x64 -czf "FPVDesktopWiFiReceiver-${GITHUB_REF_NAME}-linux-x64.tar.gz" --transform "s,^\.,FPVDesktopWiFiReceiver," .
       - name: Publicar release
         env:
           GH_TOKEN: ${{ github.token }}

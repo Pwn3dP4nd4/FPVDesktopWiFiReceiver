@@ -47,6 +47,23 @@ void StubBackend::stop() {
 }
 
 void StubBackend::tick() {
+    // R5 (5806 MHz) simula un canal sin senal: no llegan fotogramas, como al apagarse un VTX
+    const bool noSignal = qAbs(watching_ - 5806) < 1;
+    if (noSignal) {
+        if (++n_ % 15 == 0) {
+            RadioStatus s;
+            s.open = true;
+            s.chip = QStringLiteral("demo");
+            s.usb3 = true;
+            s.mode = QStringLiteral("watch");
+            s.watchMHz = watching_;
+            s.msps = 20;
+            s.snrDb = 2;
+            s.videoStd = QStringLiteral("PAL");
+            emit statusChanged(s);
+        }
+        return;
+    }
     QImage img(720, 480, QImage::Format_RGBX8888);
     QPainter p(&img);
     static const QColor c[] = {Qt::white, Qt::yellow, Qt::cyan, Qt::green, Qt::magenta, Qt::red, Qt::blue, Qt::black};

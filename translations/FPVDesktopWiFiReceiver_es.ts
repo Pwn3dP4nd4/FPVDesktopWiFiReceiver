@@ -4,10 +4,6 @@
 <context>
     <name>MainWindow</name>
     <message>
-        <source>Recording 5 s to %1.cs16 (+ .json)</source>
-        <translation>Grabando 5 s en %1.cs16 (+ .json)</translation>
-    </message>
-    <message>
         <source>Desktop shortcut created</source>
         <translation>Acceso directo creado en el escritorio</translation>
     </message>
@@ -174,6 +170,42 @@ Conéctalo y pulsa &quot;Conectar adaptador&quot;.</translation>
         <translation>No se pudo abrir el adaptador</translation>
     </message>
     <message>
+        <source>Recording...</source>
+        <translation>Grabando...</translation>
+    </message>
+    <message>
+        <source>Saves 5 s of the raw signal of the channel being watched (about %1 MB at %2 MS/s), for analysis or replay with kepyur&apos;s kp_replay.</source>
+        <translation>Guarda 5 s de la señal sin procesar del canal que estás viendo (unos %1 MB a %2 MS/s), para analizarla o reproducirla con kp_replay de kepyur.</translation>
+    </message>
+    <message>
+        <source>Not enough free space in %1: the recording needs about %2 MB and there are %3 MB free.</source>
+        <translation>No hay espacio suficiente en %1: la grabación necesita unos %2 MB y quedan %3 MB libres.</translation>
+    </message>
+    <message>
+        <source>Recording %1 s (about %2 MB) to %3.cs16...</source>
+        <translation>Grabando %1 s (unos %2 MB) en %3.cs16...</translation>
+    </message>
+    <message>
+        <source>Recorded: %1 (%2 MB)</source>
+        <translation>Grabado: %1 (%2 MB)</translation>
+    </message>
+    <message>
+        <source>incomplete, the channel was left while recording</source>
+        <translation>incompleta, se dejó de ver el canal durante la grabación</translation>
+    </message>
+    <message>
+        <source>the file could not be created, see the log (File &gt; Open log folder)</source>
+        <translation>no se pudo crear el fichero, mira el log (Archivo &gt; Abrir carpeta del log)</translation>
+    </message>
+    <message>
+        <source>Recording failed: %1</source>
+        <translation>La grabación falló: %1</translation>
+    </message>
+    <message>
+        <source>Adapter disconnected</source>
+        <translation>Adaptador desconectado</translation>
+    </message>
+    <message>
         <source>Scanning %1/%2</source>
         <translation>Escaneando %1/%2</translation>
     </message>
@@ -233,12 +265,12 @@ Conéctalo y pulsa &quot;Conectar adaptador&quot;.</translation>
 <context>
     <name>RadioBackend</name>
     <message>
-        <source>Windows: the adapter has just switched to USB 3 and Windows sees it as a NEW device (another port), with the Realtek driver again. Run Zadig again now for this instance (Options &gt; List All Devices &gt; the adapter &gt; WinUSB &gt; Replace Driver) and press Connect again. This is only needed once per USB port.</source>
-        <translation>Windows: el adaptador acaba de pasar a USB 3 y Windows lo ve como un dispositivo NUEVO (otro puerto), con el driver Realtek otra vez. Repite Zadig ahora para esta instancia (Options &gt; List All Devices &gt; el adaptador &gt; WinUSB &gt; Replace Driver) y vuelve a pulsar Conectar. Solo hace falta una vez por puerto USB.</translation>
+        <source>Windows: the adapter has just switched to USB 3 and Windows sees it as a NEW device (another port), with the Realtek driver again. Run Zadig again now for this instance (Options &gt; List All Devices &gt; the adapter &gt; WinUSB &gt; Replace Driver) and press Connect again.</source>
+        <translation>Windows: el adaptador acaba de pasar a USB 3 y Windows lo ve como un dispositivo NUEVO (otro puerto), con el driver Realtek otra vez. Repite Zadig ahora para esta instancia (Options &gt; List All Devices &gt; el adaptador &gt; WinUSB &gt; Replace Driver) y vuelve a pulsar Conectar.</translation>
     </message>
     <message>
-        <source>Windows: the adapter needs the WinUSB driver. Open Zadig (https://zadig.akeo.ie), Options &gt; List All Devices, pick the adapter (USB ID 0BDA B812 or another RTL8812BU), WinUSB &gt; Replace Driver. Plug it into a USB 3 (blue) port.</source>
-        <translation>Windows: el adaptador necesita el driver WinUSB. Abre Zadig (https://zadig.akeo.ie), Options &gt; List All Devices, elige el adaptador (USB ID 0BDA B812 u otro RTL8812BU), WinUSB &gt; Replace Driver. Conéctalo a un puerto USB 3 (azul).</translation>
+        <source>Windows: the adapter needs the WinUSB driver. Open Zadig (https://zadig.akeo.ie), Options &gt; List All Devices, pick the adapter (USB ID 0BDA B812 or another RTL8812BU), WinUSB &gt; Replace Driver. Plug it into a USB 3 (blue) port. Windows puts its Realtek driver back every time the adapter is plugged in, so this has to be repeated after unplugging it.</source>
+        <translation>Windows: el adaptador necesita el driver WinUSB. Abre Zadig (https://zadig.akeo.ie), Options &gt; List All Devices, elige el adaptador (USB ID 0BDA B812 u otro RTL8812BU), WinUSB &gt; Replace Driver. Conéctalo a un puerto USB 3 (azul). Windows vuelve a poner su driver Realtek cada vez que se enchufa el adaptador, así que hay que repetirlo después de desenchufarlo.</translation>
     </message>
     <message>
         <source>Linux: the rtw88_8822bu driver must not hold the adapter and your user needs permission: sudo cp packaging/linux/60-kepyur.rules /etc/udev/rules.d/ &amp;&amp; sudo udevadm control --reload &amp;&amp; sudo udevadm trigger, then replug it. Use a USB 3 port.</source>
@@ -255,6 +287,18 @@ Conéctalo y pulsa &quot;Conectar adaptador&quot;.</translation>
     <message>
         <source>Starting the chip (~5 s)...</source>
         <translation>Arrancando el chip (~5 s)...</translation>
+    </message>
+    <message>
+        <source>The adapter was disconnected. Plug it back in: it will reconnect by itself.</source>
+        <translation>Se ha desconectado el adaptador. Vuelve a enchufarlo: se reconectará solo.</translation>
+    </message>
+    <message>
+        <source>Could not reopen the adapter; retrying.</source>
+        <translation>No se pudo volver a abrir el adaptador; reintentando.</translation>
+    </message>
+    <message>
+        <source>Adapter reconnected</source>
+        <translation>Adaptador reconectado</translation>
     </message>
     <message>
         <source>Receiver stuck: reopening the adapter...</source>
@@ -274,6 +318,17 @@ Conéctalo y pulsa &quot;Conectar adaptador&quot;.</translation>
     <message>
         <source>Scanning (simulated)...</source>
         <translation>Escaneando (simulado)...</translation>
+    </message>
+</context>
+<context>
+    <name>VideoWidget</name>
+    <message>
+        <source>NO SIGNAL</source>
+        <translation>SIN SEÑAL</translation>
+    </message>
+    <message>
+        <source>Last picture %1 s ago</source>
+        <translation>Última imagen hace %1 s</translation>
     </message>
 </context>
 <context>

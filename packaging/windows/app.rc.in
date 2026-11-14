@@ -1,6 +1,8 @@
 // Icono del .exe (Explorador, barra de tareas, accesos directos) y datos de version.
 #include <winver.h>
 IDI_ICON1 ICON "@CMAKE_SOURCE_DIR@/assets/icons/app.ico"
+// RT_MANIFEST (24), id 1: manifiesto de la aplicacion (UTF-8, ver app.manifest.in)
+1 24 "@CMAKE_CURRENT_BINARY_DIR@/app.manifest"
 
 VS_VERSION_INFO VERSIONINFO
 FILEVERSION @PROJECT_VERSION_MAJOR@,@PROJECT_VERSION_MINOR@,@PROJECT_VERSION_PATCH@,0

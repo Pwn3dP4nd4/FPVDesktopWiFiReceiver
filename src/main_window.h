@@ -1,5 +1,6 @@
 #pragma once
 #include "backend.h"
+#include <QElapsedTimer>
 #include <QMainWindow>
 
 class QAction;
@@ -10,6 +11,7 @@ class QPushButton;
 class QComboBox;
 class QLabel;
 class QSettings;
+class QTimer;
 class VideoWidget;
 
 class MainWindow : public QMainWindow {
@@ -35,24 +37,28 @@ signals:
     void requestRecord(double seconds, const QString &prefix);
 
 protected:
-    void keyPressEvent(QKeyEvent *e) override;
     void closeEvent(QCloseEvent *e) override;
     void changeEvent(QEvent *e) override;
 
 private:
-    enum class Screen { Idle, Connecting, Ready, Error };
+    enum class Screen { Idle, Connecting, Ready, Error, Lost };
     void buildMenus();
+    void setupShortcuts();  // F / F11 / Esc / O
     void retranslate();  // todos los textos visibles; se llama al crear y al cambiar de idioma
     void updatePlaceholder();
     void updateConnectButton();
     void connectAdapter(bool userInitiated);
     void onOpened(bool ok, const QString &err);
+    void onLost(const QString &msg);
     void onPilots(const QVector<Pilot> &p);
     void onStatus(const RadioStatus &s);
     void toggleFullScreen();
     void watchChannelFromCombo();
     void showAbout();
     QString recordingsDir() const;
+    void updateRecordButton();
+    void startRecording();
+    void checkRecording();
 
     Backend *backend_;
     QWidget *side_;
@@ -71,6 +77,11 @@ private:
     double pendingWatch_ = 0;   // canal a ver al terminar de conectar
     bool pendingScan_ = false;  // escanear al terminar de conectar
     Screen screen_ = Screen::Idle;
-    QString openError_;
+    QString openError_;  // texto para Screen::Error / Screen::Lost
     RadioStatus lastStatus_;
+    // grabacion de IQ en curso ("" = ninguna)
+    static constexpr int kRecSeconds = 5;
+    QString recPrefix_;
+    QElapsedTimer recStarted_;
+    QTimer *recCheck_ = nullptr;
 };

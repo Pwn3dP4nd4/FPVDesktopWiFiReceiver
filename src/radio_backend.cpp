@@ -21,12 +21,13 @@ const char *const kHintWinUsb3 = QT_TRANSLATE_NOOP(
     "RadioBackend",
     "Windows: the adapter has just switched to USB 3 and Windows sees it as a NEW device (another port), with "
     "the Realtek driver again. Run Zadig again now for this instance (Options > List All Devices > the adapter > "
-    "WinUSB > Replace Driver) and press Connect again. This is only needed once per USB port.");
+    "WinUSB > Replace Driver) and press Connect again.");
 const char *const kHintWin = QT_TRANSLATE_NOOP(
     "RadioBackend",
     "Windows: the adapter needs the WinUSB driver. Open Zadig (https://zadig.akeo.ie), Options > List All "
     "Devices, pick the adapter (USB ID 0BDA B812 or another RTL8812BU), WinUSB > Replace Driver. Plug it into a "
-    "USB 3 (blue) port.");
+    "USB 3 (blue) port. Windows puts its Realtek driver back every time the adapter is plugged in, so this has "
+    "to be repeated after unplugging it.");
 const char *const kHintLinux = QT_TRANSLATE_NOOP(
     "RadioBackend",
     "Linux: the rtw88_8822bu driver must not hold the adapter and your user needs permission: sudo cp "
@@ -48,18 +49,19 @@ RadioBackend::RadioBackend(QObject *parent) : Backend(parent) {}
 
 RadioBackend::~RadioBackend() = default;  // closeDevice() se llama desde el hilo del backend al salir
 
-void RadioBackend::openDevice() {
-    if (!poll_) {  // creado en el hilo del backend
+void RadioBackend::ensureObjects() {
+    if (!poll_) {  // creados en el hilo del backend
         poll_ = new QTimer(this);
         poll_->setInterval(250);
         connect(poll_, &QTimer::timeout, this, &RadioBackend::poll);
+        reconnect_ = new QTimer(this);
+        reconnect_->setInterval(2000);
+        connect(reconnect_, &QTimer::timeout, this, &RadioBackend::tryReconnect);
     }
     if (!radio_) radio_ = std::make_unique<kp::Radio>([this](const kp::Frame &f) { onFrame(f); });
-    if (radio_->is_open()) {
-        emit opened(true, {});
-        return;
-    }
+}
 
+QString RadioBackend::openRadio() {
     // Igual que la app Android: el 8812BU arranca en USB 2 tras enchufarlo; pedir el cambio a USB 3
     // (registros en RAM, nada permanente) y esperar a que se re-enumere. 40 MS/s no cabe en USB 2.
     emit message(tr("Looking for the adapter..."));
@@ -68,19 +70,60 @@ void RadioBackend::openDevice() {
         emit message(tr("Switching the adapter to USB 3..."));
         kpd::wait_adapter(10000);
     }
-
     emit message(tr("Starting the chip (~5 s)..."));
     try {
         radio_->open(-1);
     } catch (const std::exception &e) {
-        QString err = QString::fromLocal8Bit(e.what()[0] ? e.what() : "open failed");
+        const QString err = QString::fromLocal8Bit(e.what()[0] ? e.what() : "open failed");
         KP_LOGE("open failed: %s", e.what());
         const bool notSupported = err.contains(QLatin1String("NOT_SUPPORTED")) || err.contains(QLatin1String("ACCESS"));
-        emit opened(false, err + hint(sw.requested && notSupported));
-        return;
+        return err + hint(sw.requested && notSupported);
     }
     poll_->start();
+    return {};
+}
+
+void RadioBackend::openDevice() {
+    ensureObjects();
+    reconnect_->stop();  // una conexion manual sustituye a la reconexion automatica
+    if (radio_->is_open()) {
+        emit opened(true, {});
+        return;
+    }
+    const QString err = openRadio();
+    emit opened(err.isEmpty(), err);
+    if (err.isEmpty()) poll();
+}
+
+void RadioBackend::adapterLost(const QString &mode, double watchMHz) {
+    KP_LOGW("adaptador perdido (%s %.0f MHz): esperando a que vuelva", qPrintable(mode), watchMHz);
+    poll_->stop();
+    radio_->close();
+    lastPilotsKey_.clear();
+    resumeMode_ = mode;
+    resumeMHz_ = watchMHz;
+    emit statusChanged(RadioStatus{});
+    emit lost(tr("The adapter was disconnected. Plug it back in: it will reconnect by itself."));
+    reconnect_->start();
+}
+
+void RadioBackend::tryReconnect() {
+    if (!kpd::adapter_present()) return;  // aun no esta en el bus: nada que hacer hasta el proximo intento
+    reconnect_->stop();
+    KP_LOGI("adaptador de nuevo en el bus: reconectando");
+    const QString err = openRadio();
+    if (!err.isEmpty()) {
+        // p.ej. Windows sin WinUSB en ese puerto: se sigue intentando, con el motivo a la vista
+        emit lost(tr("Could not reopen the adapter; retrying.") + QStringLiteral("\n\n") + err);
+        reconnect_->setInterval(5000);
+        reconnect_->start();
+        return;
+    }
+    reconnect_->setInterval(2000);
     emit opened(true, {});
+    if (resumeMode_ == QLatin1String("watch") && resumeMHz_ > 0) radio_->watch(resumeMHz_ * 1e6);
+    else if (resumeMode_ == QLatin1String("scan")) radio_->scan();
+    emit message(tr("Adapter reconnected"));
     poll();
 }
 
@@ -103,14 +146,16 @@ void RadioBackend::recover(const QString &mode, double watchMHz) {
 }
 
 void RadioBackend::closeDevice() {
+    if (reconnect_) reconnect_->stop();
     if (poll_) poll_->stop();
     if (radio_) radio_->close();
-    lastPilotsJson_.clear();
+    lastPilotsKey_.clear();
     RadioStatus s;
     emit statusChanged(s);
 }
 
 void RadioBackend::startScan() {
+    forcePilots_ = true;  // la GUI vacia la lista al escanear: reenviarla aunque salgan los mismos pilotos
     if (radio_ && radio_->is_open()) radio_->scan();
 }
 
@@ -169,6 +214,13 @@ void RadioBackend::poll() {
     s.restarts = static_cast<quint64>(o.value("restarts").toDouble());
     emit statusChanged(s);
 
+    // Desenchufado (o caido del bus): wifi-sdr lo marca como "lost" y ya no vuelve solo
+    if (s.open && s.rxState == QLatin1String("lost")) {
+        adapterLost(s.mode, s.mode == QLatin1String("watch") ? s.watchMHz : lastWatchMHz_);
+        return;
+    }
+    if (s.mode == QLatin1String("watch") && s.watchMHz > 0) lastWatchMHz_ = s.watchMHz;
+
     // wifi-sdr se rinde tras 5 fallos seguidos del stream (rx_state "error"). En Windows ocurre a veces tras
     // varios reinicios rapidos; cerrar y reabrir el adaptador lo recupera. Como mucho una vez cada 15 s.
     if (s.open && s.rxState == QLatin1String("error") && (s.mode == QLatin1String("watch") || s.mode == QLatin1String("scan"))) {
@@ -180,21 +232,25 @@ void RadioBackend::poll() {
         }
     }
 
+    // Solo se avisa a la GUI si cambia lo que se muestra. "age_s" sube cada segundo: si entrara en la
+    // comparacion, la lista se reconstruiria sin parar (parpadeo, scroll perdido, clics perdidos).
     const QJsonArray pa = o.value("pilots").toArray();
-    const QByteArray pj = QJsonDocument(pa).toJson(QJsonDocument::Compact);
-    if (pj != lastPilotsJson_) {
-        lastPilotsJson_ = pj;
-        QVector<Pilot> ps;
-        for (const auto &e : pa) {
-            const QJsonObject p = e.toObject();
-            Pilot x;
-            x.freqMHz = p.value("mhz").toDouble();
-            x.snrDb = p.value("snr").toDouble();
-            x.name = p.value("name").toString();
-            x.stdName = p.value("std").toString();
-            x.ageS = p.value("age_s").toInt();
-            ps.push_back(x);
-        }
+    QVector<Pilot> ps;
+    QByteArray key;
+    for (const auto &e : pa) {
+        const QJsonObject p = e.toObject();
+        Pilot x;
+        x.freqMHz = p.value("mhz").toDouble();
+        x.snrDb = p.value("snr").toDouble();
+        x.name = p.value("name").toString();
+        x.stdName = p.value("std").toString();
+        x.ageS = p.value("age_s").toInt();
+        key += QStringLiteral("%1|%2|%3|%4;").arg(x.freqMHz, 0, 'f', 1).arg(x.snrDb, 0, 'f', 1).arg(x.name, x.stdName).toUtf8();
+        ps.push_back(x);
+    }
+    if (key != lastPilotsKey_ || forcePilots_) {
+        lastPilotsKey_ = key;
+        forcePilots_ = false;
         emit pilotsChanged(ps);
     }
 }
