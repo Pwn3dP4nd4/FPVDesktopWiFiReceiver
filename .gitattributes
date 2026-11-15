@@ -1,4 +1,6 @@
-* text=auto
+# LF en el repo y en la copia de trabajo, aunque Git for Windows traiga core.autocrlf=true (evita los avisos
+# "LF will be replaced by CRLF"); los .ps1/.inf de Windows siguen en CRLF (abajo).
+* text=auto eol=lf
 *.sh text eol=lf
 *.yml text eol=lf
 *.rules text eol=lf
