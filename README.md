@@ -190,7 +190,9 @@ language (Spanish on a Spanish Windows/Linux, English otherwise).
   60 MB per minute) in `Videos/FPVDesktopWiFiReceiver/fpv-YYYYMMDD-HHMMSS-R4.mp4`; press again to stop. While
   recording the button turns red with the elapsed time and the video shows a blinking **● REC**, also in full
   screen. Every decoded frame is recorded, even if the screen skips one; if the signal is lost the recording keeps
-  going and the picture stays frozen until it comes back. Both folders can be changed in **File → Snapshots
+  going and the time without picture is skipped. The MP4 is written in fragments of a fraction of a second: if
+  the program is closed abruptly (crash, killed, power cut) only the last moment is lost, not the whole file. If
+  writing fails or the disk is about to fill up, it stops at once and says why. Both folders can be changed in **File → Snapshots
   folder / Videos folder → Change...** and are remembered.
 - **F** or double-click on the video: full screen · **O**: OSD · **S**: snapshot · **R**: record video ·
   **Esc**: leave full screen.

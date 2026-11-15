@@ -193,7 +193,10 @@ español, inglés en otro caso).
   60 MB por minuto) en `Vídeos/FPVDesktopWiFiReceiver/fpv-AAAAMMDD-HHMMSS-R4.mp4`; se pulsa otra vez para parar.
   Mientras graba el botón se pone rojo con el tiempo transcurrido y en el vídeo parpadea **● REC**, también en
   pantalla completa. Se graban todos los fotogramas decodificados aunque la pantalla se salte alguno; si se pierde
-  la señal la grabación sigue y la imagen queda congelada hasta que vuelve. Las dos carpetas se cambian en
+  la señal la grabación sigue y el rato sin imagen se salta. El MP4 se escribe en trozos de una fracción de
+  segundo: si el programa se cierra de golpe (cuelgue, proceso matado, corte de luz) solo se pierde el último
+  instante, no todo el archivo. Si falla la escritura o el disco está a punto de llenarse, para en el acto y
+  avisa. Las dos carpetas se cambian en
   **Archivo → Carpeta de capturas / Carpeta de vídeos → Cambiar...** y se recuerdan.
 - **F** o doble clic en el vídeo: pantalla completa · **O**: OSD · **S**: captura · **R**: grabar vídeo ·
   **Esc**: salir de pantalla completa.

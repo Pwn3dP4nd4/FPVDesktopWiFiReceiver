@@ -134,8 +134,11 @@ MainWindow::MainWindow(Backend *backend, QWidget *parent) : QMainWindow(parent),
     dvrTick_ = new QTimer(this);
     dvrTick_->setInterval(250);
     connect(dvrTick_, &QTimer::timeout, this, &MainWindow::updateMediaButtons);
+    dvrSpace_ = new QTimer(this);
+    dvrSpace_->setInterval(5000);
+    connect(dvrSpace_, &QTimer::timeout, this, &MainWindow::checkVideoSpace);
     connect(dvr_, &VideoRecorder::finished, this, [this](const VideoRecorder::Result &r) {
-        onVideoRecorded(r.path, r.ok, r.error, r.frames, r.dropped, r.seconds);
+        onVideoRecorded(r.path, r.ok, r.noPicture, r.error, r.frames, r.dropped, r.seconds);
     });
     h->addWidget(side_);
     h->addWidget(video_, 1);
@@ -218,7 +221,7 @@ MainWindow::MainWindow(Backend *backend, QWidget *parent) : QMainWindow(parent),
 }
 
 // La grabacion de video se termina en closeEvent(): main.cpp destruye el backend antes que la ventana.
-MainWindow::~MainWindow() = default;
+MainWindow::~MainWindow() { snapPool_.waitForDone(); }  // por si se destruye sin closeEvent()
 
 void MainWindow::buildMenus() {
     fileMenu_ = menuBar()->addMenu(QString());
@@ -538,7 +541,7 @@ void MainWindow::takeSnapshot() {
         return;
     }
     // Comprimir el PNG lleva unas decenas de ms: fuera del hilo de la GUI para no saltarse fotogramas al pintar
-    QThreadPool::globalInstance()->start([this, img, path] {
+    snapPool_.start([this, img, path] {
         const bool ok = img.save(path, "PNG");
         QMetaObject::invokeMethod(this, [this, ok, path] {
             if (ok) {
@@ -578,12 +581,25 @@ void MainWindow::toggleVideoRecording() {
     backend_->setFrameTap([rec](const QImage &img, qint64 ns) { rec->push(img, ns); });
     statusBar()->showMessage(tr("Recording video to %1").arg(QDir::toNativeSeparators(path)), 8000);
     dvrTick_->start();
+    dvrSpace_->start();
     updateMediaButtons();
 }
 
-void MainWindow::onVideoRecorded(const QString &path, bool ok, const QString &error, int frames, int dropped,
-                                 double seconds) {
+void MainWindow::checkVideoSpace() {
+    if (!dvr_->isRecording()) return;
+    const qint64 avail = QStorageInfo(QFileInfo(dvr_->path()).absolutePath()).bytesAvailable();
+    if (avail < 0 || avail >= 100LL * 1000 * 1000) return;
+    toggleVideoRecording();  // parar: el MP4 queda bien cerrado
+    QMessageBox::warning(this, kAppName, tr("The disk is almost full (%1 MB free): the video recording was stopped.\n\n%2")
+                                             .arg(avail / 1000000).arg(QDir::toNativeSeparators(dvr_->path())));
+}
+
+void MainWindow::onVideoRecorded(const QString &path, bool ok, bool noPicture, const QString &error, int frames,
+                                 int dropped, double seconds) {
+    // Puede terminar por si solo (error al codificar o escribir): dejar de enviarle fotogramas
+    backend_->setFrameTap({});
     dvrTick_->stop();
+    dvrSpace_->stop();
     updateMediaButtons();
     const QString file = QDir::toNativeSeparators(path);
     if (ok) {
@@ -593,8 +609,12 @@ void MainWindow::onVideoRecorded(const QString &path, bool ok, const QString &er
                         .arg(QFileInfo(path).size() / 1e6, 0, 'f', 1);
         if (dropped > 0) m += QStringLiteral("  ") + tr("%n frame(s) lost: the encoder could not keep up", nullptr, dropped);
         statusBar()->showMessage(m, 15000);
-    } else if (frames == 0 && error == QLatin1String("no picture was received")) {
+    } else if (noPicture) {
         statusBar()->showMessage(tr("No video recorded: no picture was received"), 10000);
+    } else if (frames > 0) {
+        QMessageBox::warning(this, kAppName, tr("The video recording stopped because of an error:\n%1\n\n"
+                                                "What was recorded until then was saved in %2")
+                                                 .arg(error, file));
     } else {
         QMessageBox::warning(this, kAppName, tr("The video recording failed:\n%1\n\n%2").arg(error, file));
     }
@@ -610,13 +630,14 @@ void MainWindow::updateMediaButtons() {
         const qint64 s = dvr_->elapsedMs() / 1000;
         const QString t = QStringLiteral("%1:%2").arg(s / 60, 2, 10, QLatin1Char('0')).arg(s % 60, 2, 10, QLatin1Char('0'));
         dvrBtn_->setText(QString(QChar(0x25A0)) + QLatin1Char(' ') + t);  // cuadrado de parar
-        dvrBtn_->setStyleSheet(QStringLiteral("QPushButton{color:white;background:#c62828;font-weight:bold;}"));
+        static const QString red = QStringLiteral("QPushButton{color:white;background:#c62828;font-weight:bold;}");
+        if (dvrBtn_->styleSheet() != red) dvrBtn_->setStyleSheet(red);  // cada 250 ms: no repolir si no cambia
         dvrBtn_->setToolTip(tr("Recording to %1. Press again (R) to stop.").arg(QDir::toNativeSeparators(dvr_->path())));
         video_->setRecIndicator(QStringLiteral("REC ") + t);
         dvrAct_->setText(tr("Stop recording the &video") + QStringLiteral("\tR"));
     } else {
         dvrBtn_->setText(QString(QChar(0x25CF)) + QLatin1Char(' ') + tr("Record video"));  // punto de grabar
-        dvrBtn_->setStyleSheet(QString());
+        if (!dvrBtn_->styleSheet().isEmpty()) dvrBtn_->setStyleSheet(QString());
         dvrBtn_->setToolTip(VideoRecorder::available()
                                 ? tr("Record the picture to an MP4 file (R); press again to stop. Folder: %1")
                                       .arg(QDir::toNativeSeparators(videosDir()))
@@ -868,6 +889,7 @@ void MainWindow::closeEvent(QCloseEvent *e) {
         backend_->setFrameTap({});
         dvr_->waitFinished();
     }
+    snapPool_.waitForDone();  // capturas PNG a medio guardar: terminarlas antes de destruir la ventana
     settings().setValue("geometry", saveGeometry());
     settings().sync();
     e->accept();

@@ -43,17 +43,22 @@ public:
             return false;
         }
         mfStarted_ = true;
+        // MP4 fragmentado (Windows 10+): el indice va por trozos junto a los datos, asi un cierre brusco (cuelgue,
+        // proceso matado, corte de luz) solo pierde el ultimo trozo y no todo el archivo. MP4 clasico si no hay.
         // Primero con el codificador por hardware de la grafica; si ese no acepta el formato, por software.
-        for (const bool hw : {true, false}) {
-            h = tryOpen(path, hw);
-            if (SUCCEEDED(h)) {
-                KP_LOGI("video: Media Foundation H.264 %dx%d %d/%d fps, %s", p.width, p.height, p.fpsNum, p.fpsDen,
-                        hw ? "hardware permitido" : "software");
-                return true;
+        for (const bool frag : {true, false}) {
+            for (const bool hw : {true, false}) {
+                h = tryOpen(path, hw, frag);
+                if (SUCCEEDED(h)) {
+                    KP_LOGI("video: Media Foundation H.264 %dx%d %d/%d fps, %s, MP4 %s", p.width, p.height, p.fpsNum,
+                            p.fpsDen, hw ? "hardware permitido" : "software", frag ? "fragmentado" : "clasico");
+                    return true;
+                }
+                release(writer_);
+                DeleteFileW(reinterpret_cast<const wchar_t *>(path.utf16()));
+                KP_LOGW("video: Media Foundation (%s, %s) fallo: 0x%08lx", hw ? "hardware" : "software",
+                        frag ? "fragmentado" : "clasico", static_cast<unsigned long>(h));
             }
-            release(writer_);
-            DeleteFileW(reinterpret_cast<const wchar_t *>(path.utf16()));
-            KP_LOGW("video: Media Foundation (%s) fallo: 0x%08lx", hw ? "hardware" : "software", static_cast<unsigned long>(h));
         }
         *err = hr("Could not start the H.264 encoder of Windows", h);
         return false;
@@ -105,12 +110,13 @@ private:
         return h;
     }
 
-    HRESULT tryOpen(const QString &path, bool hw) {
-        IMFAttributes *attr = nullptr;
+    HRESULT tryOpen(const QString &path, bool hw, bool fragmented) {
+        IMFAttributes *attr = nullptr, *enc = nullptr;
         IMFMediaType *out = nullptr, *in = nullptr;
         HRESULT h = MFCreateAttributes(&attr, 3);
         if (SUCCEEDED(h)) h = attr->SetUINT32(MF_READWRITE_ENABLE_HARDWARE_TRANSFORMS, hw ? TRUE : FALSE);
-        if (SUCCEEDED(h)) h = attr->SetGUID(MF_TRANSCODE_CONTAINERTYPE, MFTranscodeContainerType_MPEG4);
+        if (SUCCEEDED(h)) h = attr->SetGUID(MF_TRANSCODE_CONTAINERTYPE, fragmented ? MFTranscodeContainerType_FMPEG4
+                                                                                    : MFTranscodeContainerType_MPEG4);
         // Sin limitar: el grabador ya lleva su propia cola, y WriteSample solo bloquea su hilo.
         if (SUCCEEDED(h)) h = attr->SetUINT32(MF_SINK_WRITER_DISABLE_THROTTLING, TRUE);
         if (SUCCEEDED(h))
@@ -123,8 +129,22 @@ private:
         if (SUCCEEDED(h)) h = MFCreateMediaType(&in);
         if (SUCCEEDED(h)) h = setVideoType(in, MFVideoFormat_NV12);
         if (SUCCEEDED(h)) h = in->SetUINT32(MF_MT_DEFAULT_STRIDE, p_.width);
-        if (SUCCEEDED(h)) h = writer_->SetInputMediaType(stream_, in, nullptr);
+        // Fotogramas clave alineados con los trozos del MP4 fragmentado. El sink de Windows corta un trozo cada ~0,3 s
+        // (19 fotogramas a 59,94 fps, 15 a 50: medido, no documentado) sin mirar los fotogramas clave, y su propio
+        // lector (el de las apps de Windows) data mal los trozos que no empiezan por uno: la imagen salta cada 2 s.
+        // Con un fotograma clave cada 6 trozos (~1,9 s) siempre caen al principio. Los pts son consecutivos
+        // (VideoRecorder), asi que trozos por tiempo y por numero de fotograma coinciden.
+        // Sin fotogramas B: menos retardo y sin desfases de presentacion en los trozos; en directo cuestan poco.
+        const UINT32 fragFrames = p_.fpsNum == 50 && p_.fpsDen == 1 ? 15 : p_.fpsNum == 60000 && p_.fpsDen == 1001 ? 19 : 0;
+        const UINT32 gop = fragFrames ? 6 * fragFrames : UINT32(2 * p_.fpsNum / p_.fpsDen);
+        static const GUID kGopSize = {STATIC_CODECAPI_AVEncMPVGOPSize};
+        static const GUID kBFrames = {STATIC_CODECAPI_AVEncMPVDefaultBPictureCount};
+        if (SUCCEEDED(h)) h = MFCreateAttributes(&enc, 2);
+        if (SUCCEEDED(h)) h = enc->SetUINT32(kGopSize, gop);
+        if (SUCCEEDED(h)) h = enc->SetUINT32(kBFrames, 0);
+        if (SUCCEEDED(h)) h = writer_->SetInputMediaType(stream_, in, enc);
         if (SUCCEEDED(h)) h = writer_->BeginWriting();
+        release(enc);
         release(in);
         release(out);
         release(attr);

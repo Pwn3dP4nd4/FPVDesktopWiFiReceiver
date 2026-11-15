@@ -316,6 +316,14 @@ Al terminar, cierra este programa y desenchufa y vuelve a enchufar el adaptador.
         <translation>Grabando vídeo en %1</translation>
     </message>
     <message>
+        <source>The disk is almost full (%1 MB free): the video recording was stopped.
+
+%2</source>
+        <translation>El disco está casi lleno (%1 MB libres): se ha parado la grabación de vídeo.
+
+%2</translation>
+    </message>
+    <message>
         <source>Video saved: %1 (%2 s, %3 MB)</source>
         <translation>Vídeo guardado: %1 (%2 s, %3 MB)</translation>
     </message>
@@ -329,6 +337,16 @@ Al terminar, cierra este programa y desenchufa y vuelve a enchufar el adaptador.
     <message>
         <source>No video recorded: no picture was received</source>
         <translation>No se ha grabado vídeo: no llegó ninguna imagen</translation>
+    </message>
+    <message>
+        <source>The video recording stopped because of an error:
+%1
+
+What was recorded until then was saved in %2</source>
+        <translation>La grabación de vídeo se ha parado por un error:
+%1
+
+Lo grabado hasta entonces se ha guardado en %2</translation>
     </message>
     <message>
         <source>The video recording failed:

@@ -108,10 +108,16 @@ void VideoRecorder::run() {
     std::unique_ptr<VideoEncoder> enc;
     VideoEncoder::Params p;
     std::vector<uint8_t> nv12;
-    qint64 t0 = 0;
+    qint64 prevNs = 0;
     int64_t lastPts = -1, gaps = 0;
     double encSum = 0, encMax = 0;
-    bool failed = false;
+    // Un error (no arranca el codificador, disco lleno...) termina la grabacion en el acto: la GUI se entera por
+    // finished() y deja de mostrar REC, en vez de seguir "grabando" sin guardar nada hasta que se pulse parar.
+    auto abort = [this] {
+        std::lock_guard<std::mutex> l(mu_);
+        stopping_ = true;
+        queue_.clear();
+    };
     for (;;) {
         Item it;
         {
@@ -121,7 +127,6 @@ void VideoRecorder::run() {
             it = std::move(queue_.front());
             queue_.pop_front();
         }
-        if (failed) continue;
         const auto c0 = std::chrono::steady_clock::now();
         if (!enc) {  // primer fotograma: tamano y ritmo
             p.width = it.img.width() & ~1;
@@ -139,24 +144,28 @@ void VideoRecorder::run() {
             enc = VideoEncoder::create();
             if (!enc || !enc->open(path_, p, &res.error)) {
                 if (res.error.isEmpty()) res.error = QStringLiteral("no video encoder");
-                failed = true;
-                continue;
+                enc.reset();
+                abort();
+                break;
             }
             nv12.resize(size_t(p.width) * p.height * 3 / 2);
-            t0 = it.ns;
         }
         QImage img = it.img;
-        if (img.width() < p.width || img.height() < p.height)  // cambio de norma a mitad: al tamano inicial
+        if (img.width() < p.width || img.height() < p.height || img.width() > p.width + 1 ||
+            img.height() > p.height + 1)  // cambio de norma a mitad (NTSC <-> PAL): al tamano inicial
             img = img.scaled(p.width, p.height, Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
         if (img.format() != QImage::Format_RGBX8888 && img.format() != QImage::Format_RGBA8888)
             img = img.convertToFormat(QImage::Format_RGBX8888);
         rgbxToNv12(img, p.width, p.height, nv12.data());
-        int64_t pts = std::llround(double(it.ns - t0) * p.fpsNum / (double(p.fpsDen) * 1e9));
-        if (lastPts >= 0 && pts > lastPts + 1) ++gaps;
-        pts = std::max(pts, lastPts + 1);
+        // pts consecutivos: un rato sin senal (el decodificador no entrega fotogramas) se salta en vez de quedar
+        // congelado. Asi el tiempo del MP4 es siempre el numero de fotograma, que es lo que alinea los fotogramas
+        // clave con los trozos del MP4 fragmentado (video_encoder_mf.cpp). Los huecos solo se cuentan para el log.
+        if (lastPts >= 0 && double(it.ns - prevNs) * p.fpsNum / (double(p.fpsDen) * 1e9) > 1.5) ++gaps;
+        prevNs = it.ns;
+        const int64_t pts = lastPts + 1;
         if (!enc->write(nv12.data(), pts, &res.error)) {
-            failed = true;
-            continue;
+            abort();
+            break;
         }
         lastPts = pts;
         res.frames++;
@@ -174,10 +183,10 @@ void VideoRecorder::run() {
         res.dropped = dropped_;
     }
     res.seconds = lastPts >= 0 ? double(lastPts + 1) * p.fpsDen / p.fpsNum : 0;
-    if (res.frames == 0 && res.error.isEmpty()) res.error = QStringLiteral("no picture was received");
-    res.ok = res.error.isEmpty();
+    res.noPicture = res.frames == 0 && res.error.isEmpty();
+    res.ok = res.error.isEmpty() && !res.noPicture;
     if (!res.ok && res.frames == 0) QFile::remove(path_);
-    KP_LOGI("video: %s %d fotogramas, %.1f s, %d perdidos por cola llena, %lld huecos del decodificador, "
+    KP_LOGI("video: %s %d fotogramas, %.1f s, %d perdidos por cola llena, %lld huecos sin senal saltados, "
             "convertir+codificar media %.2f ms max %.1f ms%s%s",
             path_.toUtf8().constData(), res.frames, res.seconds, res.dropped, static_cast<long long>(gaps),
             res.frames ? encSum / res.frames : 0.0, encMax, res.ok ? "" : ", error: ", res.error.toUtf8().constData());

@@ -84,7 +84,12 @@ public:
         st_->sample_aspect_ratio = ctx_->sample_aspect_ratio;
         e = avio_open(&fmt_->pb, file.constData(), AVIO_FLAG_WRITE);
         if (e < 0) return fail(err, "could not create the file", e);
-        e = avformat_write_header(fmt_, nullptr);
+        // MP4 fragmentado: indice por trozos (uno por fotograma clave, ~2 s) junto a los datos; un cierre brusco
+        // solo pierde el ultimo trozo y no todo el archivo
+        AVDictionary *mux = nullptr;
+        av_dict_set(&mux, "movflags", "frag_keyframe+empty_moov+default_base_moof", 0);
+        e = avformat_write_header(fmt_, &mux);
+        av_dict_free(&mux);
         if (e < 0) return fail(err, "MP4 header", e);
         headerWritten_ = true;
         frame_ = av_frame_alloc();

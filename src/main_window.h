@@ -3,6 +3,7 @@
 #include <QElapsedTimer>
 #include <QMainWindow>
 #include <QStringList>
+#include <QThreadPool>
 
 class QAction;
 class QActionGroup;
@@ -72,7 +73,9 @@ private:
     void chooseMediaDir(const char *key, bool videos);
     void takeSnapshot();
     void toggleVideoRecording();
-    void onVideoRecorded(const QString &path, bool ok, const QString &error, int frames, int dropped, double seconds);
+    void onVideoRecorded(const QString &path, bool ok, bool noPicture, const QString &error, int frames, int dropped,
+                         double seconds);
+    void checkVideoSpace();  // grabando: parar antes de llenar el disco
     void updateMediaButtons();
     // Modo desarrollador (Opciones, se guarda): muestra muestreo, ganancia, grabar IQ y los datos tecnicos.
     // Desactivado, muestreo y ganancia vuelven a los valores por defecto (no quedan ocultos con otro valor).
@@ -118,4 +121,7 @@ private:
     // grabacion de video (DVR)
     VideoRecorder *dvr_ = nullptr;
     QTimer *dvrTick_ = nullptr;  // indicador REC y tiempo en el boton
+    QTimer *dvrSpace_ = nullptr;  // espacio libre mientras graba
+    // Guardado de capturas PNG: pool propio para poder esperarlo al cerrar (sus tareas avisan a esta ventana)
+    QThreadPool snapPool_;
 };

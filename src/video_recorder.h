@@ -11,14 +11,15 @@
 
 // DVR: graba en MP4 los fotogramas decodificados. push() se llama desde el hilo del decodificador (derivacion
 // Backend::setFrameTap, antes del control de flujo de la GUI) y solo encola; la conversion a YUV y la
-// codificacion van en un hilo propio, asi el decodificador nunca espera. Tiempos a partir de producedNs, en
-// pasos de fotograma (59,94 fps NTSC / 50 PAL en modo campos): si falta alguno queda un hueco, sin acelerar.
+// codificacion van en un hilo propio, asi el decodificador nunca espera. Un fotograma cada 1/59,94 s (NTSC) o
+// 1/50 (PAL), en modo campos; los ratos sin senal (sin fotogramas) se saltan.
 class VideoRecorder : public QObject {
     Q_OBJECT
 public:
     struct Result {
         QString path, error;
         bool ok = false;
+        bool noPicture = false;  // no llego ningun fotograma (no es un error: no se crea archivo)
         int frames = 0;    // escritos
         int dropped = 0;   // perdidos por ir el codificador retrasado (cola llena)
         double seconds = 0;
