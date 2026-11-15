@@ -48,5 +48,6 @@ private:
     bool forcePilots_ = false;
     unsigned polls_ = 0;
     qint64 lastRecoverMs_ = 0;
+    QString lastFault_;  // ultimo last_fault registrado (cada fallo del flujo, una linea en el log)
     std::vector<double> scanPlan_;  // centros de paso (Hz); vacio = plan completo de kepyur
 };

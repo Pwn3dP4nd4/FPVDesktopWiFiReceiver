@@ -7,6 +7,8 @@
 #   scan_plan  kp::Radio::set_scan_plan(): escanear solo los canales elegidos (propio de esta app)
 #   comb       DecoderOpts::comb + kp::Radio::set_comb(): filtro peine adaptativo de 3 lineas para la croma
 #              NTSC (propuesto a kepyur: gilankpam/kepyur PR 2)
+#   rxdma      wifi-sdr Receiver: tras un "no packet within timeout" del 8822B, apagar y encender el RX DMA
+#              (REG_CR) antes de reiniciar el flujo; desatasca el C2H en ~10 ms sin reabrir (test/wedge_test.cpp)
 #
 # Uso desde CMake:  include(cmake/kepyur_patches.cmake) y kp_patch_files(<origen> <destino> <conjuntos...>)
 # Uso suelto (p.ej. preparar el PR sobre un clon de kepyur, en el sitio):
@@ -46,6 +48,34 @@ _kp_change(scan_plan native/radio/radio.cpp "        _plan = scan_plan();\n" [=[
           std::lock_guard<std::mutex> l(_m);
           _plan = _scan_plan_override.empty() ? scan_plan() : _scan_plan_override;
         }
+]=])
+
+# ---- rxdma -------------------------------------------------------------------------------------------------
+# En algunos controladores USB 3 (aqui AMD 1022:43D5 en Windows; wifi-sdr lo vio en Linux con 1022:15b9) el
+# camino RX DMA -> bulk-IN del 8822B se atasca: la peticion C2H queda colgada (r294 BIT16) y cada reinicio del
+# flujo pierde su primer paquete, hasta que wifi-sdr se rinde ("stream keeps failing") y la app reabria el
+# adaptador (~10 s). Medido con test/wedge_test.cpp: 3 de 3 atascos vuelven con este ciclo de REG_CR (~10 ms);
+# 0x294 = 0, clear_halt del endpoint o reintentar sin mas, no.
+_kp_change(rxdma third_party/wifi-sdr/src/receiver.cpp
+  [=[    RxState next = RxState::Starting;
+    std::string why = "stream fault (restarting): " + ss.error;
+]=]
+  [=[    // [FPVDesktopWiFiReceiver, added at build time] 8822B on some USB 3 host controllers: the RX DMA ->
+    // bulk-IN path locks up (C2H request stuck, r294 BIT16) and every restart then misses its first packet.
+    // Turning the RX DMA off and on in REG_CR recovers it in ~10 ms (measured: 3 of 3 lock-ups on Windows,
+    // AMD 1022:43D5), where otherwise only a full re-init did. Only after a timeout: the stream is stopped.
+    if (!_caps.cu && ss.error.find("no packet within timeout") != std::string::npos && _s->reg().alive()) {
+      try {
+        const uint16_t cr = _s->reg().r16(0x0100);
+        _s->reg().w16(0x0100, static_cast<uint16_t>(cr & ~0x000Au)); // HCI_RXDMA_EN | RXDMA_EN
+        std::this_thread::sleep_for(std::chrono::milliseconds(2));
+        _s->reg().w16(0x0100, cr);
+        ss.error += " [rx dma reset]"; // in last_fault: the app's log shows it was done
+      } catch (const std::exception &) {
+      }
+    }
+    RxState next = RxState::Starting;
+    std::string why = "stream fault (restarting): " + ss.error;
 ]=])
 
 # ---- comb --------------------------------------------------------------------------------------------------

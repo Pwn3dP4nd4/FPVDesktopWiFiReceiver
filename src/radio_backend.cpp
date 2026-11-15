@@ -229,6 +229,13 @@ void RadioBackend::poll() {
     s.restarts = static_cast<quint64>(o.value("restarts").toDouble());
     emit statusChanged(s);
 
+    // Cada reinicio del flujo deja su motivo en last_fault (p.ej. "... [rx dma reset]" cuando wifi-sdr desatasca
+    // el RX DMA, cmake/kepyur_patches.cmake): al log una vez, si no el primer fallo de una racha se pierde.
+    const QString fault = o.value("last_fault").toString();
+    if (!fault.isEmpty() && fault != lastFault_)
+        KP_LOGW("radio: fallo del flujo (reinicios %llu): %s", static_cast<unsigned long long>(s.restarts), qPrintable(fault));
+    lastFault_ = fault;
+
     // Desenchufado (o caido del bus): wifi-sdr lo marca como "lost" y ya no vuelve solo
     if (s.open && s.rxState == QLatin1String("lost")) {
         adapterLost(s.mode, s.mode == QLatin1String("watch") ? s.watchMHz : lastWatchMHz_);
@@ -236,8 +243,9 @@ void RadioBackend::poll() {
     }
     if (s.mode == QLatin1String("watch") && s.watchMHz > 0) lastWatchMHz_ = s.watchMHz;
 
-    // wifi-sdr se rinde tras 5 fallos seguidos del stream (rx_state "error"). En Windows ocurre a veces tras
-    // varios reinicios rapidos; cerrar y reabrir el adaptador lo recupera. Como mucho una vez cada 15 s.
+    // wifi-sdr se rinde tras 5 fallos seguidos del stream (rx_state "error"). Era sobre todo el atasco del RX DMA
+    // del 8822B en algunos controladores USB 3, que ahora wifi-sdr desatasca solo al reiniciar el flujo (parche
+    // rxdma); esto queda de ultimo recurso: cerrar y reabrir el adaptador (~10 s). Como mucho una vez cada 15 s.
     if (s.open && s.rxState == QLatin1String("error") && (s.mode == QLatin1String("watch") || s.mode == QLatin1String("scan"))) {
         const qint64 now = QDateTime::currentMSecsSinceEpoch();
         if (now - lastRecoverMs_ > 15000) {
