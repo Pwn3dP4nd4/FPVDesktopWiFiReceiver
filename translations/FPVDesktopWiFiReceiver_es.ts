@@ -20,6 +20,24 @@
         <translation>Parar</translation>
     </message>
     <message>
+        <source>Press &quot;Connect adapter&quot; and then &quot;Scan&quot;.
+
+F / double-click: full screen   O: OSD   Esc: leave full screen
+S: snapshot   R: record video</source>
+        <translation>Pulsa &quot;Conectar adaptador&quot; y luego &quot;Escanear&quot;.
+
+F / doble clic: pantalla completa   O: OSD   Esc: salir de pantalla completa
+S: captura   R: grabar vídeo</translation>
+    </message>
+    <message>
+        <source>Stop recording the &amp;video</source>
+        <translation>Parar la grabación de &amp;vídeo</translation>
+    </message>
+    <message>
+        <source>Start recording the &amp;video</source>
+        <translation>Empezar a grabar &amp;vídeo</translation>
+    </message>
+    <message>
         <source>Record IQ 5 s</source>
         <translation>Grabar IQ 5 s</translation>
     </message>
@@ -74,6 +92,26 @@
     <message>
         <source>&amp;File</source>
         <translation>&amp;Archivo</translation>
+    </message>
+    <message>
+        <source>Take a &amp;snapshot</source>
+        <translation>Hacer una &amp;captura</translation>
+    </message>
+    <message>
+        <source>Snapshots folder</source>
+        <translation>Carpeta de capturas</translation>
+    </message>
+    <message>
+        <source>Videos folder</source>
+        <translation>Carpeta de vídeos</translation>
+    </message>
+    <message>
+        <source>Open</source>
+        <translation>Abrir</translation>
+    </message>
+    <message>
+        <source>Change...</source>
+        <translation>Cambiar...</translation>
     </message>
     <message>
         <source>Open &amp;recordings folder</source>
@@ -136,6 +174,14 @@
         <translation>&amp;Conectar el adaptador al abrir</translation>
     </message>
     <message>
+        <source>&amp;Developer mode</source>
+        <translation>Modo &amp;desarrollador</translation>
+    </message>
+    <message>
+        <source>Shows sample rate, gain, IQ recording and the receiver&apos;s technical data</source>
+        <translation>Muestra el muestreo, la ganancia, la grabación IQ y los datos técnicos del receptor</translation>
+    </message>
+    <message>
         <source>On connect</source>
         <translation>Al conectar</translation>
     </message>
@@ -178,14 +224,6 @@
     <message>
         <source>Connect adapter</source>
         <translation>Conectar adaptador</translation>
-    </message>
-    <message>
-        <source>Press &quot;Connect adapter&quot; and then &quot;Scan&quot;.
-
-F / double-click: full screen   O: OSD   Esc: leave full screen</source>
-        <translation>Pulsa &quot;Conectar adaptador&quot; y luego &quot;Escanear&quot;.
-
-F / doble clic: pantalla completa   O: OSD   Esc: salir de pantalla completa</translation>
     </message>
     <message>
         <source>Connecting to the adapter...</source>
@@ -232,6 +270,99 @@ Al terminar, cierra este programa y desenchufa y vuelve a enchufar el adaptador.
     <message>
         <source>&lt;h3&gt;%1 %2&lt;/h3&gt;&lt;p&gt;Analog 5.8 GHz FPV video receiver with an RTL8812BU USB WiFi adapter, for Windows and Linux.&lt;/p&gt;&lt;p&gt;It uses the same core as the Android app &lt;a href=&apos;https://github.com/gilankpam/kepyur&apos;&gt;kepyur&lt;/a&gt; (gilankpam), with &lt;a href=&apos;https://github.com/gilankpam/wifi-sdr&apos;&gt;wifi-sdr&lt;/a&gt;, &lt;a href=&apos;https://github.com/snokvist/devourer&apos;&gt;devourer&lt;/a&gt; and libusb.&lt;/p&gt;&lt;p&gt;GPL-2.0 license &amp;middot; &lt;a href=&apos;%3&apos;&gt;%3&lt;/a&gt;&lt;/p&gt;</source>
         <translation>&lt;h3&gt;%1 %2&lt;/h3&gt;&lt;p&gt;Receptor de vídeo FPV analógico de 5.8 GHz con un adaptador WiFi USB RTL8812BU, para Windows y Linux.&lt;/p&gt;&lt;p&gt;Usa el mismo núcleo que la app Android &lt;a href=&apos;https://github.com/gilankpam/kepyur&apos;&gt;kepyur&lt;/a&gt; (gilankpam), con &lt;a href=&apos;https://github.com/gilankpam/wifi-sdr&apos;&gt;wifi-sdr&lt;/a&gt;, &lt;a href=&apos;https://github.com/snokvist/devourer&apos;&gt;devourer&lt;/a&gt; y libusb.&lt;/p&gt;&lt;p&gt;Licencia GPL-2.0 &amp;middot; &lt;a href=&apos;%3&apos;&gt;%3&lt;/a&gt;&lt;/p&gt;</translation>
+    </message>
+    <message>
+        <source>Folder for the videos</source>
+        <translation>Carpeta para los vídeos</translation>
+    </message>
+    <message>
+        <source>Folder for the snapshots</source>
+        <translation>Carpeta para las capturas</translation>
+    </message>
+    <message>
+        <source>Videos will be saved in %1</source>
+        <translation>Los vídeos se guardarán en %1</translation>
+    </message>
+    <message>
+        <source>Snapshots will be saved in %1</source>
+        <translation>Las capturas se guardarán en %1</translation>
+    </message>
+    <message>
+        <source>No picture to capture</source>
+        <translation>No hay imagen que capturar</translation>
+    </message>
+    <message>
+        <source>Could not create the folder %1.</source>
+        <translation>No se pudo crear la carpeta %1.</translation>
+    </message>
+    <message>
+        <source>Could not save the snapshot to %1</source>
+        <translation>No se pudo guardar la captura en %1</translation>
+    </message>
+    <message>
+        <source>Snapshot saved: %1</source>
+        <translation>Captura guardada: %1</translation>
+    </message>
+    <message>
+        <source>Finishing the video...</source>
+        <translation>Terminando el vídeo...</translation>
+    </message>
+    <message>
+        <source>Only %1 MB free in %2: the video takes about 60 MB per minute.</source>
+        <translation>Solo quedan %1 MB libres en %2: el vídeo ocupa unos 60 MB por minuto.</translation>
+    </message>
+    <message>
+        <source>Recording video to %1</source>
+        <translation>Grabando vídeo en %1</translation>
+    </message>
+    <message>
+        <source>Video saved: %1 (%2 s, %3 MB)</source>
+        <translation>Vídeo guardado: %1 (%2 s, %3 MB)</translation>
+    </message>
+    <message numerus="yes">
+        <source>%n frame(s) lost: the encoder could not keep up</source>
+        <translation>
+            <numerusform>%n fotograma perdido: el codificador no daba abasto</numerusform>
+            <numerusform>%n fotogramas perdidos: el codificador no daba abasto</numerusform>
+        </translation>
+    </message>
+    <message>
+        <source>No video recorded: no picture was received</source>
+        <translation>No se ha grabado vídeo: no llegó ninguna imagen</translation>
+    </message>
+    <message>
+        <source>The video recording failed:
+%1
+
+%2</source>
+        <translation>Falló la grabación de vídeo:
+%1
+
+%2</translation>
+    </message>
+    <message>
+        <source>Snapshot</source>
+        <translation>Captura</translation>
+    </message>
+    <message>
+        <source>Save the current picture as PNG (S). Folder: %1</source>
+        <translation>Guarda la imagen actual en PNG (S). Carpeta: %1</translation>
+    </message>
+    <message>
+        <source>Recording to %1. Press again (R) to stop.</source>
+        <translation>Grabando en %1. Pulsa otra vez (R) para parar.</translation>
+    </message>
+    <message>
+        <source>Record video</source>
+        <translation>Grabar vídeo</translation>
+    </message>
+    <message>
+        <source>Record the picture to an MP4 file (R); press again to stop. Folder: %1</source>
+        <translation>Graba la imagen en un archivo MP4 (R); pulsa otra vez para parar. Carpeta: %1</translation>
+    </message>
+    <message>
+        <source>This build cannot record video: it was compiled without FFmpeg (libavcodec).</source>
+        <translation>Esta versión no puede grabar vídeo: se compiló sin FFmpeg (libavcodec).</translation>
     </message>
     <message>
         <source>Adapter ready</source>

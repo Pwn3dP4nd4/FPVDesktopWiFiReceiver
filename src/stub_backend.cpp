@@ -75,7 +75,9 @@ void StubBackend::tick() {
     for (int i = 0; i < 8; ++i) p.fillRect(i * 90, 0, 90, 480, c[i]);
     p.fillRect((n_ * 6) % 720, 200, 40, 80, Qt::gray);
     p.end();
-    if (reserveFrame()) emit frameReady(img, perf_now_ns());
+    const qint64 t = perf_now_ns();
+    if (tapActive()) tapFrame(img, t);
+    if (reserveFrame()) emit frameReady(img, t);
     if (++n_ % 15 == 0) {
         RadioStatus s;
         s.open = true;

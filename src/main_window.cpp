@@ -8,8 +8,10 @@
 #include <QDesktopServices>
 #include <QDir>
 #include <QFile>
+#include <QFileDialog>
 #include <QFileInfo>
 #include <QStorageInfo>
+#include <QThreadPool>
 #include <QToolButton>
 #include <QTimer>
 #include <QFormLayout>
@@ -33,11 +35,19 @@
 #include "i18n.h"
 #include "scan_channels_dialog.h"
 #include "spectrum.h"  // kp::fpv_channels(): la tabla de canales de kepyur
+#include "video_recorder.h"
 #include "video_widget.h"
 
 namespace {
 const char *kAppName = "FPVDesktopWiFiReceiver";
 const char *kRepoUrl = "https://github.com/Pwn3dP4nd4/FPVDesktopWiFiReceiver";
+#ifdef _WIN32
+// WinUSB no sostiene de forma estable las ~24.400 transferencias/s de 40 MS/s (la version web de kepyur
+// tambien ve a 20). Misma imagen: el filtro RX deja +-10 MHz en ambos casos. El escaneo sigue a 40 MS/s.
+constexpr int kDefaultRateIndex = 1;  // 20 MS/s
+#else
+constexpr int kDefaultRateIndex = 0;  // 40 MS/s
+#endif
 }  // namespace
 
 QSettings &MainWindow::settings() {
@@ -64,6 +74,8 @@ MainWindow::MainWindow(Backend *backend, QWidget *parent) : QMainWindow(parent),
     scanBtn_ = new QPushButton;
     stopBtn_ = new QPushButton;
     recBtn_ = new QPushButton;
+    snapBtn_ = new QPushButton;
+    dvrBtn_ = new QPushButton;
     left->addWidget(connectBtn_);
     auto *scanRow = new QHBoxLayout;
     scanRow->setSpacing(4);
@@ -85,18 +97,13 @@ MainWindow::MainWindow(Backend *backend, QWidget *parent) : QMainWindow(parent),
         channels_->addItem(QStringLiteral("%1  %2 MHz").arg(c.name).arg(c.mhz, 0, 'f', 0), c.mhz);
     left->addWidget(channels_);
 
-    auto *form = new QFormLayout;
+    devBox_ = new QWidget;
+    auto *form = new QFormLayout(devBox_);
+    form->setContentsMargins(0, 0, 0, 0);
     rate_ = new QComboBox;
     rate_->addItem(QString(), 1);
     rate_->addItem(QStringLiteral("20 MS/s"), 2);
-#ifdef _WIN32
-    // WinUSB no sostiene de forma estable las ~24.400 transferencias/s de 40 MS/s (la version web de kepyur
-    // tambien ve a 20). Misma imagen: el filtro RX deja +-10 MHz en ambos casos. El escaneo sigue a 40 MS/s.
-    const int defaultRate = 1;
-#else
-    const int defaultRate = 0;
-#endif
-    rate_->setCurrentIndex(qBound(0, settings().value("rateIndex", defaultRate).toInt(), 1));
+    rate_->setCurrentIndex(qBound(0, settings().value("rateIndex", kDefaultRateIndex).toInt(), 1));
     gain_ = new QComboBox;
     gain_->addItem(QString(), -1.0);  // "AGC"
     for (int db : {10, 20, 30, 40, 50}) gain_->addItem(QStringLiteral("%1 dB").arg(db), double(db));
@@ -105,9 +112,14 @@ MainWindow::MainWindow(Backend *backend, QWidget *parent) : QMainWindow(parent),
     gainLabel_ = new QLabel;
     form->addRow(rateLabel_, rate_);
     form->addRow(gainLabel_, gain_);
-    left->addLayout(form);
+    left->addWidget(devBox_);
 
     left->addWidget(stopBtn_);
+    auto *mediaRow = new QHBoxLayout;  // captura (PNG) y grabacion de video (MP4)
+    mediaRow->setSpacing(4);
+    mediaRow->addWidget(snapBtn_, 1);
+    mediaRow->addWidget(dvrBtn_, 1);
+    left->addLayout(mediaRow);
     left->addWidget(recBtn_);
 
     info_ = new QLabel;
@@ -118,6 +130,13 @@ MainWindow::MainWindow(Backend *backend, QWidget *parent) : QMainWindow(parent),
 
     video_ = new VideoWidget;
     video_->setLogo(QPixmap(QStringLiteral(":/icons/app-128.png")));
+    dvr_ = new VideoRecorder(this);
+    dvrTick_ = new QTimer(this);
+    dvrTick_->setInterval(250);
+    connect(dvrTick_, &QTimer::timeout, this, &MainWindow::updateMediaButtons);
+    connect(dvr_, &VideoRecorder::finished, this, [this](const VideoRecorder::Result &r) {
+        onVideoRecorded(r.path, r.ok, r.error, r.frames, r.dropped, r.seconds);
+    });
     h->addWidget(side_);
     h->addWidget(video_, 1);
     setCentralWidget(central);
@@ -185,20 +204,40 @@ MainWindow::MainWindow(Backend *backend, QWidget *parent) : QMainWindow(parent),
         if (watching_ > 0) emit requestWatch(watching_);
     });
     connect(recBtn_, &QPushButton::clicked, this, &MainWindow::startRecording);
+    connect(snapBtn_, &QPushButton::clicked, this, &MainWindow::takeSnapshot);
+    connect(dvrBtn_, &QPushButton::clicked, this, &MainWindow::toggleVideoRecording);
     recCheck_ = new QTimer(this);
     recCheck_->setInterval(500);
     connect(recCheck_, &QTimer::timeout, this, &MainWindow::checkRecording);
     connect(video_, &VideoWidget::doubleClicked, this, &MainWindow::toggleFullScreen);
 
+    applyDeveloperMode(devModeAct_->isChecked());
     retranslate();
     onOpened(false, {});
     if (!restoreGeometry(settings().value("geometry").toByteArray())) resize(1100, 660);
 }
 
+// La grabacion de video se termina en closeEvent(): main.cpp destruye el backend antes que la ventana.
 MainWindow::~MainWindow() = default;
 
 void MainWindow::buildMenus() {
     fileMenu_ = menuBar()->addMenu(QString());
+    // Los atajos S / R van en setupShortcuts() (funcionan tambien en pantalla completa); aqui solo se muestran
+    snapAct_ = fileMenu_->addAction(QString(), this, &MainWindow::takeSnapshot);
+    dvrAct_ = fileMenu_->addAction(QString(), this, &MainWindow::toggleVideoRecording);
+    snapDirMenu_ = fileMenu_->addMenu(QString());
+    snapDirOpenAct_ = snapDirMenu_->addAction(QString(), this, [this] {
+        QDir().mkpath(snapshotsDir());
+        QDesktopServices::openUrl(QUrl::fromLocalFile(snapshotsDir()));
+    });
+    snapDirChangeAct_ = snapDirMenu_->addAction(QString(), this, [this] { chooseMediaDir("snapshotDir", false); });
+    videoDirMenu_ = fileMenu_->addMenu(QString());
+    videoDirOpenAct_ = videoDirMenu_->addAction(QString(), this, [this] {
+        QDir().mkpath(videosDir());
+        QDesktopServices::openUrl(QUrl::fromLocalFile(videosDir()));
+    });
+    videoDirChangeAct_ = videoDirMenu_->addAction(QString(), this, [this] { chooseMediaDir("videoDir", true); });
+    fileMenu_->addSeparator();
     recDirAct_ = fileMenu_->addAction(QString(), this, [this] {
         QDir().mkpath(recordingsDir());
         QDesktopServices::openUrl(QUrl::fromLocalFile(recordingsDir()));
@@ -266,6 +305,14 @@ void MainWindow::buildMenus() {
     }
     (settings().value("resumeLast", true).toBool() ? resumeLastAct_ : scanAct_)->setChecked(true);
     connect(resumeLastAct_, &QAction::toggled, this, [](bool on) { settings().setValue("resumeLast", on); });
+    optMenu_->addSeparator();
+    devModeAct_ = optMenu_->addAction(QString());
+    devModeAct_->setCheckable(true);
+    devModeAct_->setChecked(settings().value("developerMode", false).toBool());
+    connect(devModeAct_, &QAction::toggled, this, [this](bool on) {
+        settings().setValue("developerMode", on);
+        applyDeveloperMode(on);
+    });
 
     // Idioma: los nombres de cada idioma van siempre en ese idioma
     langMenu_ = menuBar()->addMenu(QString());
@@ -311,6 +358,7 @@ void MainWindow::retranslate() {
     updateScanButton();
     stopBtn_->setText(tr("Stop"));
     updateRecordButton();
+    updateMediaButtons();
     updateConnectButton();
     pilotsLabel_->setText(tr("Pilots found (click to watch):"));
     channels_->setItemText(0, tr("Manual channel..."));
@@ -323,6 +371,11 @@ void MainWindow::retranslate() {
     gainLabel_->setText(tr("Gain"));
 
     fileMenu_->setTitle(tr("&File"));
+    snapAct_->setText(tr("Take a &snapshot") + QStringLiteral("\tS"));
+    snapDirMenu_->setTitle(tr("Snapshots folder"));
+    videoDirMenu_->setTitle(tr("Videos folder"));
+    for (QAction *a : {snapDirOpenAct_, videoDirOpenAct_}) a->setText(tr("Open"));
+    for (QAction *a : {snapDirChangeAct_, videoDirChangeAct_}) a->setText(tr("Change..."));
     recDirAct_->setText(tr("Open &recordings folder"));
     logDirAct_->setText(tr("Open &log folder"));
     if (shortcutAct_) shortcutAct_->setText(tr("Create &desktop shortcut"));
@@ -338,6 +391,8 @@ void MainWindow::retranslate() {
     fullScreenAct_->setText(tr("Full screen	F"));
     optMenu_->setTitle(tr("&Options"));
     autoConnectAct_->setText(tr("&Connect the adapter on startup"));
+    devModeAct_->setText(tr("&Developer mode"));
+    devModeAct_->setToolTip(tr("Shows sample rate, gain, IQ recording and the receiver's technical data"));
     onConnectSection_->setText(tr("On connect"));
     resumeLastAct_->setText(tr("Go back to the &last channel"));
     scanAct_->setText(tr("&Scan the bands"));
@@ -364,7 +419,8 @@ void MainWindow::updatePlaceholder() {
     switch (screen_) {
     case Screen::Idle:
         video_->setPlaceholder(tr("Press \"Connect adapter\" and then \"Scan\".\n\n"
-                                  "F / double-click: full screen   O: OSD   Esc: leave full screen"));
+                                  "F / double-click: full screen   O: OSD   Esc: leave full screen\n"
+                                  "S: snapshot   R: record video"));
         break;
     case Screen::Connecting:
         video_->setPlaceholder(tr("Connecting to the adapter..."));
@@ -434,6 +490,166 @@ QString MainWindow::recordingsDir() const {
     return QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation) + QLatin1Char('/') + kAppName;
 }
 
+QString MainWindow::snapshotsDir() const {
+    const QString def = QStandardPaths::writableLocation(QStandardPaths::PicturesLocation) + QLatin1Char('/') + kAppName;
+    return settings().value("snapshotDir", def).toString();
+}
+
+QString MainWindow::videosDir() const {
+    const QString def = QStandardPaths::writableLocation(QStandardPaths::MoviesLocation) + QLatin1Char('/') + kAppName;
+    return settings().value("videoDir", def).toString();
+}
+
+void MainWindow::chooseMediaDir(const char *key, bool videos) {
+    const QString cur = videos ? videosDir() : snapshotsDir();
+    QDir().mkpath(cur);
+    const QString d = QFileDialog::getExistingDirectory(
+        this, videos ? tr("Folder for the videos") : tr("Folder for the snapshots"), cur);
+    if (d.isEmpty()) return;
+    settings().setValue(key, d);
+    statusBar()->showMessage((videos ? tr("Videos will be saved in %1") : tr("Snapshots will be saved in %1"))
+                                 .arg(QDir::toNativeSeparators(d)), 8000);
+    updateMediaButtons();  // carpeta en los tooltips
+}
+
+QString MainWindow::mediaFileName(const QString &dir, const QString &ext) const {
+    QString base = dir + QStringLiteral("/fpv-") + QDateTime::currentDateTime().toString(QStringLiteral("yyyyMMdd-HHmmss"));
+    if (const auto *ch = watching_ > 0 ? kp::nearest_channel(watching_) : nullptr)
+        base += QLatin1Char('-') + QString::fromLatin1(ch->name);
+    QString f = base + ext;
+    for (int i = 2; QFileInfo::exists(f); ++i) f = QStringLiteral("%1-%2%3").arg(base).arg(i).arg(ext);
+    return f;
+}
+
+void MainWindow::takeSnapshot() {
+    const QImage img = video_->hasLiveFrame() ? video_->snapshot() : QImage();
+    if (img.isNull()) {
+        statusBar()->showMessage(tr("No picture to capture"), 4000);
+        return;
+    }
+    const QString dir = snapshotsDir();
+    if (!QDir().mkpath(dir)) {
+        QMessageBox::warning(this, kAppName, tr("Could not create the folder %1.").arg(QDir::toNativeSeparators(dir)));
+        return;
+    }
+    const QString path = mediaFileName(dir, QStringLiteral(".png"));
+    if (QFile reserve(path); !reserve.open(QIODevice::WriteOnly)) {  // reservar el nombre (dos capturas en el mismo segundo)
+        statusBar()->showMessage(tr("Could not save the snapshot to %1").arg(QDir::toNativeSeparators(path)), 10000);
+        return;
+    }
+    // Comprimir el PNG lleva unas decenas de ms: fuera del hilo de la GUI para no saltarse fotogramas al pintar
+    QThreadPool::globalInstance()->start([this, img, path] {
+        const bool ok = img.save(path, "PNG");
+        QMetaObject::invokeMethod(this, [this, ok, path] {
+            if (ok) {
+                statusBar()->showMessage(tr("Snapshot saved: %1").arg(QDir::toNativeSeparators(path)), 8000);
+            } else {
+                QFile::remove(path);
+                statusBar()->showMessage(tr("Could not save the snapshot to %1").arg(QDir::toNativeSeparators(path)), 10000);
+            }
+        }, Qt::QueuedConnection);
+    });
+}
+
+void MainWindow::toggleVideoRecording() {
+    if (dvr_->isRecording()) {
+        backend_->setFrameTap({});
+        dvr_->stop();  // termina el archivo en su hilo; luego onVideoRecorded()
+        statusBar()->showMessage(tr("Finishing the video..."));
+        return;
+    }
+    if (!dvrBtn_->isEnabled()) return;  // sin canal o sin codificador
+    const QString dir = videosDir();
+    if (!QDir().mkpath(dir)) {
+        QMessageBox::warning(this, kAppName, tr("Could not create the folder %1.").arg(QDir::toNativeSeparators(dir)));
+        return;
+    }
+    const qint64 avail = QStorageInfo(dir).bytesAvailable();
+    if (avail >= 0 && avail < 500LL * 1000 * 1000) {
+        QMessageBox::warning(this, kAppName, tr("Only %1 MB free in %2: the video takes about 60 MB per minute.")
+                                                 .arg(avail / 1000000).arg(QDir::toNativeSeparators(dir)));
+        return;
+    }
+    const auto asp = video_->aspect();
+    const double aspect = asp == VideoWidget::Aspect::R16x9 ? 16.0 / 9 : asp == VideoWidget::Aspect::R4x3 ? 4.0 / 3 : 0;
+    const QString path = mediaFileName(dir, QStringLiteral(".mp4"));
+    if (!dvr_->start(path, aspect)) return;
+    VideoRecorder *rec = dvr_;
+    backend_->setFrameTap([rec](const QImage &img, qint64 ns) { rec->push(img, ns); });
+    statusBar()->showMessage(tr("Recording video to %1").arg(QDir::toNativeSeparators(path)), 8000);
+    dvrTick_->start();
+    updateMediaButtons();
+}
+
+void MainWindow::onVideoRecorded(const QString &path, bool ok, const QString &error, int frames, int dropped,
+                                 double seconds) {
+    dvrTick_->stop();
+    updateMediaButtons();
+    const QString file = QDir::toNativeSeparators(path);
+    if (ok) {
+        QString m = tr("Video saved: %1 (%2 s, %3 MB)")
+                        .arg(file)
+                        .arg(seconds, 0, 'f', 1)
+                        .arg(QFileInfo(path).size() / 1e6, 0, 'f', 1);
+        if (dropped > 0) m += QStringLiteral("  ") + tr("%n frame(s) lost: the encoder could not keep up", nullptr, dropped);
+        statusBar()->showMessage(m, 15000);
+    } else if (frames == 0 && error == QLatin1String("no picture was received")) {
+        statusBar()->showMessage(tr("No video recorded: no picture was received"), 10000);
+    } else {
+        QMessageBox::warning(this, kAppName, tr("The video recording failed:\n%1\n\n%2").arg(error, file));
+    }
+}
+
+void MainWindow::updateMediaButtons() {
+    const bool watchingNow = open_ && lastStatus_.open && lastStatus_.mode == QLatin1String("watch");
+    snapBtn_->setText(tr("Snapshot"));
+    snapBtn_->setEnabled(watchingNow);
+    snapBtn_->setToolTip(tr("Save the current picture as PNG (S). Folder: %1").arg(QDir::toNativeSeparators(snapshotsDir())));
+    const bool rec = dvr_->isRecording();
+    if (rec) {
+        const qint64 s = dvr_->elapsedMs() / 1000;
+        const QString t = QStringLiteral("%1:%2").arg(s / 60, 2, 10, QLatin1Char('0')).arg(s % 60, 2, 10, QLatin1Char('0'));
+        dvrBtn_->setText(QString(QChar(0x25A0)) + QLatin1Char(' ') + t);  // cuadrado de parar
+        dvrBtn_->setStyleSheet(QStringLiteral("QPushButton{color:white;background:#c62828;font-weight:bold;}"));
+        dvrBtn_->setToolTip(tr("Recording to %1. Press again (R) to stop.").arg(QDir::toNativeSeparators(dvr_->path())));
+        video_->setRecIndicator(QStringLiteral("REC ") + t);
+        dvrAct_->setText(tr("Stop recording the &video") + QStringLiteral("\tR"));
+    } else {
+        dvrBtn_->setText(QString(QChar(0x25CF)) + QLatin1Char(' ') + tr("Record video"));  // punto de grabar
+        dvrBtn_->setStyleSheet(QString());
+        dvrBtn_->setToolTip(VideoRecorder::available()
+                                ? tr("Record the picture to an MP4 file (R); press again to stop. Folder: %1")
+                                      .arg(QDir::toNativeSeparators(videosDir()))
+                                : tr("This build cannot record video: it was compiled without FFmpeg (libavcodec)."));
+        video_->setRecIndicator(QString());
+        dvrAct_->setText(tr("Start recording the &video") + QStringLiteral("\tR"));
+    }
+    // Para empezar hace falta estar viendo un canal; mientras graba siempre se puede parar
+    dvrBtn_->setEnabled(rec || (watchingNow && VideoRecorder::available()));
+    snapAct_->setEnabled(snapBtn_->isEnabled());
+    dvrAct_->setEnabled(dvrBtn_->isEnabled());
+}
+
+void MainWindow::applyDeveloperMode(bool on) {
+    devMode_ = on;
+    devBox_->setVisible(on);
+    recBtn_->setVisible(on);
+    recDirAct_->setVisible(on);  // carpeta de las grabaciones IQ
+    if (!on) {  // valores por defecto: lo que no se ve no puede quedar cambiado
+        const bool changed = rate_->currentIndex() != kDefaultRateIndex || gain_->currentIndex() != 0;
+        rate_->setCurrentIndex(kDefaultRateIndex);
+        gain_->setCurrentIndex(0);  // AGC
+        settings().setValue("rateIndex", kDefaultRateIndex);
+        settings().setValue("gainIndex", 0);
+        if (changed && open_) {
+            emit requestWatchRate(rate_->currentData().toInt());
+            emit requestGain(gain_->currentData().toDouble());
+            if (watching_ > 0) emit requestWatch(watching_);
+        }
+    }
+    onStatus(lastStatus_);  // datos tecnicos
+}
+
 void MainWindow::startup(bool autoConnect, double watchMHz, bool forceScan) {
     if (!autoConnect && watchMHz <= 0 && !forceScan && !autoConnectAct_->isChecked()) return;
     pendingWatch_ = watchMHz;
@@ -472,6 +688,7 @@ void MainWindow::onOpened(bool ok, const QString &err) {
                        static_cast<QWidget *>(channels_), static_cast<QWidget *>(list_)})
         w->setEnabled(ok);
     updateRecordButton();
+    updateMediaButtons();
     if (ok) {
         statusBar()->showMessage(tr("Adapter ready"), 5000);
         screen_ = Screen::Ready;
@@ -566,6 +783,7 @@ void MainWindow::onLost(const QString &msg) {
                        static_cast<QWidget *>(channels_), static_cast<QWidget *>(list_)})
         w->setEnabled(false);
     updateRecordButton();
+    updateMediaButtons();
     video_->clear();
     list_->clear();
     openError_ = msg;
@@ -588,6 +806,7 @@ void MainWindow::onPilots(const QVector<Pilot> &pilots) {
 void MainWindow::onStatus(const RadioStatus &s) {
     lastStatus_ = s;
     updateRecordButton();
+    updateMediaButtons();
     watching_ = s.mode == QLatin1String("watch") ? s.watchMHz : 0;
     if (watching_ > 0 && qAbs(watching_ - lastSaved_) > 0.5 && s.chip != QLatin1String("demo")) {
         lastSaved_ = watching_;
@@ -612,7 +831,7 @@ void MainWindow::onStatus(const RadioStatus &s) {
     else if (s.mode == QLatin1String("test")) mode = tr("test");
 
     QString t;
-    if (s.open) {
+    if (s.open && devMode_) {
         t += QStringLiteral("chip: %1  USB %2\n").arg(s.chip, s.usb3 ? "3" : "2");
         t += tr("mode: %1  rx: %2").arg(mode, s.rxState) + QLatin1Char('\n');
         if (s.mode == QLatin1String("watch"))
@@ -626,10 +845,11 @@ void MainWindow::onStatus(const RadioStatus &s) {
             t += tr("dropped: %1  restarts: %2").arg(s.dropped).arg(s.restarts);
         else
             t += tr("dropped: %1").arg(s.dropped);
-        if (!s.rxError.isEmpty()) t += QLatin1Char('\n') + tr("error: %1").arg(s.rxError);
-        if (!s.usb3 && s.chip != QLatin1String("demo"))
-            t += QLatin1Char('\n') + tr("WARNING: USB 2, no 40 MS/s. Use a USB 3 port.");
     }
+    // Errores y avisos: tambien sin el modo desarrollador
+    if (s.open && !s.rxError.isEmpty()) t += (t.isEmpty() ? QString() : QStringLiteral("\n")) + tr("error: %1").arg(s.rxError);
+    if (s.open && !s.usb3 && s.chip != QLatin1String("demo"))
+        t += (t.isEmpty() ? QString() : QStringLiteral("\n")) + tr("WARNING: USB 2, no 40 MS/s. Use a USB 3 port.");
     info_->setText(t);
 }
 
@@ -644,6 +864,10 @@ void MainWindow::toggleFullScreen() {
 
 void MainWindow::closeEvent(QCloseEvent *e) {
     if (isFullScreen()) toggleFullScreen();
+    if (dvr_->isRecording()) {  // terminar el MP4 (sin su indice no se podria abrir); el backend aun existe aqui
+        backend_->setFrameTap({});
+        dvr_->waitFinished();
+    }
     settings().setValue("geometry", saveGeometry());
     settings().sync();
     e->accept();
@@ -663,4 +887,6 @@ void MainWindow::setupShortcuts() {
     add({QKeySequence(Qt::Key_F), QKeySequence(Qt::Key_F11)}, [this] { toggleFullScreen(); });
     add({QKeySequence(Qt::Key_Escape)}, [this] { if (isFullScreen()) toggleFullScreen(); });
     add({QKeySequence(Qt::Key_O)}, [this] { video_->setOsdVisible(!video_->osdVisible()); });
+    add({QKeySequence(Qt::Key_S)}, [this] { takeSnapshot(); });
+    add({QKeySequence(Qt::Key_R)}, [this] { toggleVideoRecording(); });
 }

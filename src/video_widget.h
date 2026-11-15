@@ -21,6 +21,14 @@ public:
     enum class Aspect { R4x3, R16x9, Fill };  // Fill: estirar a todo el widget
     void setAspect(Aspect a) { aspect_ = a; update(); }
     void setCropOverscan(bool on) { crop_ = on; update(); }
+    Aspect aspect() const { return aspect_; }
+    // Hay imagen en directo (no vale para captura: sin fotograma o con "SIN SENAL")
+    bool hasLiveFrame() const { return !frame_.isNull() && !stale_; }
+    // Ultimo fotograma como se ve: con el recorte de bordes y en pixeles cuadrados a la forma elegida
+    // (720x480 a 4:3 -> 720x540; sin reducir nunca ningun eje). Sin OSD. Nula si no hay imagen.
+    QImage snapshot() const;
+    // Indicador de grabacion arriba a la derecha (punto rojo que parpadea + texto); vacio = ninguno
+    void setRecIndicator(const QString &text) { rec_ = text; update(); }
 
 public slots:
     // producedNs: reloj monotono (perf_now_ns()) cuando el backend tuvo el fotograma; 0 = desconocido
@@ -35,7 +43,8 @@ protected:
 
 private:
     QImage frame_;
-    QString osd_, placeholder_;
+    QString osd_, placeholder_, rec_;
+    QRectF sourceRect() const;  // parte del fotograma que se ve (recorte del sobrebarrido)
     QPixmap logo_;
     bool osdOn_ = true;
     // Senal perdida: el decodificador deja de emitir fotogramas y el ultimo se quedaria congelado como si

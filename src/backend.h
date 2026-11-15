@@ -6,6 +6,8 @@
 #include <QVector>
 
 #include <atomic>
+#include <functional>
+#include <mutex>
 struct Pilot {
     double freqMHz = 0;
     double snrDb = 0;
@@ -56,7 +58,22 @@ public:
     // el backend descarta frames mientras haya demasiados en cola (el ultimo gana, el DSP nunca espera).
     void frameConsumed() { if (inFlight_.fetch_sub(1) <= 0) inFlight_.store(0); }
     static inline std::atomic<int> gatedFrames{0};  // descartados por ir la GUI retrasada (medidas)
+
+    // Derivacion de TODOS los fotogramas, antes del control de flujo de la GUI (grabacion de video: aunque la
+    // ventana vaya retrasada no se pierde ninguno). Se llama en el hilo del decodificador; thread-safe. Al
+    // volver de setFrameTap({}) ya no hay ninguna llamada en curso al anterior.
+    using FrameTap = std::function<void(const QImage &frame, qint64 producedNs)>;
+    void setFrameTap(FrameTap tap) {
+        std::lock_guard<std::mutex> l(tapMu_);
+        tap_ = std::move(tap);
+        tapOn_.store(bool(tap_), std::memory_order_release);
+    }
 protected:
+    bool tapActive() const { return tapOn_.load(std::memory_order_acquire); }
+    void tapFrame(const QImage &img, qint64 producedNs) {
+        std::lock_guard<std::mutex> l(tapMu_);
+        if (tap_) tap_(img, producedNs);
+    }
     bool reserveFrame() {
         if (inFlight_.load() >= 2) {
             gatedFrames.fetch_add(1, std::memory_order_relaxed);
@@ -67,6 +84,9 @@ protected:
     }
 private:
     std::atomic<int> inFlight_{0};
+    std::mutex tapMu_;
+    FrameTap tap_;
+    std::atomic<bool> tapOn_{false};
 
 public slots:
     virtual void openDevice() = 0;            // abrir el adaptador (bloqueante)

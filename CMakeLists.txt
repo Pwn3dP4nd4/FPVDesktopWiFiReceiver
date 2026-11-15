@@ -127,9 +127,31 @@ add_executable(FPVDesktopWiFiReceiver
   src/scan_plan.cpp src/scan_plan.h
   src/scan_channels_dialog.cpp src/scan_channels_dialog.h
   src/i18n.cpp src/i18n.h
+  src/video_recorder.cpp src/video_recorder.h src/video_encoder.h
   assets/icons.qrc
 )
 target_link_libraries(FPVDesktopWiFiReceiver PRIVATE Qt6::Widgets kepyur_dsp)
+
+# ---- Grabacion de video (MP4 H.264): el codificador del sistema -----------------------------------------------
+# Windows: Media Foundation (viene con Windows, ninguna DLL que copiar). Linux: FFmpeg (libavcodec/libavformat de
+# la distro, opcional: sin el, el boton de grabar video sale desactivado). Las capturas PNG van siempre.
+if(WIN32)
+  target_sources(FPVDesktopWiFiReceiver PRIVATE src/video_encoder_mf.cpp)
+  target_link_libraries(FPVDesktopWiFiReceiver PRIVATE mfplat mfreadwrite mfuuid ole32)
+else()
+  find_package(PkgConfig QUIET)
+  if(PkgConfig_FOUND)
+    pkg_check_modules(LIBAV IMPORTED_TARGET libavformat libavcodec libavutil)
+  endif()
+  if(LIBAV_FOUND)
+    target_sources(FPVDesktopWiFiReceiver PRIVATE src/video_encoder_av.cpp)
+    target_link_libraries(FPVDesktopWiFiReceiver PRIVATE PkgConfig::LIBAV)
+  else()
+    target_sources(FPVDesktopWiFiReceiver PRIVATE src/video_encoder_none.cpp)
+    message(WARNING "FFmpeg (libavformat/libavcodec) no encontrado: sin grabacion de video "
+                    "(Debian/Ubuntu: apt install libavformat-dev libavcodec-dev; Fedora: ffmpeg-free-devel)")
+  endif()
+endif()
 target_compile_definitions(FPVDesktopWiFiReceiver PRIVATE KP_VERSION="${PROJECT_VERSION}")
 
 # ---- Idiomas: textos fuente en ingles; espanol en translations/*.ts, compilado (.qm) dentro del ejecutable ----

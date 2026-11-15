@@ -15,6 +15,7 @@ class QLabel;
 class QSettings;
 class QTimer;
 class VideoWidget;
+class VideoRecorder;
 
 class MainWindow : public QMainWindow {
     Q_OBJECT
@@ -64,13 +65,27 @@ private:
     void installDriver();  // lanza scripts/windows-driver.ps1 como administrador
 #endif
     QString recordingsDir() const;
+    // Capturas (PNG) y video (MP4): carpetas elegibles, por defecto Imagenes / Videos del usuario
+    QString snapshotsDir() const;
+    QString videosDir() const;
+    QString mediaFileName(const QString &dir, const QString &ext) const;  // fpv-AAAAMMDD-HHMMSS[-R4].ext, sin pisar
+    void chooseMediaDir(const char *key, bool videos);
+    void takeSnapshot();
+    void toggleVideoRecording();
+    void onVideoRecorded(const QString &path, bool ok, const QString &error, int frames, int dropped, double seconds);
+    void updateMediaButtons();
+    // Modo desarrollador (Opciones, se guarda): muestra muestreo, ganancia, grabar IQ y los datos tecnicos.
+    // Desactivado, muestreo y ganancia vuelven a los valores por defecto (no quedan ocultos con otro valor).
+    void applyDeveloperMode(bool on);
     void updateRecordButton();
     void startRecording();
     void checkRecording();
 
     Backend *backend_;
     QWidget *side_;
-    QPushButton *connectBtn_, *scanBtn_, *stopBtn_, *recBtn_;
+    QWidget *devBox_;  // muestreo y ganancia (solo en modo desarrollador)
+    bool devMode_ = false;
+    QPushButton *connectBtn_, *scanBtn_, *stopBtn_, *recBtn_, *snapBtn_, *dvrBtn_;
     QToolButton *scanCfgBtn_;
     QStringList scanChannels_;  // nombres ("R4"); vacia = todos
     QComboBox *channels_, *rate_, *gain_;
@@ -80,7 +95,11 @@ private:
     QMenu *viewMenu_ = nullptr;
     QAction *aspectSection_ = nullptr, *aspectActs_[3] = {}, *cropAct_ = nullptr, *fullScreenAct_ = nullptr;
     QMenu *fileMenu_ = nullptr, *optMenu_ = nullptr, *langMenu_ = nullptr, *helpMenu_ = nullptr;
+    QAction *snapAct_ = nullptr, *dvrAct_ = nullptr;
+    QMenu *snapDirMenu_ = nullptr, *videoDirMenu_ = nullptr;
+    QAction *snapDirOpenAct_ = nullptr, *snapDirChangeAct_ = nullptr, *videoDirOpenAct_ = nullptr, *videoDirChangeAct_ = nullptr;
     QAction *recDirAct_ = nullptr, *logDirAct_ = nullptr, *shortcutAct_ = nullptr, *driverAct_ = nullptr, *quitAct_ = nullptr;
+    QAction *devModeAct_ = nullptr;
     QAction *autoConnectAct_ = nullptr, *onConnectSection_ = nullptr, *resumeLastAct_ = nullptr, *scanAct_ = nullptr;
     QAction *langSystemAct_ = nullptr, *manualAct_ = nullptr, *aboutAct_ = nullptr;
     QActionGroup *langGroup_ = nullptr;
@@ -96,4 +115,7 @@ private:
     QString recPrefix_;
     QElapsedTimer recStarted_;
     QTimer *recCheck_ = nullptr;
+    // grabacion de video (DVR)
+    VideoRecorder *dvr_ = nullptr;
+    QTimer *dvrTick_ = nullptr;  // indicador REC y tiempo en el boton
 };

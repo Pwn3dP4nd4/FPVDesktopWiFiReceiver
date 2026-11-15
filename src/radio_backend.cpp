@@ -195,10 +195,13 @@ void RadioBackend::record(double seconds, const QString &prefix) {
 
 void RadioBackend::onFrame(const kp::Frame &f) {
     const qint64 t = perf_now_ns();
-    if (!reserveFrame()) return;  // la GUI va retrasada: descartar (el siguiente llegara en 16-20 ms)
+    const bool tap = tapActive();      // grabando video: este fotograma hace falta aunque la GUI vaya retrasada
+    const bool show = reserveFrame();  // la GUI va retrasada: no pintarlo (el siguiente llegara en 16-20 ms)
+    if (!tap && !show) return;
     // kp::Frame es R,G,B,0xff por pixel y solo es valido durante la llamada: copiar.
-    QImage img(f.data, f.width, f.height, f.width * 4, QImage::Format_RGBX8888);
-    emit frameReady(img.copy(), t);
+    const QImage img = QImage(f.data, f.width, f.height, f.width * 4, QImage::Format_RGBX8888).copy();
+    if (tap) tapFrame(img, t);
+    if (show) emit frameReady(img, t);
 }
 
 void RadioBackend::poll() {

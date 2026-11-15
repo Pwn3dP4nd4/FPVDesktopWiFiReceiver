@@ -86,7 +86,7 @@ scripts/update-deps.sh --init
 ### Linux (Debian/Ubuntu; Fedora/Arch also through `--deps`)
 
 ```bash
-scripts/build.sh --deps         # installs Qt6, libusb, binutils-mipsel-linux-gnu, xxd... and builds
+scripts/build.sh --deps         # installs Qt6, libusb, FFmpeg (libavcodec), binutils-mipsel-linux-gnu, xxd... and builds
 build/release/FPVDesktopWiFiReceiver
 sudo cmake --install build/release   # optional: menu entry with icon + udev rule in /etc/udev/rules.d (reloads udev)
 ```
@@ -98,6 +98,11 @@ sudo cp packaging/linux/60-kepyur.rules /etc/udev/rules.d/ && sudo udevadm contr
 ```
 
 The kernel driver `rtw88_8822bu` is detached automatically when the adapter is opened.
+
+Video recording (MP4) uses the distribution's FFmpeg (`libavformat-dev libavcodec-dev`, installed by `--deps`):
+H.264 with libx264 or libopenh264, or MPEG-4 if the distribution has no H.264 encoder. Without FFmpeg it still
+builds, with the *Record video* button disabled. On Windows it uses Media Foundation, part of Windows: nothing to
+install and no extra DLL in the zip (Windows "N" editions need Microsoft's *Media Feature Pack*).
 
 ### Windows 10/11
 
@@ -173,14 +178,28 @@ language (Spanish on a Spanish Windows/Linux, English otherwise).
   (⚙) next to it chooses which channels to scan: the full sweep is 29 steps of 20 MHz (~26 s on Windows) and
   one band alone is about 4 (~3 s). The choice is remembered.
   Click a pilot to watch it, or pick a fixed channel in the drop-down.
-- Sample rate 40/20 MS/s and gain (AGC or fixed), remembered between sessions. **Record IQ 5 s** saves
-  `Documents/FPVDesktopWiFiReceiver/rec-*.cs16` (+ `.json`), which kepyur's `kp_replay` can play back.
-- **F** or double-click on the video: full screen · **O**: OSD · **Esc**: leave full screen.
+- **Options → Developer mode** (off by default, remembered) shows the tools a normal user doesn't need:
+  sample rate 40/20 MS/s and gain (AGC or fixed), **Record IQ 5 s** (saves
+  `Documents/FPVDesktopWiFiReceiver/rec-*.cs16` + `.json`, which kepyur's `kp_replay` can play back), *File → Open
+  recordings folder* and the receiver's technical data under the buttons (chip, USB, lock, fps, dropped). Turning
+  it off puts sample rate and gain back to their defaults (20 MS/s on Windows, 40 on Linux; AGC). Errors and the
+  USB 2 warning are shown in both modes.
+- **Snapshot** (key **S**): saves the current picture as PNG, as it is shown (shape of the *View* menu and
+  cropped borders, without the OSD), in `Pictures/FPVDesktopWiFiReceiver/fpv-YYYYMMDD-HHMMSS-R4.png`.
+- **● Record video** (key **R**): records the decoded video to MP4 (H.264, 59.94 fps NTSC / 50 PAL, about
+  60 MB per minute) in `Videos/FPVDesktopWiFiReceiver/fpv-YYYYMMDD-HHMMSS-R4.mp4`; press again to stop. While
+  recording the button turns red with the elapsed time and the video shows a blinking **● REC**, also in full
+  screen. Every decoded frame is recorded, even if the screen skips one; if the signal is lost the recording keeps
+  going and the picture stays frozen until it comes back. Both folders can be changed in **File → Snapshots
+  folder / Videos folder → Change...** and are remembered.
+- **F** or double-click on the video: full screen · **O**: OSD · **S**: snapshot · **R**: record video ·
+  **Esc**: leave full screen.
 - **View** menu: picture shape 4:3 (analog standard), 16:9 (cameras in widescreen mode) or stretched to the
   window, and *Crop the borders* (on by default: hides 3 % per side, the dirty edges of the analog picture, as a TV
   does). Both are remembered.
 - **Options** menu: *Connect the adapter on startup* (on by default) and what to do on connect (*Go back to the
-  last channel* or *Scan the bands*). **File** menu: recordings and log folders, desktop shortcut (Windows).
+  last channel* or *Scan the bands*). *Developer mode*. **File** menu: snapshot, record video, snapshots/videos and log folders
+  (IQ recordings in developer mode), desktop shortcut (Windows).
 - Settings: Windows `%APPDATA%\FPVDesktopWiFiReceiver\FPVDesktopWiFiReceiver.ini`, Linux
   `~/.config/FPVDesktopWiFiReceiver/FPVDesktopWiFiReceiver.ini`.
 - Log: Windows `%LOCALAPPDATA%\FPVDesktopWiFiReceiver\FPVDesktopWiFiReceiver.log`, Linux

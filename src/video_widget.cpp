@@ -1,5 +1,6 @@
 #include "video_widget.h"
 
+#include <QDateTime>
 #include <QFontMetrics>
 #include <QPainter>
 #include <QPainterPath>
@@ -48,6 +49,29 @@ void VideoWidget::clear() {
     update();
 }
 
+QRectF VideoWidget::sourceRect() const {
+    QRectF src(frame_.rect());
+    if (crop_) src.adjust(src.width() * kCropX, src.height() * kCropY, -src.width() * kCropX, -src.height() * kCropY);
+    return src;
+}
+
+QImage VideoWidget::snapshot() const {
+    if (frame_.isNull()) return {};
+    const QRectF src = sourceRect();
+    QSize out(qRound(src.width()), qRound(src.height()));
+    if (aspect_ != Aspect::Fill) {
+        const double a = aspect_ == Aspect::R16x9 ? 16.0 / 9 : 4.0 / 3;
+        if (out.width() < out.height() * a) out.setWidth(qRound(out.height() * a));
+        else out.setHeight(qRound(out.width() / a));
+    }
+    QImage img(out, QImage::Format_RGB32);
+    QPainter p(&img);
+    p.setRenderHint(QPainter::SmoothPixmapTransform);
+    p.drawImage(QRectF(img.rect()), frame_, src);
+    p.end();
+    return img;
+}
+
 void VideoWidget::mouseDoubleClickEvent(QMouseEvent *) { emit doubleClicked(); }
 
 void VideoWidget::paintEvent(QPaintEvent *) {
@@ -78,8 +102,7 @@ void VideoWidget::paintEvent(QPaintEvent *) {
             r.moveCenter(rect().center());
         }
         // Sobrebarrido: como un televisor, fuera los bordes (inicio/fin de linea, medias lineas arriba/abajo)
-        QRectF src(frame_.rect());
-        if (crop_) src.adjust(src.width() * kCropX, src.height() * kCropY, -src.width() * kCropX, -src.height() * kCropY);
+        const QRectF src = sourceRect();
         p.setRenderHint(QPainter::SmoothPixmapTransform);
         p.drawImage(QRectF(r), frame_, src);
         if (stale_) {
@@ -116,6 +139,27 @@ void VideoWidget::paintEvent(QPaintEvent *) {
         p.fillPath(path, QColor(0, 0, 0, 150));
         p.setPen(Qt::white);
         p.drawText(tr, Qt::AlignCenter, osd_);
+    }
+    if (!rec_.isEmpty()) {  // grabando: tambien en pantalla completa y sin senal
+        QFont f = font();
+        f.setPointSizeF(f.pointSizeF() * 1.1);
+        f.setBold(true);
+        p.setFont(f);
+        const QFontMetrics fm(f);
+        const int dot = fm.height() * 2 / 3;
+        QRect box(0, 0, fm.horizontalAdvance(rec_) + dot + 26, fm.height() + 10);
+        box.moveTopRight(QPoint(width() - 14, 14));  // a la altura del OSD
+        QPainterPath path;
+        path.addRoundedRect(box, box.height() / 2.0, box.height() / 2.0);
+        p.setRenderHint(QPainter::Antialiasing);
+        p.fillPath(path, QColor(0, 0, 0, 150));
+        if ((QDateTime::currentMSecsSinceEpoch() / 500) % 2 == 0) {
+            p.setPen(Qt::NoPen);
+            p.setBrush(QColor(235, 40, 40));
+            p.drawEllipse(QRect(box.left() + 10, box.center().y() - dot / 2, dot, dot));
+        }
+        p.setPen(Qt::white);
+        p.drawText(box.adjusted(dot + 16, 0, -10, 0), Qt::AlignVCenter | Qt::AlignLeft, rec_);
     }
     p.end();
     if (!frame_.isNull() && pendingProducedNs_) perfPainted(perf_now_ns() - t0);
