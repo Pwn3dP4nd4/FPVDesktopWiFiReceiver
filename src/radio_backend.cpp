@@ -61,6 +61,9 @@ void RadioBackend::ensureObjects() {
     if (!radio_) {
         radio_ = std::make_unique<kp::Radio>([this](const kp::Frame &f) { onFrame(f); });
         radio_->set_scan_plan(scanPlan_);  // seleccion recibida antes de crear la radio
+        // Filtro peine de croma NTSC (cmake/kepyur_patches.cmake): menos arcoiris en detalles finos y en el texto
+        // del OSD a cambio de ~6 % de un nucleo. En el PC sobra CPU, asi que siempre activo.
+        radio_->set_comb(true);
     }
 }
 

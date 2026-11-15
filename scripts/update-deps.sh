@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Dependencias upstream (submodulos git, sin forks; el unico anadido a kepyur se hace al compilar, ver
-# "plan de escaneo elegible" en CMakeLists.txt, sin tocar el submodulo):
+# Dependencias upstream (submodulos git, sin forks; los anadidos a kepyur se aplican al compilar sobre copias,
+# ver cmake/kepyur_patches.cmake, sin tocar el submodulo):
 #   third_party/kepyur                                  -> github.com/gilankpam/kepyur (main)
 #     third_party/libusb, third_party/wifi-sdr          -> las versiones que kepyur tiene fijadas
 #       external/devourer                               -> la version que wifi-sdr tiene fijada

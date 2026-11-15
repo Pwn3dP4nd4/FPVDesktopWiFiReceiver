@@ -58,57 +58,43 @@ set(KEPYUR_RADIO ${KP_WITH_RADIO} CACHE BOOL "" FORCE)
 # EXCLUDE_FROM_ALL: solo se compila lo que enlaza la GUI (los kp_* de escritorio de kepyur no hacen falta).
 add_subdirectory("${KEPYUR_DIR}/native" kepyur_native EXCLUDE_FROM_ALL)
 
+# ---- cambios a kepyur aplicados al compilar (cmake/kepyur_patches.cmake) ---------------------------------------
+# Copias de native/dsp y native/radio en el build con los cambios: el submodulo no se toca.
+#   scan_plan: escanear solo los canales elegidos  -  comb: filtro peine de croma NTSC (propuesto a kepyur)
+include(cmake/kepyur_patches.cmake)
+set(_kp_out "${CMAKE_BINARY_DIR}/kepyur_patched")
+set(_kp_sets comb)
 if(KP_WITH_RADIO)
-  # ---- plan de escaneo elegible: kp::Radio::set_scan_plan() -------------------------------------------------
-  # kepyur fija el plan de escaneo dentro de radio.cpp (29 pasos de 20 MHz, ~26 s). Para escanear solo los
-  # canales elegidos se compila una copia de radio.h/radio.cpp en el build con dos cambios de texto, sin tocar
-  # el submodulo: scripts/update-deps.sh lo sigue actualizando sin conflictos. Si upstream cambia las lineas de
-  # anclaje, la configuracion falla con este aviso y hay que revisar aqui.
-  set(_kr "${KEPYUR_DIR}/native/radio")
-  set(_kp "${CMAKE_BINARY_DIR}/kepyur_patched/radio")
-  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${_kr}/radio.h" "${_kr}/radio.cpp")
-  file(READ "${_kr}/radio.h" _h)
-  file(READ "${_kr}/radio.cpp" _c)
-  string(REPLACE "\r\n" "\n" _h "${_h}")
-  string(REPLACE "\r\n" "\n" _c "${_c}")
-  set(_h_anchor "  void scan(double prefer_hz = 0);\n")
-  set(_c_anchor "        _plan = scan_plan();\n")
-  string(FIND "${_h}" "${_h_anchor}" _i1)
-  string(FIND "${_c}" "${_c_anchor}" _i2)
-  if(_i1 LESS 0 OR _i2 LESS 0)
-    message(FATAL_ERROR "kepyur ha cambiado radio.h/radio.cpp y ya no encuentro donde anadir set_scan_plan() "
-                        "(CMakeLists.txt, 'plan de escaneo elegible'). Ajusta las lineas de anclaje.")
-  endif()
-  set(_h_add [=[
-  // [FPVDesktopWiFiReceiver, added at build time] step centres for scan() in Hz (40 MS/s, +-16.5 MHz each);
-  // empty (the default) = the full plan. Takes effect on the next scan().
-  void set_scan_plan(std::vector<double> centres_hz) {
-    std::lock_guard<std::mutex> l(_m);
-    _scan_plan_override = std::move(centres_hz);
-  }
-
-private:
-  std::vector<double> _scan_plan_override;
-
-public:
-]=])
-  string(REPLACE "${_h_anchor}" "${_h_anchor}${_h_add}" _h "${_h}")
-  string(REPLACE "${_c_anchor}" [=[
-        {
-          std::lock_guard<std::mutex> l(_m);
-          _plan = _scan_plan_override.empty() ? scan_plan() : _scan_plan_override;
-        }
-]=] _c "${_c}")
-  file(WRITE "${_kp}/radio.h.new" "${_h}")
-  file(WRITE "${_kp}/radio.cpp.new" "${_c}")
-  configure_file("${_kp}/radio.h.new" "${_kp}/radio.h" COPYONLY)  # solo reescribe si cambia (sin recompilar)
-  configure_file("${_kp}/radio.cpp.new" "${_kp}/radio.cpp" COPYONLY)
-  set_property(TARGET kepyur_radio PROPERTY SOURCES "${_kp}/radio.cpp")
-  foreach(_p INCLUDE_DIRECTORIES INTERFACE_INCLUDE_DIRECTORIES)
-    get_target_property(_inc kepyur_radio ${_p})
-    list(FILTER _inc EXCLUDE REGEX "/native/radio/?$")
-    set_property(TARGET kepyur_radio PROPERTY ${_p} "${_kp}" ${_inc})
+  list(APPEND _kp_sets scan_plan)
+endif()
+kp_patch_files("${KEPYUR_DIR}" "${_kp_out}" ${_kp_sets})
+foreach(_d dsp radio)
+  file(GLOB _fs RELATIVE "${KEPYUR_DIR}" "${KEPYUR_DIR}/native/${_d}/*.h" "${KEPYUR_DIR}/native/${_d}/*.cpp")
+  foreach(_f IN LISTS _fs)
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${KEPYUR_DIR}/${_f}")
+    if(NOT _f IN_LIST KP_PATCHED_FILES)  # los no tocados, tal cual (para que los #include "x.h" vean la copia)
+      configure_file("${KEPYUR_DIR}/${_f}" "${_kp_out}/${_f}" COPYONLY)
+    endif()
   endforeach()
+endforeach()
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/cmake/kepyur_patches.cmake")
+# usar las copias: fuentes y directorios de include de los targets de kepyur
+function(_kp_use_copy target dir)
+  get_target_property(_src ${target} SOURCES)
+  list(TRANSFORM _src REPLACE "^(.*/)?${dir}/" "${_kp_out}/native/${dir}/")
+  set_property(TARGET ${target} PROPERTY SOURCES ${_src})
+  foreach(_p INCLUDE_DIRECTORIES INTERFACE_INCLUDE_DIRECTORIES)
+    get_target_property(_inc ${target} ${_p})
+    list(FILTER _inc EXCLUDE REGEX "/native/${dir}/?$")
+    set_property(TARGET ${target} PROPERTY ${_p} "${_kp_out}/native/${dir}" ${_inc})
+  endforeach()
+endfunction()
+_kp_use_copy(kepyur_dsp dsp)
+if(TARGET kepyur_radio)
+  _kp_use_copy(kepyur_radio radio)
+endif()
+if(TARGET kp_replay)  # banco de kepyur (no se compila por defecto): con --comb
+  set_property(TARGET kp_replay PROPERTY SOURCES "${_kp_out}/native/tools/kp_replay.cpp")
 endif()
 
 if(KP_WITH_RADIO AND WIN32)

@@ -45,9 +45,11 @@ FPVDesktopWiFiReceiver/
   `Surface`; el estado se lee de `Radio::status_json()` igual que la app.
 - La tabla de canales (`kp::fpv_channels()`) y la detección de pilotos son las de kepyur.
 - Ninguna dependencia está forkeada y los submódulos no se modifican nunca: upstream se compila con
-  `add_subdirectory(third_party/kepyur/native)`. Lo único añadido, `kp::Radio::set_scan_plan()` (escanear solo los
-  canales elegidos), se aplica al compilar sobre una copia de `radio.h`/`radio.cpp` en la carpeta de compilación,
-  con dos sustituciones de texto en `CMakeLists.txt`; si kepyur cambia esas líneas, CMake se para avisándolo.
+  `add_subdirectory(third_party/kepyur/native)`. Dos añadidos se aplican al compilar sobre copias de `native/dsp` y
+  `native/radio` en la carpeta de compilación, como sustituciones de texto listadas en `cmake/kepyur_patches.cmake`:
+  `kp::Radio::set_scan_plan()` (escanear solo los canales elegidos) y un filtro peine de croma NTSC
+  (`DecoderOpts::comb`, menos arcoíris en los detalles finos y en el texto del OSD; propuesto a kepyur). Si kepyur
+  cambia alguna de esas líneas, CMake se para diciendo cuál.
   Lo único específico de Windows es `compat/win32/sys/resource.h`
   (`gettid`/`setpriority` → `SetThreadPriority`), que solo entra en el include path en Windows.
 

@@ -10,6 +10,8 @@
 //     --dummy    tras el cambio a USB 3, abrir y cerrar una vez sin ver nada antes del primer ciclo
 //     --gap S    segundos de espera entre cerrar y volver a abrir (1 por defecto)
 //     --timer1   resolucion del temporizador de Windows a 1 ms todo el proceso (timeBeginPeriod)
+//     --record PREFIJO S  ciclo 1 en la frecuencia exacta: con video enganchado, grabar S segundos de IQ en
+//                         PREFIJO.cs16 + PREFIJO.json (para kp_replay)
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
@@ -52,6 +54,8 @@ int main(int argc, char **argv) {
   bool reuse = false, usbdk = false, usb2 = false, dummy = false;
   double settle = 0, gap = 1;
   bool timer1 = false;
+  std::string recPrefix;
+  double recSecs = 0;
   for (int i = 1; i < argc; i++) {
     const std::string a = argv[i];
     auto next = [&] { return i + 1 < argc ? argv[++i] : "0"; };
@@ -67,6 +71,7 @@ int main(int argc, char **argv) {
     else if (a == "--dummy") dummy = true;
     else if (a == "--gap") gap = std::atof(next());
     else if (a == "--timer1") timer1 = true;
+    else if (a == "--record") { recPrefix = next(); recSecs = std::atof(next()); }
     else { std::fprintf(stderr, "opcion desconocida %s\n", a.c_str()); return 2; }
   }
 #ifdef _WIN32
@@ -127,6 +132,19 @@ int main(int argc, char **argv) {
                   json_str(js, "rx_state").c_str(), js.find("\"fallback\":true") != std::string::npos ? "si" : "no");
     }
     radio->set_watch_rate(rate == 40 ? 1 : 2);
+    if (!recPrefix.empty() && c == 1) {
+      radio->watch(mhz * 1e6);
+      std::string js;
+      for (int i = 0; i < 40; i++) {  // hasta 20 s esperando el enganche del video
+        std::this_thread::sleep_for(500ms);
+        js = radio->status_json();
+        if (js.find("\"locked\":true") != std::string::npos) break;
+      }
+      std::printf("grabando %.1f s en %s (%s)\n", recSecs, recPrefix.c_str(), js.c_str());
+      std::fflush(stdout);
+      radio->record(recSecs, recPrefix);
+      std::this_thread::sleep_for(std::chrono::duration<double>(recSecs + 2));
+    }
     radio->watch(mhz * 1e6 + c * 1e6);  // otra frecuencia cada ciclo: fuerza el retune
     std::this_thread::sleep_for(1500ms);
     const long long b0 = json_num(radio->status_json(), "banks");
