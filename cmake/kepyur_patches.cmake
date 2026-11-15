@@ -5,7 +5,8 @@
 #
 # Conjuntos:
 #   scan_plan  kp::Radio::set_scan_plan(): escanear solo los canales elegidos (propio de esta app)
-#   comb       DecoderOpts::comb + kp::Radio::set_comb(): filtro peine 1H de croma NTSC (propuesto a kepyur)
+#   comb       DecoderOpts::comb + kp::Radio::set_comb(): filtro peine adaptativo de 3 lineas para la croma
+#              NTSC (propuesto a kepyur: gilankpam/kepyur PR 2)
 #
 # Uso desde CMake:  include(cmake/kepyur_patches.cmake) y kp_patch_files(<origen> <destino> <conjuntos...>)
 # Uso suelto (p.ej. preparar el PR sobre un clon de kepyur, en el sitio):
@@ -48,72 +49,207 @@ _kp_change(scan_plan native/radio/radio.cpp "        _plan = scan_plan();\n" [=[
 ]=])
 
 # ---- comb --------------------------------------------------------------------------------------------------
+# (generado del diff de la rama ntsc-chroma-comb del PR: es el mismo codigo que propone)
 _kp_change(comb native/dsp/video.h
-  "  bool colour = true;          // decode colour (falls back to grey when there is no usable burst)\n"
   [=[  bool colour = true;          // decode colour (falls back to grey when there is no usable burst)
-  bool comb = false;           // NTSC: 1H comb for chroma (fewer rainbows on fine detail and OSD text; ~+15 % decode)
+]=]
+  [=[  bool colour = true;          // decode colour (falls back to grey when there is no usable burst)
+  bool comb = false;           // NTSC: adaptive 3-line comb for chroma (fewer rainbows on fine detail and
+                               // OSD text; ~+15 % decode CPU)
 ]=])
 _kp_change(comb native/dsp/video.cpp
-  "  std::vector<cf> chroma_ring;  // chroma at baseband (U/V before the burst rotation)\n"
   [=[  std::vector<cf> chroma_ring;  // chroma at baseband (U/V before the burst rotation)
-  // NTSC 1H comb for chroma (DecoderOpts::comb): the subcarrier is 227.5 x the line rate, so chroma flips
-  // sign from one line to the next while picture detail mostly repeats. (d - d[-1H]) / 2 keeps chroma and
-  // cancels luma detail near the subcarrier, which the 1.2 MHz chroma filter alone lets through as rainbows
-  // on fine patterns and on the edges of white OSD text. Luma keeps the notch. PAL (2H pattern) is unchanged.
-  std::vector<float> comp_ring;  // discriminator output, for the one-line delay
+]=]
+  [=[  std::vector<cf> chroma_ring;  // chroma at baseband (U/V before the burst rotation)
+  // kepyur: NTSC chroma comb (DecoderOpts::comb). The subcarrier is 227.5 x the line rate, so at the same
+  // place one line away chroma comes back with the subcarrier's sign flipped while luma detail does not:
+  // combing cancels the luma near the subcarrier that the 1.2 MHz chroma filter lets through as rainbows.
+  // It works on the baseband chroma already in chroma_ring, inside render_line: each line is drawn one line
+  // late, once the line below is in, and combed with both neighbours (centred, so chroma stays on luma's
+  // line). Adaptive: per pixel a neighbour only counts as far as its luma there matches this line's, so the
+  // top and bottom edges of OSD glyphs fall back to the plain filter instead of keeping half the rainbow.
+  // Luma keeps the notch. PAL (2H subcarrier pattern) is unchanged.
+  struct CombLine {
+    double ls = -1;
+    int64_t k = -1;
+    int field = -1;
+    bool col = false;  // drawn in colour
+    bool ok = false;   // usable as a neighbour: locked, in colour, burst on the PLL's predicted phase
+    uint64_t epoch = 0;
+  };
+  static constexpr float kCombFull = 0.08f, kCombNone = 0.25f;  // luma mismatch, of black-to-white
+  static constexpr float kCombMaxErr = 0.35f;  // rad: a burst further off means the stream jumped
   bool comb = false;
-  double comb_T = -1;            // T the interpolator below was set up for
-  int64_t comb_back = 0;         // whole samples back to the interpolation's second tap
-  float comb_w[4] = {};          // 4-tap cubic (Catmull-Rom) weights: linear would leave ~15 % at 3.58 MHz
+  double comb_w = 0;           // the mixing oscillator's frequency, rad per sample
+  uint64_t comb_epoch = 0;     // bumped where the sample stream may have jumped: lines across it don't mix
+  CombLine comb_up, comb_mid;  // the two lines before the current one
+  float burst_e = 0;           // |phase error| of the last burst against the PLL's prediction
+  std::vector<float> comb_m;   // draw_line: the comb on every other pixel (see there)
+  std::vector<cf> comb_o;
 ]=])
 _kp_change(comb native/dsp/video.cpp
-  "    chroma_ring.assign(8192, cf{});\n"
-  [=[    chroma_ring.assign(8192, cf{});
-    comp_ring.assign(8192, 0);
-]=])
-_kp_change(comb native/dsp/video.cpp
-  "    luma_notch.notch(fsc, fs, 1.5);  // the subcarrier out of the picture (also the B/W herringbone)\n"
+  [=[    luma_notch.notch(fsc, fs, 1.5);  // the subcarrier out of the picture (also the B/W herringbone)
+]=]
   [=[    luma_notch.notch(fsc, fs, 1.5);  // the subcarrier out of the picture (also the B/W herringbone)
     comb = o.comb && &s != &kPal;
+    comb_w = a;
+    comb_epoch++;
 ]=])
 _kp_change(comb native/dsp/video.cpp
-  "      // the oscillator's phase belongs to the absolute sample index: burst and picture share it\n      const cf c = d * std::conj(lo);\n"
-  [=[      float cd = d;
-      if (comb) {
-        comp_ring[n & ring_mask] = d;
-        if (T != comb_T) {  // T moves a little once a line: the weights only change then
-          comb_T = T;
-          const double back = std::ceil(T);  // sample n - T lies between n - back and n - back + 1
-          comb_back = static_cast<int64_t>(back);
-          const float t = static_cast<float>(back - T), t2 = t * t, t3 = t2 * t;
-          comb_w[0] = 0.5f * (-t3 + 2 * t2 - t);
-          comb_w[1] = 0.5f * (3 * t3 - 5 * t2 + 2);
-          comb_w[2] = 0.5f * (-3 * t3 + 4 * t2 + t);
-          comb_w[3] = 0.5f * (t3 - t2);
-        }
-        const int64_t i1 = static_cast<int64_t>(n) - comb_back;
-        const float prev = comb_w[0] * comp_ring[(i1 - 1) & ring_mask] + comb_w[1] * comp_ring[i1 & ring_mask] +
-                           comb_w[2] * comp_ring[(i1 + 1) & ring_mask] + comb_w[3] * comp_ring[(i1 + 2) & ring_mask];
-        cd = 0.5f * (d - prev);
+  [=[    last_stray = -1;
+]=]
+  [=[    last_stray = -1;
+    comb_epoch++;
+]=])
+_kp_change(comb native/dsp/video.cpp
+  [=[    }
+    if (c_last_line < 0) {
+]=]
+  [=[    }
+    burst_e = static_cast<float>(std::fabs(e));
+    if (c_last_line < 0) {
+]=])
+_kp_change(comb native/dsp/video.cpp
+  [=[    const int64_t k = static_cast<int64_t>(line_idx) - field_line0 - std_->skip;
+]=]
+  [=[    const int64_t k = static_cast<int64_t>(line_idx) - field_line0 - std_->skip;
+    if (comb) {
+      comb_line(ls, k, locked_line);
+      return;
+    }
+]=])
+_kp_change(comb native/dsp/video.cpp
+  [=[    const bool col = o.colour && locked_line && burst(ls, pal_v);
+]=]
+  [=[    const bool col = o.colour && locked_line && burst(ls, pal_v);
+    draw_line(ls, k, col, pal_v, false, false);
+  }
+
+  // NTSC comb: line k is measured now (levels, burst) and the previous one, k - 1, is drawn, combed with
+  // k - 2 and k. A neighbour is used only if both lines are locked and in colour, in the same field and on
+  // the same side of any jump in the stream (comb_epoch, and a burst on its predicted phase).
+  void comb_line(double ls, int64_t k, bool locked_line) {
+    CombLine cur;
+    cur.ls = ls;
+    cur.k = k;
+    cur.field = cur_field;
+    cur.epoch = comb_epoch;
+    if (k >= 0 && k < std_->active) {
+      if (locked_line) measure_levels(ls);
+      bool pal_v = false;
+      cur.col = o.colour && locked_line && burst(ls, pal_v);
+      cur.ok = cur.col && burst_e < kCombMaxErr;
+    }
+    const CombLine &m = comb_mid;
+    if (m.field == cur_field && m.k == k - 1 && m.k >= 0 && m.k < std_->active) {
+      const auto pair = [&](const CombLine &x, int64_t dk) {
+        return m.ok && x.ok && x.field == m.field && x.k == m.k + dk && x.epoch == m.epoch;
+      };
+      draw_line(m.ls, m.k, m.col, false, pair(comb_up, -1), pair(cur, 1));
+    }
+    comb_up = comb_mid;
+    comb_mid = cur;
+  }
+
+  // up / dn: comb this line's chroma with the line above / below (see comb_line)
+  void draw_line(double ls, int64_t k, bool col, bool pal_v, bool up, bool dn) {
+]=])
+_kp_change(comb native/dsp/video.cpp
+  [=[    const bool pal = std_ == &kPal;
+]=]
+  [=[    const bool pal = std_ == &kPal;
+    // the comb's neighbours sit one line period T (Ti whole samples and Tf more) away, turned onto this
+    // line's subcarrier phase: the oscillator runs on the absolute sample index, so what is mixed down one
+    // line away comes out turned by w*T
+    if (dn && ls + a0 + aw + cdel + T + 2 >= static_cast<double>(n)) dn = false;
+    if (up && static_cast<double>(n) - (ls + a0 - T) > static_cast<double>(ring_mask) - 8) up = false;
+    // The comb, on every other pixel (chroma is 1.2 MHz wide; per pixel cost twice as much for nothing
+    // visible) and interpolated in between below: chroma becomes c * (1 - comb_m) - comb_o.
+    const bool comb_on = col && (up || dn);
+    if (comb_on) {
+      const int64_t Ti = static_cast<int64_t>(T);
+      const float Tf = static_cast<float>(T - Ti);
+      const cf turn = std::polar(1.f, static_cast<float>(-comb_w * T));  // the line above; below: conj
+      const float wk = std::fabs(yscale) / (kCombNone - kCombFull), w1 = kCombNone / (kCombNone - kCombFull);
+      const int nc = (o.width + 1) / 2;
+      comb_m.resize(nc + 1);
+      comb_o.resize(nc + 1);
+      const double step = 2 * aw / o.width;
+      for (int h = 0; h < nc; h++) {
+        comb_m[h] = 0;
+        comb_o[h] = cf{};
+        const double p = ls + a0 + step * h, pc = p + cdel;
+        const int64_t i0 = static_cast<int64_t>(p + 0.5), j0 = static_cast<int64_t>(pc);
+        if (j0 + Ti + 3 >= static_cast<int64_t>(n) || static_cast<int64_t>(n) - (i0 - Ti) > static_cast<int64_t>(ring_mask) - 8) continue;
+        // a neighbour's weight: 1 while its luma here is within kCombFull of this line's, 0 past kCombNone
+        const float y0 = luma_ring[i0 & ring_mask];
+        const float wu = up ? std::clamp(w1 - std::fabs(luma_ring[(i0 - Ti) & ring_mask] - y0) * wk, 0.f, 1.f) : 0.f;
+        const float wd = dn ? std::clamp(w1 - std::fabs(luma_ring[(i0 + Ti) & ring_mask] - y0) * wk, 0.f, 1.f) : 0.f;
+        if (wu + wd <= 0) continue;
+        // A neighbour turned onto this line has chroma -c and the same luma detail, so c + the neighbours' mean
+        // is twice the detail: take out half of it per unit of the best weight (all of it at 1).
+        const float m = 0.5f * std::max(wu, wd), sc = m / (wu + wd);
+        const float fc = static_cast<float>(pc - j0);
+        // chroma_ring at j + t (0 <= t < 2), in plain floats: branch-free, and std::complex cost more here
+        float orr = 0, oi = 0;
+        const auto take = [&](int64_t j, float t, float rr, float ri) {
+          const int iw = static_cast<int>(t);
+          j += iw;
+          t -= static_cast<float>(iw);
+          const cf a = chroma_ring[j & ring_mask], b = chroma_ring[(j + 1) & ring_mask];
+          const float xr = a.real() + (b.real() - a.real()) * t, xi = a.imag() + (b.imag() - a.imag()) * t;
+          orr += xr * rr - xi * ri;
+          oi += xr * ri + xi * rr;
+        };
+        if (wu > 0) take(j0 - Ti - 1, fc + 1 - Tf, turn.real() * sc * wu, turn.imag() * sc * wu);
+        if (wd > 0) take(j0 + Ti, fc + Tf, turn.real() * sc * wd, -turn.imag() * sc * wd);
+        comb_m[h] = m;
+        comb_o[h] = cf(orr, oi);
       }
-      // the oscillator's phase belongs to the absolute sample index: burst and picture share it
-      const cf c = cd * std::conj(lo);
+      comb_m[nc] = comb_m[nc - 1];
+      comb_o[nc] = comb_o[nc - 1];
+    }
+]=])
+_kp_change(comb native/dsp/video.cpp
+  [=[        const cf c = (c0 + (c1 - c0) * fc) * rot * k_uv;
+]=]
+  [=[        cf c = c0 + (c1 - c0) * fc;
+        if (comb_on) {
+          const int h = x >> 1;
+          if (x & 1) c = c * (1 - 0.5f * (comb_m[h] + comb_m[h + 1])) - 0.5f * (comb_o[h] + comb_o[h + 1]);
+          else c = c * (1 - comb_m[h]) - comb_o[h];
+        }
+        c *= rot * k_uv;
+]=])
+_kp_change(comb native/dsp/video.cpp
+  [=[      rephases++;
+]=]
+  [=[      rephases++;
+      comb_epoch++;
 ]=])
 _kp_change(comb native/radio/radio.h
-  "  void set_gain(double db);\n"
   [=[  void set_gain(double db);
-  // NTSC chroma comb (DecoderOpts::comb) from the next watch(): fewer rainbows on fine detail and OSD text,
-  // ~15 % more decode CPU. Off by default.
+]=]
+  [=[  void set_gain(double db);
+  // NTSC chroma comb (DecoderOpts::comb), taken at the next watch(): fewer rainbows on fine detail and OSD
+  // text, ~15 % more decode CPU. Off by default. Android: Native.setComb (the "comb" debug extra).
   void set_comb(bool on);
 ]=])
 _kp_change(comb native/radio/radio.h
-  "  double _gain_db = -1;\n"
+  [=[  double _gain_db = -1;
+]=]
   [=[  double _gain_db = -1;
   bool _comb = false;
+  bool _watch_comb = false;  // _comb as of the current watch (DSP thread only)
 ]=])
 _kp_change(comb native/radio/radio.cpp
-  "void Radio::record(double seconds, const std::string &prefix) {\n"
-  [=[void Radio::set_comb(bool on) {
+  [=[}
+
+void Radio::record(double seconds, const std::string &prefix) {
+]=]
+  [=[}
+
+void Radio::set_comb(bool on) {
   std::lock_guard<std::mutex> l(_m);
   _comb = on;
 }
@@ -121,35 +257,47 @@ _kp_change(comb native/radio/radio.cpp
 void Radio::record(double seconds, const std::string &prefix) {
 ]=])
 _kp_change(comb native/radio/radio.cpp
-  "    _fe = std::make_shared<FrontEnd>(b.fs, b.shift_hz, _frames);\n"
+  [=[          rate = _fallback && _watch_rate == 1 ? 2 : _watch_rate;
+]=]
+  [=[          rate = _fallback && _watch_rate == 1 ? 2 : _watch_rate;
+          _watch_comb = _comb;  // a decoder rebuilt later in this watch (fallback, shift) keeps it
+]=])
+_kp_change(comb native/radio/radio.cpp
+  [=[    _fe = std::make_shared<FrontEnd>(b.fs, b.shift_hz, _frames);
+]=]
   [=[    DecoderOpts o;
-    {
-      std::lock_guard<std::mutex> l(_m);
-      o.comb = _comb;
-    }
+    o.comb = _watch_comb;
     _fe = std::make_shared<FrontEnd>(b.fs, b.shift_hz, _frames, o);
 ]=])
 _kp_change(comb native/tools/kp_replay.cpp
-  "//   kp_replay REC.cs16 [--offset HZ] [--start S] [--seconds S] [--cnr DB] [--frames] [--woven] [-v]\n"
+  [=[//   kp_replay REC.cs16 [--offset HZ] [--start S] [--seconds S] [--cnr DB] [--frames] [--woven] [-v]
+]=]
   [=[//   kp_replay REC.cs16 [--offset HZ] [--start S] [--seconds S] [--cnr DB] [--frames] [--woven] [--comb] [-v]
 ]=])
 _kp_change(comb native/tools/kp_replay.cpp
-  "  bool frames = false, woven = false, as20 = false;\n"
-  "  bool frames = false, woven = false, as20 = false, comb = false;\n")
-_kp_change(comb native/tools/kp_replay.cpp
-  "    else if (k == \"--woven\") woven = true;\n"
-  [=[    else if (k == "--woven") woven = true;
-    else if (k == "--comb") comb = true;
+  [=[  bool frames = false, woven = false, as20 = false;
+]=]
+  [=[  bool frames = false, woven = false, as20 = false, comb = false;
 ]=])
 _kp_change(comb native/tools/kp_replay.cpp
-  "[--frames] [--woven] [-v]\\n\");\n"
-  [=[[--frames] [--woven] [--comb] [-v]\n");
+  [=[    else if (k == "-v") set_log_debug(true);
+    else if (k[0] != '-') file = k;
+    else {
+      std::fprintf(stderr, "usage: kp_replay REC.cs16 [--offset HZ] [--start S] [--seconds S] [--cnr DB] [--frames] [--woven] [-v]\n");
+]=]
+  [=[    else if (k == "--comb") comb = true;
+    else if (k == "-v") set_log_debug(true);
+    else if (k[0] != '-') file = k;
+    else {
+      std::fprintf(stderr, "usage: kp_replay REC.cs16 [--offset HZ] [--start S] [--seconds S] [--cnr DB] [--frames] [--woven] [--comb] [-v]\n");
 ]=])
 _kp_change(comb native/tools/kp_replay.cpp
-  "  o.fields = !woven;\n"
+  [=[  o.fields = !woven;
+]=]
   [=[  o.fields = !woven;
   o.comb = comb;
 ]=])
+
 list(REMOVE_DUPLICATES _KP_PATCH_FILES)
 
 # kp_patch_files(src dst sets...): escribe en dst cada fichero tocado por esos conjuntos (solo si cambia, para no
