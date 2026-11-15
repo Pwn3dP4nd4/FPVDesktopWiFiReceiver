@@ -165,6 +165,9 @@ language (Spanish on a Spanish Windows/Linux, English otherwise).
 - Sample rate 40/20 MS/s and gain (AGC or fixed), remembered between sessions. **Record IQ 5 s** saves
   `Documents/FPVDesktopWiFiReceiver/rec-*.cs16` (+ `.json`), which kepyur's `kp_replay` can play back.
 - **F** or double-click on the video: full screen · **O**: OSD · **Esc**: leave full screen.
+- **View** menu: picture shape 4:3 (analog standard), 16:9 (cameras in widescreen mode) or stretched to the
+  window, and *Crop the borders* (on by default: hides 3 % per side, the dirty edges of the analog picture, as a TV
+  does). Both are remembered.
 - **Options** menu: *Connect the adapter on startup* (on by default) and what to do on connect (*Go back to the
   last channel* or *Scan the bands*). **File** menu: recordings and log folders, desktop shortcut (Windows).
 - Settings: Windows `%APPDATA%\FPVDesktopWiFiReceiver\FPVDesktopWiFiReceiver.ini`, Linux
@@ -173,7 +176,7 @@ language (Spanish on a Spanish Windows/Linux, English otherwise).
   `~/.local/share/FPVDesktopWiFiReceiver/FPVDesktopWiFiReceiver.log`.
 
 Command-line options (optional, for testing): `--demo` no hardware (colour bars) · `--auto` connect and scan ·
-`--watch 5800` connect and watch that frequency · `--rate 20|40` sample rate when watching · `--no-connect` don't
+`--watch 5800` connect and watch that frequency · `--rate 20|40` sample rate when watching · `--fullscreen` start in full screen · `--no-connect` don't
 connect on startup · `--lang en|es|system` interface language (saved) · `--verbose` debug log.
 
 ## Logo

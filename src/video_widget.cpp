@@ -5,6 +5,15 @@
 #include <QPainterPath>
 #include <QTimer>
 
+#include <chrono>
+
+#include "backend.h"  // Backend::gatedFrames
+#include "log.h"
+
+qint64 perf_now_ns() {
+    return std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
+}
+
 VideoWidget::VideoWidget(QWidget *parent) : QWidget(parent) {
     setMinimumSize(360, 270);
     setAttribute(Qt::WA_OpaquePaintEvent);
@@ -20,7 +29,10 @@ VideoWidget::VideoWidget(QWidget *parent) : QWidget(parent) {
     });
 }
 
-void VideoWidget::setFrame(const QImage &f) {
+void VideoWidget::setFrame(const QImage &f, qint64 producedNs) {
+    if (pendingProducedNs_) perf_.replaced++;  // el anterior no llego a pintarse
+    pendingProducedNs_ = producedNs ? producedNs : -1;
+    perf_.frames++;
     frame_ = f;
     sinceFrame_.start();
     stale_ = false;
@@ -30,6 +42,7 @@ void VideoWidget::setFrame(const QImage &f) {
 
 void VideoWidget::clear() {
     frame_ = QImage();
+    pendingProducedNs_ = 0;
     stale_ = false;
     staleCheck_->stop();
     update();
@@ -38,6 +51,7 @@ void VideoWidget::clear() {
 void VideoWidget::mouseDoubleClickEvent(QMouseEvent *) { emit doubleClicked(); }
 
 void VideoWidget::paintEvent(QPaintEvent *) {
+    const qint64 t0 = perf_now_ns();
     QPainter p(this);
     p.fillRect(rect(), Qt::black);
     if (frame_.isNull()) {
@@ -55,13 +69,19 @@ void VideoWidget::paintEvent(QPaintEvent *) {
             p.drawText(textRect, Qt::AlignHCenter | Qt::AlignTop | Qt::TextWordWrap, placeholder_);
         }
     } else {
-        // Analogico: 4:3 sea cual sea la resolucion del fotograma
-        QSize s(4, 3);
-        s.scale(size(), Qt::KeepAspectRatio);
-        QRect r(QPoint(0, 0), s);
-        r.moveCenter(rect().center());
+        // Analogico: 4:3 sea cual sea la resolucion del fotograma; 16:9 para camaras en modo anamorfico
+        QRect r = rect();
+        if (aspect_ != Aspect::Fill) {
+            QSize s = aspect_ == Aspect::R16x9 ? QSize(16, 9) : QSize(4, 3);
+            s.scale(size(), Qt::KeepAspectRatio);
+            r = QRect(QPoint(0, 0), s);
+            r.moveCenter(rect().center());
+        }
+        // Sobrebarrido: como un televisor, fuera los bordes (inicio/fin de linea, medias lineas arriba/abajo)
+        QRectF src(frame_.rect());
+        if (crop_) src.adjust(src.width() * kCropX, src.height() * kCropY, -src.width() * kCropX, -src.height() * kCropY);
         p.setRenderHint(QPainter::SmoothPixmapTransform);
-        p.drawImage(r, frame_);
+        p.drawImage(QRectF(r), frame_, src);
         if (stale_) {
             p.fillRect(r, QColor(0, 0, 0, 170));
             QFont big = font();
@@ -97,4 +117,30 @@ void VideoWidget::paintEvent(QPaintEvent *) {
         p.setPen(Qt::white);
         p.drawText(tr, Qt::AlignCenter, osd_);
     }
+    p.end();
+    if (!frame_.isNull() && pendingProducedNs_) perfPainted(perf_now_ns() - t0);
+}
+
+void VideoWidget::perfPainted(qint64 paintNs) {
+    const qint64 now = perf_now_ns();
+    perf_.painted++;
+    perf_.paintSum += paintNs;
+    perf_.paintMax = qMax(perf_.paintMax, paintNs);
+    if (pendingProducedNs_ > 0) {
+        const qint64 lat = now - pendingProducedNs_;
+        perf_.latSum += lat;
+        perf_.latMax = qMax(perf_.latMax, lat);
+        perf_.latN++;
+    }
+    pendingProducedNs_ = 0;
+    if (!perfT_.isValid()) perfT_.start();
+    if (perfT_.elapsed() < 5000) return;
+    const double secs = perfT_.elapsed() / 1000.0;
+    KP_LOGD("perf: %dx%d px, %.0f fps llegados / %.0f pintados (%d sustituidos), pintar media %.2f ms max %.2f ms "
+            "(%.0f %% de un nucleo), latencia backend->pintado media %.1f ms max %.1f ms, descartados en el backend %d",
+            width(), height(), perf_.frames / secs, perf_.painted / secs, perf_.replaced,
+            perf_.paintSum / 1e6 / qMax(1, perf_.painted), perf_.paintMax / 1e6, perf_.paintSum / 1e7 / secs,
+            perf_.latSum / 1e6 / qMax(1, perf_.latN), perf_.latMax / 1e6, Backend::gatedFrames.exchange(0));
+    perf_ = {};
+    perfT_.restart();
 }

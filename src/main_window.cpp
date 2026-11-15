@@ -135,8 +135,8 @@ MainWindow::MainWindow(Backend *backend, QWidget *parent) : QMainWindow(parent),
     connect(this, &MainWindow::requestGain, backend, &Backend::setGain);
     connect(this, &MainWindow::requestRecord, backend, &Backend::record);
     // backend -> GUI
-    connect(backend, &Backend::frameReady, this, [this](const QImage &img) {
-        video_->setFrame(img);
+    connect(backend, &Backend::frameReady, this, [this](const QImage &img, qint64 producedNs) {
+        video_->setFrame(img, producedNs);
         backend_->frameConsumed();
     });
     connect(backend, &Backend::opened, this, &MainWindow::onOpened);
@@ -221,6 +221,36 @@ void MainWindow::buildMenus() {
     fileMenu_->addSeparator();
     quitAct_ = fileMenu_->addAction(QString(), QKeySequence::Quit, this, &QWidget::close);
 
+    // Ver: forma de la imagen y recorte de bordes (se guardan)
+    viewMenu_ = menuBar()->addMenu(QString());
+    aspectSection_ = viewMenu_->addSection(QString());
+    auto *aspGrp = new QActionGroup(this);
+    for (int i = 0; i < 3; ++i) {
+        aspectActs_[i] = viewMenu_->addAction(QString());
+        aspectActs_[i]->setCheckable(true);
+        aspectActs_[i]->setData(i);
+        aspGrp->addAction(aspectActs_[i]);
+    }
+    const int asp = qBound(0, settings().value("aspect", 0).toInt(), 2);
+    aspectActs_[asp]->setChecked(true);
+    video_->setAspect(static_cast<VideoWidget::Aspect>(asp));
+    connect(aspGrp, &QActionGroup::triggered, this, [this](QAction *a) {
+        settings().setValue("aspect", a->data().toInt());
+        video_->setAspect(static_cast<VideoWidget::Aspect>(a->data().toInt()));
+    });
+    viewMenu_->addSeparator();
+    cropAct_ = viewMenu_->addAction(QString());
+    cropAct_->setCheckable(true);
+    cropAct_->setChecked(settings().value("cropOverscan", true).toBool());
+    video_->setCropOverscan(cropAct_->isChecked());
+    connect(cropAct_, &QAction::toggled, this, [this](bool on) {
+        settings().setValue("cropOverscan", on);
+        video_->setCropOverscan(on);
+    });
+    viewMenu_->addSeparator();
+    fullScreenAct_ = viewMenu_->addAction(QString(), this, &MainWindow::toggleFullScreen);
+    fullScreenAct_->setShortcutVisibleInContextMenu(true);
+
     optMenu_ = menuBar()->addMenu(QString());
     autoConnectAct_ = optMenu_->addAction(QString());
     autoConnectAct_->setCheckable(true);
@@ -298,6 +328,14 @@ void MainWindow::retranslate() {
     if (shortcutAct_) shortcutAct_->setText(tr("Create &desktop shortcut"));
     if (driverAct_) driverAct_->setText(tr("Install adapter &driver (WinUSB)..."));
     quitAct_->setText(tr("&Quit"));
+    viewMenu_->setTitle(tr("&View"));
+    aspectSection_->setText(tr("Picture shape"));
+    aspectActs_[0]->setText(tr("4:3 (standard analog)"));
+    aspectActs_[1]->setText(tr("16:9 (camera in widescreen mode)"));
+    aspectActs_[2]->setText(tr("Stretch to the window"));
+    cropAct_->setText(tr("Crop the borders (overscan)"));
+    cropAct_->setToolTip(tr("Hide the dirty edges of the analog picture, as a TV does (3 % per side)"));
+    fullScreenAct_->setText(tr("Full screen	F"));
     optMenu_->setTitle(tr("&Options"));
     autoConnectAct_->setText(tr("&Connect the adapter on startup"));
     onConnectSection_->setText(tr("On connect"));

@@ -66,9 +66,10 @@ int main(int argc, char **argv) {
                                 QStringLiteral("MHz"));
     QCommandLineOption rateOpt(QStringLiteral("rate"), QCoreApplication::translate("main", "Sample rate when watching: 40 or 20 (MS/s)"),
                                QStringLiteral("MSps"));
+    QCommandLineOption fullOpt(QStringLiteral("fullscreen"), QCoreApplication::translate("main", "Start in full screen"));
     QCommandLineOption langOpt(QStringLiteral("lang"), QCoreApplication::translate("main", "Interface language: en, es or system (saved)"),
                                QStringLiteral("lang"));
-    cli.addOptions({demo, autoOpt, noAuto, verbose, watchOpt, rateOpt, langOpt});
+    cli.addOptions({demo, autoOpt, noAuto, verbose, watchOpt, rateOpt, fullOpt, langOpt});
     cli.process(app);
     if (cli.isSet(langOpt)) {
         const QString l = cli.value(langOpt).toLower();
@@ -116,6 +117,7 @@ int main(int argc, char **argv) {
     MainWindow w(backend);
     if (cli.isSet(rateOpt)) w.setRate(cli.value(rateOpt) == QLatin1String("40") ? 1 : 2);
     w.show();
+    if (cli.isSet(fullOpt)) w.toggleFullScreen();
     // Doble clic en el .exe: conecta solo (ajuste "Conectar el adaptador al abrir", activo por defecto) y
     // vuelve al ultimo canal visto o escanea. La linea de comandos solo hace falta para forzar otra cosa.
     const double watchMHz = cli.value(watchOpt).toDouble();

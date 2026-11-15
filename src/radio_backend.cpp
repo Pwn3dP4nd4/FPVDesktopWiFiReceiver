@@ -14,6 +14,7 @@
 #include "log.h"
 #include "radio.h"
 #include "scan_plan.h"
+#include "video_widget.h"  // perf_now_ns()
 #include "usb3_switch.h"
 
 namespace {
@@ -190,10 +191,11 @@ void RadioBackend::record(double seconds, const QString &prefix) {
 }
 
 void RadioBackend::onFrame(const kp::Frame &f) {
+    const qint64 t = perf_now_ns();
     if (!reserveFrame()) return;  // la GUI va retrasada: descartar (el siguiente llegara en 16-20 ms)
     // kp::Frame es R,G,B,0xff por pixel y solo es valido durante la llamada: copiar.
     QImage img(f.data, f.width, f.height, f.width * 4, QImage::Format_RGBX8888);
-    emit frameReady(img.copy());
+    emit frameReady(img.copy(), t);
 }
 
 void RadioBackend::poll() {

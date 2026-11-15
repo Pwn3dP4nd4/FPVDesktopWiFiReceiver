@@ -3,6 +3,8 @@
 #include <QPainter>
 #include <QTimer>
 
+#include "video_widget.h"  // perf_now_ns()
+
 StubBackend::StubBackend(QObject *parent) : Backend(parent) {}
 
 void StubBackend::ensureTimer() {
@@ -73,7 +75,7 @@ void StubBackend::tick() {
     for (int i = 0; i < 8; ++i) p.fillRect(i * 90, 0, 90, 480, c[i]);
     p.fillRect((n_ * 6) % 720, 200, 40, 80, Qt::gray);
     p.end();
-    if (reserveFrame()) emit frameReady(img);
+    if (reserveFrame()) emit frameReady(img, perf_now_ns());
     if (++n_ % 15 == 0) {
         RadioStatus s;
         s.open = true;

@@ -55,9 +55,13 @@ public:
     // Control de flujo de video (thread-safe, llamada directa, no slot): la GUI avisa al pintar cada frame;
     // el backend descarta frames mientras haya demasiados en cola (el ultimo gana, el DSP nunca espera).
     void frameConsumed() { if (inFlight_.fetch_sub(1) <= 0) inFlight_.store(0); }
+    static inline std::atomic<int> gatedFrames{0};  // descartados por ir la GUI retrasada (medidas)
 protected:
     bool reserveFrame() {
-        if (inFlight_.load() >= 2) return false;
+        if (inFlight_.load() >= 2) {
+            gatedFrames.fetch_add(1, std::memory_order_relaxed);
+            return false;
+        }
         inFlight_.fetch_add(1);
         return true;
     }
@@ -77,7 +81,8 @@ public slots:
 
 signals:
     void opened(bool ok, const QString &error);
-    void frameReady(const QImage &frame);     // 720x480 (NTSC) / 720x576 (PAL), RGBX8888
+    // 720x480 (NTSC) / 720x576 (PAL), RGBX8888; producedNs = perf_now_ns() al tenerlo el backend
+    void frameReady(const QImage &frame, qint64 producedNs);
     void pilotsChanged(const QVector<Pilot> &pilots);
     void statusChanged(const RadioStatus &status);
     void message(const QString &text);        // linea para la barra de estado / log

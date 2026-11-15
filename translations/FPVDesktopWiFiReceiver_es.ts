@@ -96,6 +96,38 @@
         <translation>&amp;Salir</translation>
     </message>
     <message>
+        <source>&amp;View</source>
+        <translation>&amp;Ver</translation>
+    </message>
+    <message>
+        <source>Picture shape</source>
+        <translation>Forma de la imagen</translation>
+    </message>
+    <message>
+        <source>4:3 (standard analog)</source>
+        <translation>4:3 (analógico estándar)</translation>
+    </message>
+    <message>
+        <source>16:9 (camera in widescreen mode)</source>
+        <translation>16:9 (cámara en modo panorámico)</translation>
+    </message>
+    <message>
+        <source>Stretch to the window</source>
+        <translation>Estirar a la ventana</translation>
+    </message>
+    <message>
+        <source>Crop the borders (overscan)</source>
+        <translation>Recortar los bordes (sobrebarrido)</translation>
+    </message>
+    <message>
+        <source>Hide the dirty edges of the analog picture, as a TV does (3 % per side)</source>
+        <translation>Oculta los bordes sucios de la imagen analógica, como hace un televisor (3 % por lado)</translation>
+    </message>
+    <message>
+        <source>Full screen	F</source>
+        <translation>Pantalla completa	F</translation>
+    </message>
+    <message>
         <source>&amp;Options</source>
         <translation>&amp;Opciones</translation>
     </message>
@@ -431,6 +463,10 @@ Al terminar, cierra este programa y desenchufa y vuelve a enchufar el adaptador.
     <message>
         <source>Sample rate when watching: 40 or 20 (MS/s)</source>
         <translation>Muestreo al ver: 40 o 20 (MS/s)</translation>
+    </message>
+    <message>
+        <source>Start in full screen</source>
+        <translation>Arrancar en pantalla completa</translation>
     </message>
     <message>
         <source>Interface language: en, es or system (saved)</source>

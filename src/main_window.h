@@ -27,6 +27,7 @@ public:
     // por linea de comandos. Tras conectar: watchMHz > 0 -> ese canal; si no, el ultimo canal visto o un escaneo.
     void startup(bool autoConnect, double watchMHz, bool forceScan);
     static QSettings &settings();
+    void toggleFullScreen();
 
 signals:
     void requestOpen();
@@ -55,7 +56,6 @@ private:
     void onLost(const QString &msg);
     void onPilots(const QVector<Pilot> &p);
     void onStatus(const RadioStatus &s);
-    void toggleFullScreen();
     void watchChannelFromCombo();
     void chooseScanChannels();
     void updateScanButton();
@@ -77,6 +77,8 @@ private:
     QListWidget *list_;
     QLabel *info_, *pilotsLabel_, *rateLabel_, *gainLabel_;
     VideoWidget *video_;
+    QMenu *viewMenu_ = nullptr;
+    QAction *aspectSection_ = nullptr, *aspectActs_[3] = {}, *cropAct_ = nullptr, *fullScreenAct_ = nullptr;
     QMenu *fileMenu_ = nullptr, *optMenu_ = nullptr, *langMenu_ = nullptr, *helpMenu_ = nullptr;
     QAction *recDirAct_ = nullptr, *logDirAct_ = nullptr, *shortcutAct_ = nullptr, *driverAct_ = nullptr, *quitAct_ = nullptr;
     QAction *autoConnectAct_ = nullptr, *onConnectSection_ = nullptr, *resumeLastAct_ = nullptr, *scanAct_ = nullptr;

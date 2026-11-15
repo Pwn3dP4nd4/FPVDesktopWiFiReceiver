@@ -167,6 +167,9 @@ español, inglés en otro caso).
 - Muestreo 40/20 MS/s y ganancia (AGC o fija); se recuerdan entre sesiones. **Grabar IQ 5 s** guarda
   `Documentos/FPVDesktopWiFiReceiver/rec-*.cs16` (+ `.json`), reproducible con `kp_replay` de kepyur.
 - **F** o doble clic en el vídeo: pantalla completa · **O**: OSD · **Esc**: salir de pantalla completa.
+- Menú **Ver**: forma de la imagen 4:3 (analógico estándar), 16:9 (cámaras en modo panorámico) o estirada a la
+  ventana, y *Recortar los bordes* (activo por defecto: oculta un 3 % por lado, los bordes sucios de la imagen
+  analógica, como hace un televisor). Ambos se recuerdan.
 - Menú **Opciones**: *Conectar el adaptador al abrir* (activado por defecto) y qué hacer al conectar
   (*Volver al último canal visto* o *Escanear las bandas*). Menú **Archivo**: carpetas de grabaciones y log, acceso directo
   en el escritorio (Windows).
@@ -176,7 +179,7 @@ español, inglés en otro caso).
   `~/.local/share/FPVDesktopWiFiReceiver/FPVDesktopWiFiReceiver.log`.
 
 Opciones de línea de comandos (opcionales, para pruebas): `--demo` sin hardware (barras de color) ·
-`--auto` conectar y escanear · `--watch 5800` conectar y ver esa frecuencia · `--rate 20|40` muestreo al ver ·
+`--auto` conectar y escanear · `--watch 5800` conectar y ver esa frecuencia · `--rate 20|40` muestreo al ver · `--fullscreen` arrancar en pantalla completa ·
 `--no-connect` no conectar al abrir · `--lang en|es|system` idioma de la interfaz (se guarda) ·
 `--verbose` log de depuración.
 
