@@ -58,6 +58,59 @@ set(KEPYUR_RADIO ${KP_WITH_RADIO} CACHE BOOL "" FORCE)
 # EXCLUDE_FROM_ALL: solo se compila lo que enlaza la GUI (los kp_* de escritorio de kepyur no hacen falta).
 add_subdirectory("${KEPYUR_DIR}/native" kepyur_native EXCLUDE_FROM_ALL)
 
+if(KP_WITH_RADIO)
+  # ---- plan de escaneo elegible: kp::Radio::set_scan_plan() -------------------------------------------------
+  # kepyur fija el plan de escaneo dentro de radio.cpp (29 pasos de 20 MHz, ~26 s). Para escanear solo los
+  # canales elegidos se compila una copia de radio.h/radio.cpp en el build con dos cambios de texto, sin tocar
+  # el submodulo: scripts/update-deps.sh lo sigue actualizando sin conflictos. Si upstream cambia las lineas de
+  # anclaje, la configuracion falla con este aviso y hay que revisar aqui.
+  set(_kr "${KEPYUR_DIR}/native/radio")
+  set(_kp "${CMAKE_BINARY_DIR}/kepyur_patched/radio")
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${_kr}/radio.h" "${_kr}/radio.cpp")
+  file(READ "${_kr}/radio.h" _h)
+  file(READ "${_kr}/radio.cpp" _c)
+  string(REPLACE "\r\n" "\n" _h "${_h}")
+  string(REPLACE "\r\n" "\n" _c "${_c}")
+  set(_h_anchor "  void scan(double prefer_hz = 0);\n")
+  set(_c_anchor "        _plan = scan_plan();\n")
+  string(FIND "${_h}" "${_h_anchor}" _i1)
+  string(FIND "${_c}" "${_c_anchor}" _i2)
+  if(_i1 LESS 0 OR _i2 LESS 0)
+    message(FATAL_ERROR "kepyur ha cambiado radio.h/radio.cpp y ya no encuentro donde anadir set_scan_plan() "
+                        "(CMakeLists.txt, 'plan de escaneo elegible'). Ajusta las lineas de anclaje.")
+  endif()
+  set(_h_add [=[
+  // [FPVDesktopWiFiReceiver, added at build time] step centres for scan() in Hz (40 MS/s, +-16.5 MHz each);
+  // empty (the default) = the full plan. Takes effect on the next scan().
+  void set_scan_plan(std::vector<double> centres_hz) {
+    std::lock_guard<std::mutex> l(_m);
+    _scan_plan_override = std::move(centres_hz);
+  }
+
+private:
+  std::vector<double> _scan_plan_override;
+
+public:
+]=])
+  string(REPLACE "${_h_anchor}" "${_h_anchor}${_h_add}" _h "${_h}")
+  string(REPLACE "${_c_anchor}" [=[
+        {
+          std::lock_guard<std::mutex> l(_m);
+          _plan = _scan_plan_override.empty() ? scan_plan() : _scan_plan_override;
+        }
+]=] _c "${_c}")
+  file(WRITE "${_kp}/radio.h.new" "${_h}")
+  file(WRITE "${_kp}/radio.cpp.new" "${_c}")
+  configure_file("${_kp}/radio.h.new" "${_kp}/radio.h" COPYONLY)  # solo reescribe si cambia (sin recompilar)
+  configure_file("${_kp}/radio.cpp.new" "${_kp}/radio.cpp" COPYONLY)
+  set_property(TARGET kepyur_radio PROPERTY SOURCES "${_kp}/radio.cpp")
+  foreach(_p INCLUDE_DIRECTORIES INTERFACE_INCLUDE_DIRECTORIES)
+    get_target_property(_inc kepyur_radio ${_p})
+    list(FILTER _inc EXCLUDE REGEX "/native/radio/?$")
+    set_property(TARGET kepyur_radio PROPERTY ${_p} "${_kp}" ${_inc})
+  endforeach()
+endif()
+
 if(KP_WITH_RADIO AND WIN32)
   # radio.cpp incluye <sys/resource.h> + gettid()/setpriority(): shim en compat/win32 (sin tocar upstream)
   target_include_directories(kepyur_radio PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/compat/win32")
@@ -78,6 +131,8 @@ add_executable(FPVDesktopWiFiReceiver
   src/video_widget.cpp src/video_widget.h
   src/backend.h
   src/stub_backend.cpp src/stub_backend.h
+  src/scan_plan.cpp src/scan_plan.h
+  src/scan_channels_dialog.cpp src/scan_channels_dialog.h
   src/i18n.cpp src/i18n.h
   assets/icons.qrc
 )

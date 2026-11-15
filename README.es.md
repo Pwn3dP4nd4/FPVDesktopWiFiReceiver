@@ -44,8 +44,11 @@ FPVDesktopWiFiReceiver/
   Los fotogramas (`kp::Frame`, RGBX 720×480/576) salen como `QImage` hacia la ventana en vez de a una
   `Surface`; el estado se lee de `Radio::status_json()` igual que la app.
 - La tabla de canales (`kp::fpv_channels()`) y la detección de pilotos son las de kepyur.
-- Ninguna dependencia está forkeada ni parcheada: todo upstream se compila tal cual con
-  `add_subdirectory(third_party/kepyur/native)`. Lo único específico de Windows es `compat/win32/sys/resource.h`
+- Ninguna dependencia está forkeada y los submódulos no se modifican nunca: upstream se compila con
+  `add_subdirectory(third_party/kepyur/native)`. Lo único añadido, `kp::Radio::set_scan_plan()` (escanear solo los
+  canales elegidos), se aplica al compilar sobre una copia de `radio.h`/`radio.cpp` en la carpeta de compilación,
+  con dos sustituciones de texto en `CMakeLists.txt`; si kepyur cambia esas líneas, CMake se para avisándolo.
+  Lo único específico de Windows es `compat/win32/sys/resource.h`
   (`gettid`/`setpriority` → `SetThreadPriority`), que solo entra en el include path en Windows.
 
 ## Actualizar las dependencias cuando haya mejoras en los repos originales
@@ -157,7 +160,9 @@ español, inglés en otro caso).
 
 - **Conectar adaptador / Desconectar** (tarda ~5 s en arrancar el chip; si estaba en USB 2 primero lo pasa a USB 3).
   Si al abrir no encuentra el adaptador, lo indica en la zona del vídeo: enchúfalo y pulsa *Conectar adaptador*.
-- **Escanear 5.8 GHz**: barre las bandas A/B/E/F/R y L, lista los pilotos y sintoniza el más fuerte.
+- **Escanear 5.8 GHz**: barre las bandas A/B/E/F/R y L, lista los pilotos y sintoniza el más fuerte. El engranaje
+  (⚙) de al lado elige qué canales escanear: el barrido completo son 29 pasos de 20 MHz (~26 s en Windows) y una
+  sola banda unos 4 (~3 s). La selección se recuerda.
   Clic en un piloto para verlo, o elige un canal fijo en el desplegable.
 - Muestreo 40/20 MS/s y ganancia (AGC o fija); se recuerdan entre sesiones. **Grabar IQ 5 s** guarda
   `Documentos/FPVDesktopWiFiReceiver/rec-*.cs16` (+ `.json`), reproducible con `kp_replay` de kepyur.

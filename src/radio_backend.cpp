@@ -13,6 +13,7 @@
 
 #include "log.h"
 #include "radio.h"
+#include "scan_plan.h"
 #include "usb3_switch.h"
 
 namespace {
@@ -56,7 +57,10 @@ void RadioBackend::ensureObjects() {
         reconnect_->setInterval(2000);
         connect(reconnect_, &QTimer::timeout, this, &RadioBackend::tryReconnect);
     }
-    if (!radio_) radio_ = std::make_unique<kp::Radio>([this](const kp::Frame &f) { onFrame(f); });
+    if (!radio_) {
+        radio_ = std::make_unique<kp::Radio>([this](const kp::Frame &f) { onFrame(f); });
+        radio_->set_scan_plan(scanPlan_);  // seleccion recibida antes de crear la radio
+    }
 }
 
 QString RadioBackend::openRadio() {
@@ -155,6 +159,14 @@ void RadioBackend::closeDevice() {
 void RadioBackend::startScan() {
     forcePilots_ = true;  // la GUI vacia la lista al escanear: reenviarla aunque salgan los mismos pilotos
     if (radio_ && radio_->is_open()) radio_->scan();
+}
+
+void RadioBackend::setScanChannels(const QVector<double> &mhz) {
+    scanPlan_ = scan_plan_for(std::vector<double>(mhz.begin(), mhz.end()));
+    KP_LOGI("escaneo: %d canal(es) -> %d paso(s)%s", int(mhz.size()), int(scanPlan_.size()),
+            scanPlan_.empty() ? " (plan completo)" : "");
+    // kp::Radio lo guarda para los siguientes scan(), tambien tras reabrir (recover/reconexion)
+    if (radio_) radio_->set_scan_plan(scanPlan_);
 }
 
 void RadioBackend::watch(double freqMHz) {

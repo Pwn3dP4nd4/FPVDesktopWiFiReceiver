@@ -46,6 +46,7 @@ int main(int argc, char **argv) {
     qRegisterMetaType<Pilot>();
     qRegisterMetaType<QVector<Pilot>>();
     qRegisterMetaType<RadioStatus>();
+    qRegisterMetaType<QVector<double>>();
 
     // Idioma guardado (o el del sistema) antes de crear ningun texto
     i18n::apply(i18n::setting());

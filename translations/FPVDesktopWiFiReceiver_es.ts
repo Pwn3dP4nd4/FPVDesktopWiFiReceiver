@@ -28,6 +28,22 @@
         <translation>Pilotos encontrados (clic = ver):</translation>
     </message>
     <message>
+        <source>Scan 1 channel</source>
+        <translation>Escanear 1 canal</translation>
+    </message>
+    <message>
+        <source>Scan %1 channels</source>
+        <translation>Escanear %1 canales</translation>
+    </message>
+    <message>
+        <source>Sweep the whole 5.3-5.9 GHz range</source>
+        <translation>Barrer todo el rango de 5,3 a 5,9 GHz</translation>
+    </message>
+    <message>
+        <source>Choose which channels to scan</source>
+        <translation>Elegir qué canales escanear</translation>
+    </message>
+    <message>
         <source>Manual channel...</source>
         <translation>Canal manual...</translation>
     </message>
@@ -331,6 +347,37 @@ Al terminar, cierra este programa y desenchufa y vuelve a enchufar el adaptador.
     <message>
         <source>Adapter recovered</source>
         <translation>Adaptador recuperado</translation>
+    </message>
+</context>
+<context>
+    <name>ScanChannelsDialog</name>
+    <message>
+        <source>L  Low band</source>
+        <translation>L  Banda baja</translation>
+    </message>
+    <message>
+        <source>Channels to scan</source>
+        <translation>Canales a escanear</translation>
+    </message>
+    <message>
+        <source>Scan only the channels your VTX may be on: every 20 MHz step skipped saves about a second. With every channel selected the full range is swept, including non-standard frequencies.</source>
+        <translation>Escanea solo los canales en los que puede estar tu VTX: cada paso de 20 MHz que se omite ahorra alrededor de un segundo. Con todos los canales marcados se barre el rango completo, incluidas las frecuencias no estándar.</translation>
+    </message>
+    <message>
+        <source>All</source>
+        <translation>Todos</translation>
+    </message>
+    <message>
+        <source>None</source>
+        <translation>Ninguno</translation>
+    </message>
+    <message>
+        <source>All %1 channels: full sweep, %2 steps.</source>
+        <translation>Los %1 canales: barrido completo, %2 pasos.</translation>
+    </message>
+    <message>
+        <source>%1 of %2 channels: %3 of %4 steps.</source>
+        <translation>%1 de %2 canales: %3 de %4 pasos.</translation>
     </message>
 </context>
 <context>

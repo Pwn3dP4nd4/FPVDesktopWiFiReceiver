@@ -10,6 +10,7 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QStorageInfo>
+#include <QToolButton>
 #include <QTimer>
 #include <QFormLayout>
 #include <QHBoxLayout>
@@ -30,6 +31,7 @@
 #endif
 
 #include "i18n.h"
+#include "scan_channels_dialog.h"
 #include "spectrum.h"  // kp::fpv_channels(): la tabla de canales de kepyur
 #include "video_widget.h"
 
@@ -63,7 +65,14 @@ MainWindow::MainWindow(Backend *backend, QWidget *parent) : QMainWindow(parent),
     stopBtn_ = new QPushButton;
     recBtn_ = new QPushButton;
     left->addWidget(connectBtn_);
-    left->addWidget(scanBtn_);
+    auto *scanRow = new QHBoxLayout;
+    scanRow->setSpacing(4);
+    scanRow->addWidget(scanBtn_, 1);
+    scanCfgBtn_ = new QToolButton;
+    scanCfgBtn_->setText(QString(QChar(0x2699)));  // engranaje
+    scanCfgBtn_->setMinimumWidth(scanBtn_->sizeHint().height());
+    scanRow->addWidget(scanCfgBtn_);
+    left->addLayout(scanRow);
 
     pilotsLabel_ = new QLabel;
     left->addWidget(pilotsLabel_);
@@ -119,6 +128,7 @@ MainWindow::MainWindow(Backend *backend, QWidget *parent) : QMainWindow(parent),
     connect(this, &MainWindow::requestOpen, backend, &Backend::openDevice);
     connect(this, &MainWindow::requestClose, backend, &Backend::closeDevice);
     connect(this, &MainWindow::requestScan, backend, &Backend::startScan);
+    connect(this, &MainWindow::requestScanChannels, backend, &Backend::setScanChannels);
     connect(this, &MainWindow::requestWatch, backend, &Backend::watch);
     connect(this, &MainWindow::requestStop, backend, &Backend::stop);
     connect(this, &MainWindow::requestWatchRate, backend, &Backend::setWatchRate);
@@ -151,6 +161,11 @@ MainWindow::MainWindow(Backend *backend, QWidget *parent) : QMainWindow(parent),
         list_->clear();
         emit requestScan();
     });
+    connect(scanCfgBtn_, &QToolButton::clicked, this, &MainWindow::chooseScanChannels);
+    // seleccion guardada (sin clave = todos); llega al backend antes de cualquier escaneo (cola del hilo)
+    scanChannels_ = settings().value("scanChannels").toStringList();
+    if (ScanChannelsDialog::frequencies(scanChannels_).isEmpty()) scanChannels_.clear();
+    emit requestScanChannels(ScanChannelsDialog::frequencies(scanChannels_));
     connect(stopBtn_, &QPushButton::clicked, this, [this] {
         emit requestStop();
         video_->clear();
@@ -245,8 +260,25 @@ void MainWindow::buildMenus() {
     aboutAct_ = helpMenu_->addAction(QString(), this, &MainWindow::showAbout);
 }
 
+void MainWindow::chooseScanChannels() {
+    ScanChannelsDialog dlg(scanChannels_, this);
+    if (dlg.exec() != QDialog::Accepted) return;
+    scanChannels_ = dlg.selected();
+    if (scanChannels_.isEmpty()) settings().remove("scanChannels");
+    else settings().setValue("scanChannels", scanChannels_);
+    emit requestScanChannels(ScanChannelsDialog::frequencies(scanChannels_));
+    updateScanButton();
+}
+
+void MainWindow::updateScanButton() {
+    const int n = int(ScanChannelsDialog::frequencies(scanChannels_).size());
+    scanBtn_->setText(n == 0 ? tr("Scan 5.8 GHz") : n == 1 ? tr("Scan 1 channel") : tr("Scan %1 channels").arg(n));
+    scanBtn_->setToolTip(n == 0 ? tr("Sweep the whole 5.3-5.9 GHz range") : scanChannels_.join(QStringLiteral(", ")));
+    scanCfgBtn_->setToolTip(tr("Choose which channels to scan"));
+}
+
 void MainWindow::retranslate() {
-    scanBtn_->setText(tr("Scan 5.8 GHz"));
+    updateScanButton();
     stopBtn_->setText(tr("Stop"));
     updateRecordButton();
     updateConnectButton();

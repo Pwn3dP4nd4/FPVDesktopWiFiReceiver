@@ -14,6 +14,7 @@ public slots:
     void openDevice() override;
     void closeDevice() override;
     void startScan() override;
+    void setScanChannels(const QVector<double> &mhz) override { scanMHz_ = mhz; }
     void watch(double freqMHz) override;
     void stop() override;
 
@@ -23,4 +24,5 @@ private:
     QTimer *timer_ = nullptr;
     int n_ = 0;
     double watching_ = 0;
+    QVector<double> scanMHz_;  // vacio = todos
 };

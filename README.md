@@ -43,8 +43,11 @@ FPVDesktopWiFiReceiver/
   Frames (`kp::Frame`, RGBX 720×480/576) go to the window as a `QImage` instead of to a `Surface`; status is
   read from `Radio::status_json()`, as the app does.
 - The channel table (`kp::fpv_channels()`) and pilot detection are kepyur's.
-- No dependency is forked or patched: all upstream code is built as is with
-  `add_subdirectory(third_party/kepyur/native)`. The only Windows-specific piece is `compat/win32/sys/resource.h`
+- No dependency is forked and the submodules are never modified: upstream is built with
+  `add_subdirectory(third_party/kepyur/native)`. The one addition, `kp::Radio::set_scan_plan()` (scan only the
+  chosen channels), is applied at build time to a copy of `radio.h`/`radio.cpp` in the build folder, by two text
+  replacements in `CMakeLists.txt`; if kepyur changes those lines, CMake stops with a message saying so.
+  The only Windows-specific piece is `compat/win32/sys/resource.h`
   (`gettid`/`setpriority` → `SetThreadPriority`), which is only on the include path on Windows.
 
 ## Updating the dependencies when the original repositories improve
@@ -155,7 +158,9 @@ language (Spanish on a Spanish Windows/Linux, English otherwise).
 
 - **Connect adapter / Disconnect** (the chip takes ~5 s to start; if it was on USB 2 it is switched to USB 3
   first). If the adapter is not found at startup, the video area says so: plug it in and press *Connect adapter*.
-- **Scan 5.8 GHz**: sweeps the A/B/E/F/R and L bands, lists the pilots and tunes the strongest one.
+- **Scan 5.8 GHz**: sweeps the A/B/E/F/R and L bands, lists the pilots and tunes the strongest one. The gear
+  (⚙) next to it chooses which channels to scan: the full sweep is 29 steps of 20 MHz (~26 s on Windows) and
+  one band alone is about 4 (~3 s). The choice is remembered.
   Click a pilot to watch it, or pick a fixed channel in the drop-down.
 - Sample rate 40/20 MS/s and gain (AGC or fixed), remembered between sessions. **Record IQ 5 s** saves
   `Documents/FPVDesktopWiFiReceiver/rec-*.cs16` (+ `.json`), which kepyur's `kp_replay` can play back.

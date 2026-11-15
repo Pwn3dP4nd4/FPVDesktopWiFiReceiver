@@ -24,10 +24,13 @@ void StubBackend::startScan() {
     ensureTimer();
     emit message(tr("Scanning (simulated)..."));
     QVector<Pilot> p;
-    p.push_back({5769, 18.5, "R4", "NTSC", 0});
-    p.push_back({5806, 11.2, "R5", "PAL", 0});
+    for (const Pilot &f : {Pilot{5769, 18.5, "R4", "NTSC", 0}, Pilot{5806, 11.2, "R5", "PAL", 0}}) {
+        bool in = scanMHz_.isEmpty();
+        for (double m : scanMHz_) in = in || qAbs(m - f.freqMHz) <= 10;
+        if (in) p.push_back(f);
+    }
     emit pilotsChanged(p);
-    watch(5769);
+    if (!p.isEmpty()) watch(p.front().freqMHz);
 }
 
 void StubBackend::watch(double f) {

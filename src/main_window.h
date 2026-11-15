@@ -2,12 +2,14 @@
 #include "backend.h"
 #include <QElapsedTimer>
 #include <QMainWindow>
+#include <QStringList>
 
 class QAction;
 class QActionGroup;
 class QListWidget;
 class QMenu;
 class QPushButton;
+class QToolButton;
 class QComboBox;
 class QLabel;
 class QSettings;
@@ -30,6 +32,7 @@ signals:
     void requestOpen();
     void requestClose();
     void requestScan();
+    void requestScanChannels(const QVector<double> &mhz);
     void requestWatch(double freqMHz);
     void requestStop();
     void requestWatchRate(int rateSel);
@@ -54,6 +57,8 @@ private:
     void onStatus(const RadioStatus &s);
     void toggleFullScreen();
     void watchChannelFromCombo();
+    void chooseScanChannels();
+    void updateScanButton();
     void showAbout();
 #ifdef _WIN32
     void installDriver();  // lanza scripts/windows-driver.ps1 como administrador
@@ -66,6 +71,8 @@ private:
     Backend *backend_;
     QWidget *side_;
     QPushButton *connectBtn_, *scanBtn_, *stopBtn_, *recBtn_;
+    QToolButton *scanCfgBtn_;
+    QStringList scanChannels_;  // nombres ("R4"); vacia = todos
     QComboBox *channels_, *rate_, *gain_;
     QListWidget *list_;
     QLabel *info_, *pilotsLabel_, *rateLabel_, *gainLabel_;

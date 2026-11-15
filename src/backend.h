@@ -68,6 +68,7 @@ public slots:
     virtual void openDevice() = 0;            // abrir el adaptador (bloqueante)
     virtual void closeDevice() = 0;
     virtual void startScan() = 0;             // barrer 5.8 GHz; al terminar sintoniza el piloto mas fuerte
+    virtual void setScanChannels(const QVector<double> &mhz) = 0;  // canales a escanear; vacio = todos
     virtual void watch(double freqMHz) = 0;   // decodificar un piloto
     virtual void stop() = 0;                  // volver a reposo (sin streaming)
     virtual void setWatchRate(int rateSel) { Q_UNUSED(rateSel); }  // 1 = 40 MS/s, 2 = 20 MS/s

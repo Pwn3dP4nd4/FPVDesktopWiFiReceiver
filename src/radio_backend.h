@@ -3,6 +3,7 @@
 
 #include <atomic>
 #include <memory>
+#include <vector>
 
 class QTimer;
 namespace kp {
@@ -23,6 +24,7 @@ public slots:
     void openDevice() override;
     void closeDevice() override;
     void startScan() override;
+    void setScanChannels(const QVector<double> &mhz) override;
     void watch(double freqMHz) override;
     void stop() override;
     void setWatchRate(int rateSel) override;
@@ -46,4 +48,5 @@ private:
     bool forcePilots_ = false;
     unsigned polls_ = 0;
     qint64 lastRecoverMs_ = 0;
+    std::vector<double> scanPlan_;  // centros de paso (Hz); vacio = plan completo de kepyur
 };
