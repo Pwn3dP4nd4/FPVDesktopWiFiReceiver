@@ -15,6 +15,13 @@ Adaptadores: cualquier RTL8812BU — BrosTrend AC1200 (AC1L/AC3L/AC5L, USB `0bda
 (`2357:0115`), T3U (`2357:012d`), T3U Plus (`2357:0138`). Probado con un BrosTrend AC1200 (`0bda:b812`).
 Hace falta un **puerto USB 3** para 40 MS/s (con USB 2 funciona más limitado, a 20 MS/s o menos).
 
+**Qué puerto USB 3 usar:** conecta el adaptador **directamente a un puerto USB 3 trasero de la placa base** que
+dependa del controlador USB de la CPU (en placas AMD, los que no comparten controlador con el chipset), sin hub,
+alargador ni puertos frontales de la caja. En algunos controladores USB 3 el adaptador se atasca cada pocos
+segundos (la imagen se corta un instante; ver [docs/windows-usb.md](docs/windows-usb.md#5-cortes-del-flujo-según-el-puerto-usb-3)).
+Medido en un PC con placa AMD: en un puerto del chipset, compartido con ratón, teclado y audio USB, ~26 atascos
+en 5 minutos; en un puerto del controlador de la CPU, ninguno.
+
 ## Descargar
 
 Windows 10/11 x64: descarga el `.zip` de la última versión en
@@ -146,8 +153,10 @@ El driver del kernel `rtw88_8822bu` se desconecta solo al abrir el adaptador.
   ~24.400 transferencias USB/s y en Windows aparecen fallos de deadline cada pocos segundos (kepyur entonces
   cae a 20 MS/s solo). La imagen es la misma: el filtro RX deja ±10 MHz en ambos casos. El escaneo sí va a
   40 MS/s (capturas cortas) sin problemas.
-- Si el receptor de wifi-sdr se rinde tras varios fallos seguidos, la app reabre el adaptador sola y vuelve al
-  canal (como mucho una vez cada 15 s).
+- Atasco del RX DMA del 8822B en algunos controladores USB 3 (`no packet within timeout`): al reiniciar el flujo
+  se apaga y enciende el RX DMA (parche `rxdma` en `cmake/kepyur_patches.cmake`) y la imagen vuelve en
+  10-240 ms. Si aun así el receptor de wifi-sdr se rinde tras varios fallos seguidos, la app reabre el adaptador
+  sola y vuelve al canal (~10 s, como mucho una vez cada 15 s).
 - Probado con BrosTrend AC1200 (`0bda:b812`) en USB 3, Windows 11: escaneo completo de 29 pasos a 40 MS/s sin
   fallos; 2 minutos viendo a 20 MS/s con 0 bancos perdidos y 0 reinicios.
 

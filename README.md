@@ -14,6 +14,13 @@ Adapters: any RTL8812BU — BrosTrend AC1200 (AC1L/AC3L/AC5L, USB `0bda:b812`), 
 (`2357:0115`), T3U (`2357:012d`), T3U Plus (`2357:0138`). Tested with a BrosTrend AC1200 (`0bda:b812`).
 A **USB 3 port** is needed for 40 MS/s (on USB 2 it works with less, at 20 MS/s or lower).
 
+**Which USB 3 port:** plug the adapter **straight into a rear USB 3 port on the motherboard** that hangs off the
+CPU's USB controller (on AMD boards, one that does not share the chipset's controller), with no hub, extension
+cable or case front-panel port. On some USB 3 controllers the adapter locks up every few seconds (the picture
+drops for a moment; see [docs/windows-usb.md](docs/windows-usb.md#5-cortes-del-flujo-según-el-puerto-usb-3), in
+Spanish). Measured on an AMD PC: on a chipset port shared with mouse, keyboard and USB audio, ~26 lock-ups in
+5 minutes; on a port of the CPU's controller, none.
+
 ## Download
 
 Windows 10/11 x64: download the `.zip` of the latest version from
@@ -144,8 +151,10 @@ The kernel driver `rtw88_8822bu` is detached automatically when the adapter is o
   ~24,400 USB transfers/s, and on Windows deadline faults show up every few seconds (kepyur then falls back to
   20 MS/s on its own). The picture is the same: the RX filter passes ±10 MHz in both cases. Scanning does run
   at 40 MS/s (short captures) without problems.
-- If the wifi-sdr receiver gives up after several faults in a row, the app reopens the adapter by itself and
-  goes back to the channel (at most once every 15 s).
+- 8822B RX DMA lock-up on some USB 3 controllers (`no packet within timeout`): the stream restart turns the RX
+  DMA off and on (`rxdma` patch in `cmake/kepyur_patches.cmake`) and the picture is back in 10-240 ms. If the
+  wifi-sdr receiver still gives up after several faults in a row, the app reopens the adapter by itself and goes
+  back to the channel (~10 s, at most once every 15 s).
 - Tested with a BrosTrend AC1200 (`0bda:b812`) on USB 3, Windows 11: full 29-step scan at 40 MS/s with no
   faults; 2 minutes watching at 20 MS/s with 0 banks dropped and 0 restarts.
 

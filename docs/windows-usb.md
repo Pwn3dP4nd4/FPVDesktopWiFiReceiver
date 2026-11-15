@@ -91,3 +91,26 @@ terminar). Arreglo en `src/main.cpp`: `SetProcessInformation(ProcessPowerThrottl
 ni de resolución de temporizador, y `timeBeginPeriod(1)` mientras la app está abierta. Medido sobre el mismo
 adaptador: 9,3 s minimizada, 13,9 s en primer plano y 9 s en una tercera apertura, frente a 51,1 s y 51,2 s
 de la v0.3.0. No se ha medido el consumo extra del temporizador a 1 ms (mientras la app está abierta).
+
+## 5. Cortes del flujo según el puerto USB 3
+
+Síntoma en el registro: `no packet within timeout (bank N part K)` y, antes del parche `rxdma`, `receiver stopped:
+stream keeps failing: no packet within timeout (bank 0 part 0); ... r294 01016068 r7c0 800000cb` seguido de
+`reabriendo el adaptador` (~12 s sin imagen). `r294` con BIT16 = petición C2H del chip colgada: el camino
+RX DMA -> bulk-IN del 8822B se atasca y cada reinicio del flujo pierde su primer paquete. wifi-sdr ya lo vio en
+Linux y lo atribuyó al controlador xHCI (`third_party/kepyur/third_party/wifi-sdr/LOG.md`, 2026-10-25 11:40 y 12:40).
+
+- **Recuperación** (`test/wedge_test.cpp`): reintentar, `0x294 = 0` y `clear_halt` del endpoint no sirven;
+  apagar y encender `HCI_RXDMA_EN | RXDMA_EN` en `REG_CR` (0x100) sí, en ~10 ms. Es el parche `rxdma`: wifi-sdr lo
+  hace antes de reiniciar el flujo tras un `no packet within timeout` (en el log: `[rx dma reset]`).
+- **Depende del puerto.** Mismo PC (placa AMD), Windows 11, 20 MS/s:
+
+  | | Chipset (AMD 1022:43D5), compartido con ratón, teclado y audio USB | Controlador de la CPU (AMD 1022:149C) |
+  |---|---|---|
+  | Banco `reopen_test`, 6 min sin dron | 4 atascos, 11 reinicios | 0 atascos, 2 reinicios |
+  | App con dron (R5), ~5 min | ~26 atascos, 31 reinicios | 0 atascos, 2 reinicios, 60 fps |
+
+  Los reinicios que quedan son `deadline` / `framing`, que vuelven con un reinicio normal.
+- **Recomendación:** el adaptador directo a un puerto USB 3 trasero de la placa que cuelgue del controlador de la
+  CPU, sin hubs ni alargadores. Para saber de qué controlador cuelga: Administrador de dispositivos > Ver >
+  Dispositivos por conexión, o el "Concentrador raíz" padre del dispositivo `0bda:b812`.
