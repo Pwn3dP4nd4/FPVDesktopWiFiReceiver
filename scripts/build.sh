@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 # Compila FPVDesktopWiFiReceiver. Linux, o Windows dentro de la consola "MSYS2 UCRT64".
-#   scripts/build.sh            backend real (adaptador RTL8812BU) -> build/release/FPVDesktopWiFiReceiver[.exe]
+#   scripts/build.sh            backend real (adaptador RTL8812BU)
+#                               Linux:   build/release/FPVDesktopWiFiReceiver
+#                               Windows: dist/FPVDesktopWiFiReceiver/FPVDesktopWiFiReceiver.exe (compila en build/msys2,
+#                                        cuyo .exe no lleva las DLL al lado y solo abre desde la consola de MSYS2)
 #   scripts/build.sh --demo     solo GUI + backend simulado (sin binutils MIPS ni libusb)
 #   scripts/build.sh --deps     instalar antes las dependencias del sistema (apt / pacman)
 set -euo pipefail
@@ -49,6 +52,7 @@ if [ "$RADIO" = ON ]; then
   ARGS+=(-DKEPYUR_MIPS_PREFIX="$PREFIX")
 fi
 BUILD=build/release
+[ "$OS" = windows ] && BUILD=build/msys2  # no "release": su .exe no es el que se abre con doble clic (ese va a dist/)
 [ "$RADIO" = OFF ] && BUILD=build/demo
 cmake -S . -B "$BUILD" -G Ninja -DCMAKE_BUILD_TYPE=Release "${ARGS[@]}"
 cmake --build "$BUILD" --target FPVDesktopWiFiReceiver

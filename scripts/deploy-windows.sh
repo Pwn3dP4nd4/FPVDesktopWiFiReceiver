@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # Windows (MSYS2 UCRT64): carpeta portable dist/FPVDesktopWiFiReceiver con el .exe, Qt, libusb y las licencias
 # de todo lo que se incluye (GPL/LGPL: el texto de cada licencia debe acompanar al binario).
-#   scripts/deploy-windows.sh [build/release] [dist/FPVDesktopWiFiReceiver]
+#   scripts/deploy-windows.sh [build/msys2] [dist/FPVDesktopWiFiReceiver]
 set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 cd "$ROOT"
-BUILD=${1:-$ROOT/build/release}
+BUILD=${1:-$ROOT/build/msys2}
 OUT=${2:-$ROOT/dist/FPVDesktopWiFiReceiver}
 rm -rf "$OUT" && mkdir -p "$OUT"
 cp "$BUILD/FPVDesktopWiFiReceiver.exe" "$OUT/"

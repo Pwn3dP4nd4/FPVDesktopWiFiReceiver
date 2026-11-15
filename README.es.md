@@ -101,7 +101,8 @@ El driver del kernel `rtw88_8822bu` se desconecta solo al abrir el adaptador.
    con ellas y MSYS2 no las empaqueta): 5-10 minutos, se guarda en `tools/`. Resultado: carpeta portable
    `dist\FPVDesktopWiFiReceiver\` con Qt y libusb incluidos. **Se abre con doble clic en
    `FPVDesktopWiFiReceiver.exe`**, sin consola ni MSYS2; se puede copiar a cualquier PC con Windows 10/11 x64.
-   *Archivo → Crear acceso directo en el escritorio* deja un icono para abrirlo.
+   *Archivo → Crear acceso directo en el escritorio* deja un icono para abrirlo. (`build\msys2\` es solo la
+   compilación intermedia: su `.exe` no lleva las DLL al lado y no abre con doble clic.)
 
    (O desde la consola *MSYS2 UCRT64*: `scripts/build.sh --deps`, que también deja la carpeta lista.)
 
@@ -183,7 +184,7 @@ Opciones de línea de comandos (opcionales, para pruebas): `--demo` sin hardware
 
 Los textos de la interfaz están en inglés en el código (`tr()`); la traducción al español es
 `translations/FPVDesktopWiFiReceiver_es.ts` y va compilada dentro del ejecutable. Tras cambiar textos, actualiza
-los `.ts` con `cmake --build build/release --target update_translations` y traduce las entradas nuevas con Qt
+los `.ts` con `cmake --build build/release --target update_translations` (`build/msys2` en Windows) y traduce las entradas nuevas con Qt
 Linguist (o cualquier editor). Otro idioma: añade `translations/FPVDesktopWiFiReceiver_<código>.ts` a
 `KP_TS_FILES` en `CMakeLists.txt` y una entrada en el menú Idioma (`src/main_window.cpp`, `src/i18n.cpp`).
 Para compilar hace falta Qt Linguist (`lrelease`): MSYS2 `qt6-tools`, Debian/Ubuntu `qt6-tools-dev

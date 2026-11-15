@@ -85,7 +85,7 @@ target_link_libraries(FPVDesktopWiFiReceiver PRIVATE Qt6::Widgets kepyur_dsp)
 target_compile_definitions(FPVDesktopWiFiReceiver PRIVATE KP_VERSION="${PROJECT_VERSION}")
 
 # ---- Idiomas: textos fuente en ingles; espanol en translations/*.ts, compilado (.qm) dentro del ejecutable ----
-# Tras cambiar textos: cmake --build build/release --target update_translations (actualiza los .ts con lupdate)
+# Tras cambiar textos: cmake --build build/release (Windows: build/msys2) --target update_translations (actualiza los .ts con lupdate)
 set(KP_TS_FILES translations/FPVDesktopWiFiReceiver_es.ts)
 if(TARGET Qt6::lrelease)
   qt_add_translations(FPVDesktopWiFiReceiver TS_FILES ${KP_TS_FILES} RESOURCE_PREFIX "/i18n"
@@ -119,7 +119,7 @@ if(WIN32)
 endif()
 
 # ---- Banco de pruebas de reapertura (no se instala ni se compila por defecto) --------------------------------
-# cmake --build build/release --target reopen_test  ->  build/release/reopen_test[.exe] --help (ver test/)
+# cmake --build build/msys2 --target reopen_test  ->  build/msys2/reopen_test.exe --help (ver test/)
 if(KP_WITH_RADIO)
   add_executable(reopen_test EXCLUDE_FROM_ALL test/reopen_test.cpp src/usb3_switch.cpp)
   target_include_directories(reopen_test PRIVATE src)

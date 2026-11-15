@@ -1,7 +1,7 @@
 # Windows y USB: investigación (2026-11-14)
 
 Adaptador: BrosTrend AC1200, RTL8812BU `0bda:b812`, puerto USB 3, Windows 11, libusb 1.0.30 (MSYS2).
-Banco de pruebas: `test/reopen_test.cpp` (`cmake --build build/release --target reopen_test`).
+Banco de pruebas: `test/reopen_test.cpp` (`cmake --build build/msys2 --target reopen_test`).
 
 ## 1. Windows reinstala su driver Realtek en cada enchufado
 
