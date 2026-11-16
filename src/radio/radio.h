@@ -194,6 +194,7 @@ private:
   // survey (accumulators under _m)
   bool _survey = false;
   SurveyGrid _grid;
+  bool _survey_cont = false;  // survey: this step taken again streaming, to check a candidate (under _m)
   int64_t _sweep_start_ms = 0, _sweep_ms = 0;  // survey: how long a sweep takes
   // test
   uint64_t _test_banks = 0, _test_gaps = 0, _test_last_seq = 0, _test_runs = 0;

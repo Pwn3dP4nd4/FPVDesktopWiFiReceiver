@@ -251,7 +251,6 @@ ChannelAnalyzer::ChannelAnalyzer(Backend *backend, QWidget *parent) : QDialog(pa
     side->addWidget(state_);
     hint_ = new QLabel;
     hint_->setWordWrap(true);
-    hint_->setStyleSheet(QStringLiteral("color:palette(mid);"));
     side->addWidget(hint_);
     side->addStretch(1);
     auto *sideW = new QWidget;

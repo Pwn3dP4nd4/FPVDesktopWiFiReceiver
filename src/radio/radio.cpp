@@ -199,10 +199,12 @@ void Radio::tune(double hz, int rate_sel) {
   s.wide = true;
   {
     std::lock_guard<std::mutex> l(_m);
-    const double g = _survey ? kSurveyGainDb : _gain_db;
+    // survey: fixed gain for the spectrum; the candidate check (_survey_cont) with the usual gain (AGC): a VTX
+    // close by clips at the survey's fixed gain and its video never locks (measured: lock 0.08 vs 0.96)
+    const double g = _survey && !_survey_cont ? kSurveyGainDb : _gain_db;
     // survey: one bank at a time (cmake/kepyur_patches.cmake, set "gapped"): it needs no contiguous samples
     // and the chip then never misses a deadline while it retunes nonstop
-    s.allow_gapped = _survey;
+    s.allow_gapped = _survey && !_survey_cont;
     s.agc = g < 0;
     if (g >= 0) s.gain_db = g;
   }
@@ -652,12 +654,23 @@ void Radio::handle_scan(Bank &b) {
       survey = _survey;
       floor_hint = _grid.reference(_cap_centre);
     }
-    if (survey) {
+    if (survey && !_survey_cont) {  // (a step taken again to check a candidate is already counted)
       const SurveyStep st = survey_measure(x.data(), x.size(), _cap_centre, kFs, kEdge, floor_hint);
       std::lock_guard<std::mutex> l(_m);
       if (_survey) _grid.merge(st);
     }
     if (!_humps.empty()) {
+      if (survey && !_survey_cont) {
+        // the video sync check needs contiguous samples, and the survey streams gapped: the same step again,
+        // streaming (the humps are found again on its spectrum)
+        {
+          std::lock_guard<std::mutex> l(_m);
+          _survey_cont = true;
+        }
+        tune(req, 1);
+        _settle = -1;
+        return;
+      }
       _cap_need = static_cast<size_t>(kCapture * kFs);
       return;
     }
@@ -668,6 +681,10 @@ void Radio::handle_scan(Bank &b) {
 void Radio::scan_step_done() {
   const double centre = _cap_centre;  // the samples are centred on the hardware centre, not the request
   // start the next retune now; the chip settles while this step is analysed
+  {
+    std::lock_guard<std::mutex> l(_m);
+    _survey_cont = false;  // survey: back to gapped
+  }
   _step++;
   if (_step < _plan.size()) {
     tune(_plan[_step], 1);
