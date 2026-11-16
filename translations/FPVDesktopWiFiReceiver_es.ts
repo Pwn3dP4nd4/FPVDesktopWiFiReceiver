@@ -36,10 +36,6 @@
         <translation>Apaga tus VTX mientras analizas: todo lo que esté en el aire se toma como ocupado. Cuanto más tiempo, más ráfagas de WiFi capta. No se ve vídeo mientras analiza.</translation>
     </message>
     <message>
-        <source>Blue area: average level over the noise floor. Orange line: strongest burst seen. Orange background: bursty interference (WiFi). Dashed red: pilots already on the air. Channel marks: green clean, yellow some interference, red busy or noisy; recommended ones in bold.</source>
-        <translation>Área azul: nivel medio sobre el ruido. Línea naranja: la ráfaga más fuerte vista. Fondo naranja: interferencia a ráfagas (WiFi). Rojo discontinuo: pilotos que ya están en el aire. Marcas de canal: verde limpio, amarillo algo de interferencia, rojo ocupado o con ruido; los recomendados en negrita.</translation>
-    </message>
-    <message>
         <source>System</source>
         <translation>Sistema</translation>
     </message>
@@ -54,6 +50,50 @@
     <message>
         <source>Interference</source>
         <translation>Interferencia</translation>
+    </message>
+    <message>
+        <source>Spectrum</source>
+        <translation>Espectro</translation>
+    </message>
+    <message>
+        <source>Channel marks</source>
+        <translation>Marcas de canal</translation>
+    </message>
+    <message>
+        <source>Average level over the noise floor</source>
+        <translation>Nivel medio sobre el ruido</translation>
+    </message>
+    <message>
+        <source>Clean</source>
+        <translation>Limpio</translation>
+    </message>
+    <message>
+        <source>Strongest burst seen</source>
+        <translation>Ráfaga más fuerte vista</translation>
+    </message>
+    <message>
+        <source>Some interference</source>
+        <translation>Algo de interferencia</translation>
+    </message>
+    <message>
+        <source>Bursty interference (WiFi)</source>
+        <translation>Interferencia a ráfagas (WiFi)</translation>
+    </message>
+    <message>
+        <source>Busy or noisy</source>
+        <translation>Ocupado o con ruido</translation>
+    </message>
+    <message>
+        <source>Pilot already on the air</source>
+        <translation>Piloto ya en el aire</translation>
+    </message>
+    <message>
+        <source>Recommended analog channel</source>
+        <translation>Canal analógico recomendado</translation>
+    </message>
+    <message>
+        <source>Recommended HDZero channel</source>
+        <translation>Canal HDZero recomendado</translation>
     </message>
     <message>
         <source>Bursts</source>

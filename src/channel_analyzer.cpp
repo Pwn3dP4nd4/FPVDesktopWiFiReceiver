@@ -236,9 +236,67 @@ ChannelAnalyzer::ChannelAnalyzer(Backend *backend, QWidget *parent) : QDialog(pa
     auto *main = new QVBoxLayout;
     view_ = new SpectrumView;
     main->addWidget(view_, 3);
-    legend_ = new QLabel;
-    legend_->setWordWrap(true);
-    main->addWidget(legend_);
+    {
+        // leyenda: muestra dibujada + texto, en dos columnas (espectro | marcas de canal)
+        auto *box = new QWidget;
+        auto *lg = new QGridLayout(box);
+        lg->setContentsMargins(0, 2, 0, 2);
+        lg->setHorizontalSpacing(6);
+        lg->setVerticalSpacing(1);
+        const QColor hl = palette().color(QPalette::Highlight);
+        const auto swatch = [](int kind, QColor c) {
+            QPixmap px(22, 12);
+            px.fill(Qt::transparent);
+            QPainter p(&px);
+            if (kind == 0) {  // area: relleno y borde arriba
+                QColor f = c;
+                f.setAlpha(90);
+                p.fillRect(0, 3, 22, 9, f);
+                p.setPen(QPen(c, 1.5));
+                p.drawLine(0, 3, 22, 3);
+            } else if (kind == 1) {  // linea
+                p.setPen(QPen(c, 1.5));
+                p.drawLine(0, 6, 22, 6);
+            } else if (kind == 2) {  // discontinua vertical
+                p.setPen(QPen(c, 1.5, Qt::DashLine));
+                p.drawLine(11, 0, 11, 12);
+            } else if (kind == 3) {  // fondo/franja
+                p.fillRect(0, 0, 22, 12, c);
+            } else {  // marca de canal
+                p.fillRect(9, 1, 5, 10, c);
+            }
+            return px;
+        };
+        const auto add = [&](int row, int col, const QPixmap &px) {
+            auto *ic = new QLabel;
+            ic->setPixmap(px);
+            auto *t = new QLabel;
+            legendText_.push_back(t);
+            lg->addWidget(ic, row, col);
+            lg->addWidget(t, row, col + 1);
+        };
+        for (int c : {0, 3}) {
+            auto *h = new QLabel;
+            QFont f = h->font();
+            f.setBold(true);
+            h->setFont(f);
+            legendText_.push_back(h);
+            lg->addWidget(h, 0, c, 1, 2);
+        }
+        QColor wifi(255, 140, 0, 70), recA(0x2f, 0x80, 0xed, 60), recH(0x7b, 0x5c, 0xd6, 60);
+        add(1, 0, swatch(0, hl));
+        add(2, 0, swatch(1, QColor(0xe0, 0x70, 0x30)));
+        add(3, 0, swatch(3, wifi));
+        add(4, 0, swatch(2, QColor(0xd9, 0x48, 0x3b)));
+        add(1, 3, swatch(4, QColor(0x3a, 0xa8, 0x5a)));
+        add(2, 3, swatch(4, QColor(0xe0, 0xa0, 0x20)));
+        add(3, 3, swatch(4, QColor(0xd9, 0x48, 0x3b)));
+        add(4, 3, swatch(3, recA));
+        add(5, 3, swatch(3, recH));
+        lg->setColumnMinimumWidth(2, 24);
+        lg->setColumnStretch(5, 1);
+        main->addWidget(box);
+    }
     summary_ = new QLabel;
     summary_->setWordWrap(true);
     summary_->setTextFormat(Qt::RichText);
@@ -272,9 +330,15 @@ void ChannelAnalyzer::retranslate() {
     startBtn_->setText(running_ ? tr("Stop") : tr("Start analysis"));
     hint_->setText(tr("Switch your own VTXs off while analysing: anything on the air is treated as taken. "
                       "The longer it runs, the more WiFi bursts it catches. No video while it runs."));
-    legend_->setText(tr("Blue area: average level over the noise floor. Orange line: strongest burst seen. Orange "
-                        "background: bursty interference (WiFi). Dashed red: pilots already on the air. Channel marks: "
-                        "green clean, yellow some interference, red busy or noisy; recommended ones in bold."));
+    {
+        // mismo orden que se crean en el constructor
+        const QStringList t{tr("Spectrum"), tr("Channel marks"),
+                            tr("Average level over the noise floor"), tr("Strongest burst seen"),
+                            tr("Bursty interference (WiFi)"), tr("Pilot already on the air"),
+                            tr("Clean"), tr("Some interference"), tr("Busy or noisy"),
+                            tr("Recommended analog channel"), tr("Recommended HDZero channel")};
+        for (int i = 0; i < legendText_.size() && i < t.size(); i++) legendText_[i]->setText(t[i]);
+    }
     table_->setHeaderLabels({tr("System"), tr("Channel"), tr("MHz"), tr("Interference"), tr("Bursts"), tr("Notes")});
     table_->headerItem()->setToolTip(3, tr("Average interference level across the channel width, in dB above the noise floor."));
     table_->headerItem()->setToolTip(4, tr("Share of the channel width hit by strong intermittent bursts (WiFi and similar): signals that come and go, much stronger than the average. 0% = nothing intermittent."));

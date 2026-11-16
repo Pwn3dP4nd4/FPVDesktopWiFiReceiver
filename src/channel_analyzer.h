@@ -63,7 +63,8 @@ private:
     QSpinBox *nAnalog_ = nullptr, *nHdz_ = nullptr;
     QPushButton *startBtn_ = nullptr;
     QLabel *bandsTitle_ = nullptr, *pilotsTitle_ = nullptr, *analogLbl_ = nullptr, *hdzLbl_ = nullptr;
-    QLabel *hint_ = nullptr, *state_ = nullptr, *summary_ = nullptr, *legend_ = nullptr;
+    QLabel *hint_ = nullptr, *state_ = nullptr, *summary_ = nullptr;
+    QVector<QLabel *> legendText_;
     SpectrumView *view_ = nullptr;
     QTreeWidget *table_ = nullptr;
     SurveyData last_;
