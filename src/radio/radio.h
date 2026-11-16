@@ -7,6 +7,7 @@
 // The Receiver's sink only copies banks into a queue (wifi-sdr rule); everything else runs on the DSP thread.
 #pragma once
 #include "survey.h"
+#include <map>
 #include <atomic>
 #include <condition_variable>
 #include <cstdint>
@@ -197,6 +198,14 @@ private:
   bool _survey = false;
   SurveyGrid _grid;
   bool _survey_cont = false;  // survey: this step taken again streaming, to check a candidate (under _m)
+  std::map<long, double> _survey_gain;  // survey: gain per step (kHz -> dB), lowered where it clips (under _m)
+  struct SurveyKnown {  // survey: a hump already checked (video or not), not checked again for a few sweeps
+    double mhz;
+    bool video;
+    int sweep;
+  };
+  std::vector<SurveyKnown> _survey_known;  // (under _m)
+  double survey_gain(double hz) const;     // (under _m)
   int64_t _sweep_start_ms = 0, _sweep_ms = 0;  // survey: how long a sweep takes
   // test
   uint64_t _test_banks = 0, _test_gaps = 0, _test_last_seq = 0, _test_runs = 0;

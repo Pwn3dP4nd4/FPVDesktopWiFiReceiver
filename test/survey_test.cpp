@@ -18,7 +18,7 @@ void check(bool ok, const std::string &what) {
     if (!ok) failures++;
 }
 
-constexpr double kFs = 40e6, kEdge = 16.5e6;
+constexpr double kFs = 40e6, kReach = 10e6;  // cada paso mide [-10, +10) MHz (src/radio/radio.cpp)
 constexpr size_t kN = 480000;  // 12 ms, como la captura de un paso del escaneo
 std::mt19937 rng(1);
 
@@ -55,9 +55,9 @@ int main() {
         g.reset();
         for (int sweep = 0; sweep < 3; sweep++) {
             auto a = capture(0, 0);
-            g.merge(survey_measure(a.data(), a.size(), 5700e6, kFs, kEdge, g.reference(5700e6)));
+            g.merge(survey_measure(a.data(), a.size(), 5700e6, kFs, kReach, g.reference(5700e6)));
             auto b = capture(std::sqrt(10.0), 1);  // +10 dB en todo el paso
-            g.merge(survey_measure(b.data(), b.size(), 5730e6, kFs, kEdge, g.reference(5730e6)));
+            g.merge(survey_measure(b.data(), b.size(), 5730e6, kFs, kReach, g.reference(5730e6)));
             g.end_sweep();
         }
         const auto s = g.spectrum();
@@ -71,9 +71,9 @@ int main() {
         SurveyGrid g;
         g.reset();
         auto a = capture(0, 0);
-        g.merge(survey_measure(a.data(), a.size(), 5700e6, kFs, kEdge, 0));
+        g.merge(survey_measure(a.data(), a.size(), 5700e6, kFs, kReach, 0));
         auto b = capture(std::sqrt(100.0), 0.3);  // +20 dB el 30 % del tiempo
-        g.merge(survey_measure(b.data(), b.size(), 5730e6, kFs, kEdge, g.reference(5730e6)));
+        g.merge(survey_measure(b.data(), b.size(), 5730e6, kFs, kReach, g.reference(5730e6)));
         g.end_sweep();
         const auto s = g.spectrum();
         const double duty = level(s, 5720, 5740, &SurveyBin::duty);
@@ -92,12 +92,12 @@ int main() {
         auto a = capture(0, 0);
         auto b = capture(std::sqrt(100.0), 0.3);
         auto c = capture(0, 0);
-        g.merge(survey_measure(a.data(), a.size(), 5700e6, kFs, kEdge, 0));
-        g.merge(survey_measure(b.data(), b.size(), 5730e6, kFs, kEdge, g.reference(5730e6)));
+        g.merge(survey_measure(a.data(), a.size(), 5700e6, kFs, kReach, 0));
+        g.merge(survey_measure(b.data(), b.size(), 5730e6, kFs, kReach, g.reference(5730e6)));
         g.end_sweep();
         for (int sweep = 0; sweep < 3 * SurveyGrid::kMemory; sweep++) {
-            g.merge(survey_measure(a.data(), a.size(), 5700e6, kFs, kEdge, g.reference(5700e6)));
-            g.merge(survey_measure(c.data(), c.size(), 5730e6, kFs, kEdge, g.reference(5730e6)));
+            g.merge(survey_measure(a.data(), a.size(), 5700e6, kFs, kReach, g.reference(5700e6)));
+            g.merge(survey_measure(c.data(), c.size(), 5730e6, kFs, kReach, g.reference(5730e6)));
             g.end_sweep();
         }
         const auto s = g.spectrum();
@@ -117,7 +117,7 @@ int main() {
                 auto x = capture(0, 0);
                 const float gain = static_cast<float>(std::pow(10.0, 0.8 * (10 - st) / 20));
                 for (auto &v : x) v *= gain;
-                g.merge(survey_measure(x.data(), x.size(), c, kFs, kEdge, g.reference(c)));
+                g.merge(survey_measure(x.data(), x.size(), c, kFs, kReach, g.reference(c)));
             }
             g.end_sweep();
         }
@@ -135,15 +135,62 @@ int main() {
         SurveyGrid g;
         g.reset();
         auto a = capture(0, 0);
-        g.merge(survey_measure(a.data(), a.size(), 5700e6, kFs, kEdge, 0));
+        g.merge(survey_measure(a.data(), a.size(), 5700e6, kFs, kReach, 0));
         g.end_sweep();
         const auto s = g.spectrum();
         bool dc = false, edge = false;
         for (const auto &b : s) {
             dc |= std::fabs(b.mhz - 5700) < 0.2;
-            edge |= std::fabs(b.mhz - 5700) > 16.7;
+            edge |= b.mhz < 5690 || b.mhz > 5710;
         }
-        check(!dc && !edge && !s.empty(), "sin bins junto a DC ni fuera de +-16.5 MHz");
+        check(!dc && !edge && !s.empty(), "sin bins junto a DC ni fuera de [-10, +10) MHz");
+    }
+    // pasos a 20 MHz: cada bin lo mide un solo paso (sin solapes que lo cuenten dos veces por barrido)
+    {
+        auto a = capture(0, 0);
+        const auto s1 = survey_measure(a.data(), a.size(), 5700e6, kFs, kReach, 0);
+        const auto s2 = survey_measure(a.data(), a.size(), 5720e6, kFs, kReach, 0);
+        long max1 = -1, min2 = 1 << 30;
+        for (const auto &b : s1.bins) max1 = std::max(max1, b.index);
+        for (const auto &b : s2.bins) min2 = std::min(min2, b.index);
+        check(max1 + 1 == min2, "pasos a 20 MHz: se tocan sin solaparse");
+    }
+    // saturacion: muestras a fondo de escala (un VTX al lado con demasiada ganancia)
+    {
+        auto a = capture(0, 0);
+        const auto ok = survey_measure(a.data(), a.size(), 5700e6, kFs, kReach, 0);
+        auto b = capture(0, 0);
+        for (auto &v : b) v = cfs(std::clamp(v.real() * 3000.f, -2047.f, 2047.f), std::clamp(v.imag() * 3000.f, -2047.f, 2047.f));
+        const auto sat = survey_measure(b.data(), b.size(), 5700e6, kFs, kReach, 0);
+        std::printf("  saturacion: limpio %.4f%% (pico %.3f), saturado %.1f%%\n", ok.clip * 100, ok.peak_abs, sat.clip * 100);
+        check(ok.clip == 0 && ok.peak_abs < 0.01 && sat.clip > 0.1f, "detecta muestras a fondo de escala");
+        auto c = ok;
+        survey_scale(c, 10);
+        check(std::fabs(c.floor / ok.floor - 10) < 1e-6 && std::fabs(c.bins[5].mean / ok.bins[5].mean - 10) < 1e-6,
+              "survey_scale: +10 dB = x10 en potencia");
+    }
+    // memoria: con 5 barridos una rafaga que se fue se olvida antes que con 40
+    {
+        auto run = [&](int memory) {
+            SurveyGrid g;
+            g.reset();
+            g.set_memory(memory);
+            auto a = capture(0, 0);
+            auto b = capture(std::sqrt(100.0), 0.3);
+            g.merge(survey_measure(a.data(), a.size(), 5700e6, kFs, kReach, 0));
+            for (int i = 0; i < memory; i++) {  // lleno de rafagas
+                g.merge(survey_measure(b.data(), b.size(), 5720e6, kFs, kReach, g.reference(5720e6)));
+                g.end_sweep();
+            }
+            for (int i = 0; i < 20; i++) {  // 20 barridos limpios
+                g.merge(survey_measure(a.data(), a.size(), 5720e6, kFs, kReach, g.reference(5720e6)));
+                g.end_sweep();
+            }
+            return level(g.spectrum(), 5712, 5728, &SurveyBin::mean_db);
+        };
+        const double m5 = run(5), m40 = run(40);
+        std::printf("  20 barridos despues: memoria 5 -> %.1f dB, memoria 40 -> %.1f dB\n", m5, m40);
+        check(m5 < 2 && m40 > 6, "Recordar: con 5 barridos olvida antes que con 40");
     }
     std::printf("\n%s\n", failures ? "HAY FALLOS" : "todo bien");
     return failures ? 1 : 0;

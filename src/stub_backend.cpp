@@ -81,7 +81,7 @@ void StubBackend::stopSurvey() {
 void StubBackend::surveyTick() {
     SurveyData d;
     d.sweeps = sweeps_++;
-    const double seen = std::min(1.0, 0.3 + 0.15 * sweeps_);  // fraccion de rafagas captadas
+    const double seen = std::min(1.0, 0.3 + 3.0 * sweeps_ / memory_);  // fraccion de rafagas captadas
     for (double f = surveyLo_ + 0.078; f < surveyHi_; f += 0.15625) {
         SpectrumPoint p{f, 0.4f + float((qHash(qint64(f * 1000)) % 100) / 100.0), 3.f, 0.f};
         if (f > 5650 && f < 5690) {

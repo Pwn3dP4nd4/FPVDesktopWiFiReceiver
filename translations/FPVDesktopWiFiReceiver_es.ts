@@ -96,8 +96,12 @@
         <translation>Parte del tiempo que pisan el canal señales intermitentes (WiFi y similares): van y vienen, mucho más fuertes que la media, que las esconde. 0% = nada intermitente.</translation>
     </message>
     <message>
-        <source>Anything on the air is treated as taken: switch your own VTXs off, or tick them in the list. It follows the last minute or so of the band. No video while it runs.</source>
-        <translation>Todo lo que esté en el aire cuenta como ocupado: apaga tus VTX o márcalos en la lista. Sigue más o menos el último minuto de la banda. No se ve vídeo mientras analiza.</translation>
+        <source>Anything on the air is treated as taken: switch your own VTXs off, or tick them in the list (only for this analysis). It averages the last sweeps (Remember). No video while it runs.</source>
+        <translation>Todo lo que esté en el aire cuenta como ocupado: apaga tus VTX o márcalos en la lista (solo para este análisis). Promedia los últimos barridos (Recordar). No se ve vídeo mientras analiza.</translation>
+    </message>
+    <message>
+        <source>Sweep k/N: where it is within the sweeps it remembers. The average slides: it does not start over at N.</source>
+        <translation>Barrido k/N: por dónde va dentro de los barridos que recuerda. La media es deslizante: no empieza de cero al llegar a N.</translation>
     </message>
     <message>
         <source>HDZero narrow mode</source>

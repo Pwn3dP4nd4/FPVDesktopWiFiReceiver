@@ -276,14 +276,12 @@ ChannelAnalyzer::ChannelAnalyzer(Backend *backend, QWidget *parent) : QDialog(pa
     airTitle_ = new QLabel;
     airTitle_->setStyleSheet(QStringLiteral("font-weight:bold;"));
     side->addWidget(airTitle_);
-    mine_ = settings().value("analyzer/mine").toStringList();
     air_ = new QListWidget;
     air_->setMaximumHeight(110);
     connect(air_, &QListWidget::itemChanged, this, [this](QListWidgetItem *it) {
         const QString k = it->data(Qt::UserRole).toString();
         mine_.removeAll(k);
         if (it->checkState() == Qt::Checked) mine_ << k;
-        settings().setValue("analyzer/mine", mine_);
         recompute();
     });
     side->addWidget(air_);
@@ -421,7 +419,10 @@ void ChannelAnalyzer::retranslate() {
                         "treated as taken."));
     startBtn_->setText(running_ ? tr("Stop") : tr("Start analysis"));
     hint_->setText(tr("Anything on the air is treated as taken: switch your own VTXs off, or tick them in the "
-                      "list. It follows the last minute or so of the band. No video while it runs."));
+                      "list (only for this analysis). It averages the last sweeps (Remember). No video while it "
+                      "runs."));
+    state_->setToolTip(tr("Sweep k/N: where it is within the sweeps it remembers. The average slides: it does not "
+                          "start over at N."));
     {
         // mismo orden que se crean en el constructor
         const QStringList t{tr("Spectrum"), tr("Channel marks"),
@@ -491,6 +492,8 @@ void ChannelAnalyzer::toggle() {
     double lo, hi;
     range(lo, hi);
     last_ = SurveyData{};
+    mine_.clear();  // "mio" vale para un analisis: otro dia, otro piloto puede estar en ese canal
+    updateAir();
     running_ = true;
     startBtn_->setText(tr("Stop"));
     state_->setText(tr("Analysing %1-%2 MHz...").arg(lo, 0, 'f', 0).arg(hi, 0, 'f', 0));
@@ -518,16 +521,31 @@ void ChannelAnalyzer::onStopped() {
 }
 
 void ChannelAnalyzer::updateAir() {
-    const QSignalBlocker b(air_);
-    air_->clear();
+    // Se actualiza en el sitio: reconstruirla cada segundo perdia clics en la casilla y el desplazamiento
+    QStringList keys, texts;
     for (const auto &p : last_.pilots) {
         if (p.ageS >= 60) continue;
         const QString key = p.name.isEmpty() ? QString::number(p.freqMHz, 'f', 0) : p.name;
-        auto *it = new QListWidgetItem(QStringLiteral("%1  %2 MHz%3").arg(key).arg(p.freqMHz, 0, 'f', 0)
-                                           .arg(p.isDigital() ? QStringLiteral("  HDZero") : QString()), air_);
-        it->setData(Qt::UserRole, key);
-        it->setFlags(it->flags() | Qt::ItemIsUserCheckable);
-        it->setCheckState(mine_.contains(key) ? Qt::Checked : Qt::Unchecked);
+        if (keys.contains(key)) continue;
+        keys << key;
+        texts << QStringLiteral("%1  %2 MHz%3").arg(key).arg(p.freqMHz, 0, 'f', 0)
+                     .arg(p.isDigital() ? QStringLiteral("  HDZero") : QString());
+    }
+    const QSignalBlocker b(air_);
+    // fuera los que ya no estan (y el "(ninguno)")
+    for (int i = air_->count() - 1; i >= 0; i--)
+        if (!keys.contains(air_->item(i)->data(Qt::UserRole).toString())) delete air_->takeItem(i);
+    for (int k = 0; k < keys.size(); k++) {
+        QListWidgetItem *it = nullptr;
+        for (int i = 0; i < air_->count() && !it; i++)
+            if (air_->item(i)->data(Qt::UserRole).toString() == keys[k]) it = air_->item(i);
+        if (!it) {
+            it = new QListWidgetItem(air_);
+            it->setData(Qt::UserRole, keys[k]);
+            it->setFlags(it->flags() | Qt::ItemIsUserCheckable);
+            it->setCheckState(mine_.contains(keys[k]) ? Qt::Checked : Qt::Unchecked);
+        }
+        if (it->text() != texts[k]) it->setText(texts[k]);
     }
     if (air_->count() == 0) {
         auto *it = new QListWidgetItem(tr("(none)"), air_);
@@ -588,24 +606,11 @@ void ChannelAnalyzer::recompute() {
         seen.push_back(advisor::Signal{p.freqMHz, p.bwMHz, p.isDigital(), p.name.toStdString()});
         seenIdx_.push_back(i);
     }
-    // mis pilotos: su propia senal no es interferencia. En su ancho (+1 MHz) el espectro se cambia por el nivel
-    // de alrededor (la mediana de los 5 MHz a cada lado), sin rafagas
+    // mis pilotos: su propia senal (y sus bandas laterales) no es interferencia (advisor::mask_signal)
     for (const auto &p : last_.pilots) {
         const QString key = p.name.isEmpty() ? QString::number(p.freqMHz, 'f', 0) : p.name;
         if (p.ageS >= 60 || !mine_.contains(key)) continue;
-        const double half = (p.isDigital() && p.bwMHz > 0 ? p.bwMHz : advisor::kAnalogBw) / 2 + 1;
-        std::vector<float> around;
-        for (const auto &x : bins) {
-            const double d = std::fabs(x.mhz - p.freqMHz);
-            if (d > half && d <= half + 5) around.push_back(x.mean_db);
-        }
-        float level = 0;
-        if (!around.empty()) {
-            std::nth_element(around.begin(), around.begin() + around.size() / 2, around.end());
-            level = around[around.size() / 2];
-        }
-        for (auto &x : bins)
-            if (std::fabs(x.mhz - p.freqMHz) <= half) x = advisor::Bin{x.mhz, level, level, 0};
+        advisor::mask_signal(bins, advisor::Signal{p.freqMHz, p.bwMHz, p.isDigital(), p.name.toStdString()});
     }
     const bool haveData = !bins.empty();
     QElapsedTimer t;

@@ -27,7 +27,8 @@ std::vector<double> scan_plan_for(std::vector<double> mhz) {
 
 std::vector<double> survey_plan_for(double lo, double hi) {
     // cada 20 MHz, como el escaneo normal: un VTX analogico cae entero en algun paso (a +-10 MHz de su centro,
-    // dentro de los +-16.5 utiles); a 30 MHz uno entre dos pasos salia cortado en los dos y no se detectaba
+    // dentro de los +-16.5 utiles); a 30 MHz uno entre dos pasos salia cortado en los dos y no se detectaba.
+    // Cada paso mide su [-10, +10) MHz (kSurveyReach en src/radio/radio.cpp): cada frecuencia, una vez por barrido
     std::vector<double> plan;
     for (double c = lo + 10; c - 10 < hi; c += 20) plan.push_back(c * 1e6);
     return plan;
