@@ -3,7 +3,10 @@
 ; Por que existe: Windows trae su propio driver Realtek (netrtwlanu.inf) para 0BDA:B812 y lo vuelve a poner
 ; cada vez que el adaptador se enumera (al enchufarlo o al pasar de USB 2 a USB 3). El WinUSB que genera Zadig
 ; empata con el en puntuacion y pierde el desempate por fecha (2012 frente a 2019).
-; Este INF gana de dos formas:
+; Este INF gana de tres formas:
+;   - FeatureScore 0x80: el driver Realtek que trae Windows Update (netrtwlanu.inf 1030.52, 2026) declara 0xFE y,
+;     como el feature score pesa mas que el ID coincidente, sin esto ganaba aunque nosotros coincidamos con el ID
+;     especifico (clasificacion 00FE0001 suya frente a 00FF0000 nuestra);
 ;   - para 0BDA:B812 tambien coincide con el ID mas especifico del dispositivo (&REV_0210): mejor puntuacion
 ;     que el driver Realtek, que solo coincide con el ID generico;
 ;   - DriverVer posterior al driver Realtek: gana el desempate con los IDs genericos (otros modelos).
@@ -15,7 +18,7 @@ Class       = USBDevice
 ClassGuid   = {88BAE032-5A81-49F0-BC3D-A4FF138216D6}
 Provider    = %ProviderName%
 CatalogFile = fpvdesktopwifireceiver_winusb.cat
-DriverVer   = 11/14/2026,10.0.1.0
+DriverVer   = 11/16/2026,10.0.2.0
 PnpLockdown = 1
 
 [Manufacturer]
@@ -36,8 +39,9 @@ PnpLockdown = 1
 %DevT3UPlus%  = WinUsb_Install, USB\VID_2357&PID_0138
 
 [WinUsb_Install]
-Include = winusb.inf
-Needs   = WINUSB.NT
+Include      = winusb.inf
+Needs        = WINUSB.NT
+FeatureScore = 0x80
 
 [WinUsb_Install.Services]
 Include = winusb.inf

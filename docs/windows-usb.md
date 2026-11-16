@@ -23,6 +23,12 @@ Banco de pruebas: `test/reopen_test.cpp` (`cmake --build build/msys2 --target re
   Comprobado: tras instalarlo, el cambio USB 2 -> USB 3 y el reenchufado conservan WinUSB sin pasos extra
   (3/3 ciclos recibiendo tras reenchufar), y desenchufar en pleno stream acaba en reconexión automática:
   8 s después de enchufarlo la app está viendo otra vez el canal, estable al menos 1,5 min.
+- **Windows Update rompió esa ventaja (2026-11-16).** Instaló un `netrtwlanu.inf` nuevo (1030.52.1216.2025,
+  2026-01-09, firmado WHQL, en el almacén como `oem100.inf`) con clasificación `00FE0001`: el byte de *feature
+  score* (`FE`, de la directiva `FeatureScore` de su INF) pesa más que el ID coincidente, así que ganaba a nuestro
+  `00FF0000`. `pnputil /add-driver /install` devolvía 259 (ningún dispositivo actualizado) y el adaptador se
+  quedaba en `RtlWlanu`. Arreglo: `FeatureScore = 0x80` en nuestro INF, y el script ya no se fía del código de
+  pnputil: si el adaptador conectado no queda en WinUSB, muestra los candidatos con su clasificación y falla.
 
 ## 2. UsbDk como alternativa a Zadig
 

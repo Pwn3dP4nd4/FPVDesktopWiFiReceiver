@@ -105,13 +105,17 @@ try {
     foreach ($d in Get-OurDrivers) { pnputil /delete-driver $d.Driver /force | Out-Null }  # version anterior
     Write-Host 'Instalando el driver...'
     pnputil /add-driver (Join-Path $work $InfName) /install | Out-Host
-    # 0 = instalado, 3010 = instalado (pide reiniciar), 259 (ERROR_NO_MORE_ITEMS) = el adaptador ya usaba este
-    # driver o no esta conectado: nada que actualizar. Cualquier otro codigo es un fallo de verdad.
-    switch ($LASTEXITCODE) {
-        { $_ -in 0, 3010 } { break }
-        259 { Write-Host 'El adaptador ya tenia este driver (o no esta conectado): nada que actualizar.' }
-        default { Write-Error "pnputil fallo (codigo $LASTEXITCODE)" }
+    # 0 = instalado, 3010 = instalado (pide reiniciar), 259 (ERROR_NO_MORE_ITEMS) = paquete anadido pero ningun
+    # dispositivo cambio de driver: o ya lo tenia, o no esta conectado, o otro driver esta mejor clasificado
+    # (eso lo detecta la comprobacion de abajo). Cualquier otro codigo es un fallo de verdad.
+    if ($LASTEXITCODE -notin 0, 259, 3010) { Write-Error "pnputil fallo (codigo $LASTEXITCODE)" }
+    $notWinUsb = Get-PnpDevice -PresentOnly | Where-Object { $_.InstanceId -match $DevPattern } | Where-Object {
+        (Get-PnpDeviceProperty -InstanceId $_.InstanceId -KeyName DEVPKEY_Device_Service).Data -ne 'WinUSB' }
+    foreach ($d in $notWinUsb) {
+        Write-Host "Otro driver le gana al nuestro en $($d.InstanceId). Candidatos y clasificacion (menor gana):"
+        pnputil /enum-devices /instanceid $d.InstanceId /drivers | Out-Host
     }
+    if ($notWinUsb) { Write-Error 'El adaptador no quedo en WinUSB (ver la lista de drivers de arriba).' }
 
     if ($RemoveZadig) {
         foreach ($d in Get-ZadigDrivers) {
