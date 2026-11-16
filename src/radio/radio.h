@@ -22,6 +22,9 @@
 namespace wsdr {
 class Receiver;
 }
+namespace kpx {
+class DigitalScan;  // src/kp_ext/digital_scan.h
+}
 
 namespace fpv {
 
@@ -41,6 +44,9 @@ struct Pilot {
   float snr_db = 0;
   float lock = 0;
   int64_t seen_ms = 0;   // steady-clock ms of the last scan that saw it
+  // a digital signal, not decoded: kpx::kind_code() ("hdzero", "hdzero_narrow", "digital"); "" = analog video
+  std::string digital;
+  float bw_mhz = 0;      // occupied width of a digital signal
 };
 
 class Radio {
@@ -63,6 +69,8 @@ public:
   // Step centres for scan() in Hz (40 MS/s, +-16.5 MHz each); empty (the default) = the full plan. Takes
   // effect on the next scan().
   void set_scan_plan(std::vector<double> centres_hz);
+  // Also list digital signals (HDZero...) found by scan(); off by default. Takes effect on the next scan().
+  void set_digital_scan(bool on);
   void watch(double hz);
   void stream_test(int rate_sel, double seconds);
   void idle();
@@ -120,6 +128,10 @@ private:
   std::string _rec_prefix;
   uint64_t _rec_left = 0, _rec_samples = 0;
   double _rec_fs = 0, _rec_centre = 0, _rec_shift = 0;
+  // stream gaps while recording: sample index in the file after each one
+  uint64_t _rec_seq = 0;
+  uint32_t _rec_gen = 0;
+  std::vector<uint64_t> _rec_gaps;
   std::vector<Pilot> _pilots;
   bool _superspeed = false, _open = false;
   std::string _chip;
@@ -170,7 +182,9 @@ private:
   double _cap_centre = 0;
   std::vector<Hump> _humps;  // this step's candidates (from the first kPsdSpan of the capture)  // hardware centre of the capture (humps are measured from it)
   double _resume_hz = 0;
-  std::vector<double> _scan_plan_override;  // set_scan_plan() (under _m)
+  std::vector<double> _scan_plan_override;     // set_scan_plan() (under _m)
+  std::unique_ptr<kpx::DigitalScan> _digital;  // digital signals in this scan, or null
+  bool _digital_on = false;                    // set_digital_scan() (under _m)
   // test
   uint64_t _test_banks = 0, _test_gaps = 0, _test_last_seq = 0, _test_runs = 0;
   uint32_t _test_gen = 0;

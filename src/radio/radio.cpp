@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: GPL-2.0-only
 // fpv::Radio: one RTL8812BU (wifi-sdr Receiver) + a DSP thread for FPVDesktopWiFiReceiver.
 // Derived from kepyur's native/radio/radio.cpp (https://github.com/gilankpam/kepyur, GPL-2.0), with this app's
-// additions as plain code: scan plans (set_scan_plan) and the NTSC chroma comb (set_comb). The video DSP stays
+// additions as plain code: scan plans (set_scan_plan), the NTSC chroma comb (set_comb), digital signals in the
+// scan (set_digital_scan, src/kp_ext/digital_scan.cpp) and stream gaps in IQ recordings. The video DSP stays
 // kepyur's own native/dsp, used unmodified.
 #include "radio.h"
 
@@ -16,6 +17,7 @@
 #include "receiver.h"
 #include "spectrum.h"
 #include "stream88xx.h"
+#include "digital_scan.h"  // src/kp_ext
 
 #ifdef _WIN32
 #ifndef WIN32_LEAN_AND_MEAN
@@ -245,6 +247,11 @@ void Radio::set_scan_plan(std::vector<double> centres_hz) {
   _scan_plan_override = std::move(centres_hz);
 }
 
+void Radio::set_digital_scan(bool on) {
+  std::lock_guard<std::mutex> l(_m);
+  _digital_on = on;
+}
+
 void Radio::set_comb(bool on) {
   std::lock_guard<std::mutex> l(_m);
   _comb = on;
@@ -335,6 +342,12 @@ void Radio::dsp_loop() {
         _step = 0;
         _cap.clear();
         _settle = -1;
+        {
+          std::lock_guard<std::mutex> l(_m);
+          if (!_digital_on) _digital.reset();
+          else if (!_digital) _digital = std::make_unique<kpx::DigitalScan>();
+        }
+        if (_digital) _digital->reset();
         KP_LOGI("radio: scan, %zu steps", _plan.size());
         tune(_plan[0], 1);
       } else if (mode == Mode::Test) {
@@ -493,6 +506,10 @@ void Radio::record_bank(const Bank &b) {
     _rec_shift = b.shift_hz;
     KP_LOGI("record: %.1f s at %.0f MS/s -> %s.cs16", secs, b.fs / 1e6, prefix.c_str());
   }
+  if (_rec_samples == 0) _rec_gaps.clear();
+  else if (b.gen != _rec_gen || b.seq != _rec_seq + 1) _rec_gaps.push_back(_rec_samples);
+  _rec_seq = b.seq;
+  _rec_gen = b.gen;
   const size_t ns = std::min<uint64_t>(_iq.size(), _rec_left);
   std::vector<int16_t> buf(2 * ns);
   for (size_t i = 0; i < ns; i++) {
@@ -506,8 +523,12 @@ void Radio::record_bank(const Bank &b) {
     std::fclose(_rec);
     _rec = nullptr;
     if (FILE *j = std::fopen((_rec_prefix + ".json").c_str(), "w")) {
+      std::string gap_at;
+      for (size_t g = 0; g < _rec_gaps.size() && g < 1000; g++)
+        gap_at += (g ? "," : "") + std::to_string(_rec_gaps[g]);
       std::fprintf(j, "{\"format\":\"cs16\",\"sample_rate\":%.0f,\"centre_hz\":%.0f,\"shift_hz\":%.0f,\"samples\":%llu,"
-                   "\"source\":\"kepyur watch\"}\n", _rec_fs, _rec_centre, _rec_shift, (unsigned long long)_rec_samples);
+                   "\"gaps\":%zu,\"gap_at\":[%s],\"source\":\"kepyur watch\"}\n", _rec_fs, _rec_centre, _rec_shift,
+                   (unsigned long long)_rec_samples, _rec_gaps.size(), gap_at.c_str());
       std::fclose(j);
     }
     KP_LOGI("record: done, %llu samples -> %s.cs16", (unsigned long long)_rec_samples, _rec_prefix.c_str());
@@ -590,7 +611,9 @@ void Radio::handle_scan(Bank &b) {
     for (size_t i = 0; i < _cap.size(); i++) x[i] = cf(_cap[i].real(), _cap[i].imag());
     Psd psd(1024);
     psd.add(x.data(), x.size());
-    _humps = find_humps(psd.db(), kFs, kEdge);
+    const std::vector<float> psd_db = psd.db();
+    _humps = find_humps(psd_db, kFs, kEdge);
+    if (_digital) _digital->analyse(psd_db, x.data(), x.size(), kFs, kEdge);
     if (!_humps.empty()) {
       _cap_need = static_cast<size_t>(kCapture * kFs);
       return;
@@ -627,6 +650,22 @@ void Radio::scan_step_done() {
     pl.seen_ms = now_ms();
     found.push_back(pl);
   }
+  if (_digital)
+    for (const auto &d : _digital->step_done(centre)) {
+      const double mhz = d.centre_hz / 1e6;
+      // analog video already found there (its sync check passed): that is what it is
+      if (std::any_of(found.begin(), found.end(), [&](const Pilot &p) { return std::fabs(p.mhz - mhz) < 4; }))
+        continue;
+      Pilot pl;
+      pl.mhz = mhz;
+      const auto *ch = nearest_channel(mhz, 3.0);
+      pl.name = ch ? ch->name : "";
+      pl.snr_db = d.snr_db;
+      pl.seen_ms = now_ms();
+      pl.digital = kpx::kind_code(d.kind);
+      pl.bw_mhz = static_cast<float>(d.width_hz / 1e6);
+      found.push_back(pl);
+    }
   bool done = _step >= _plan.size();
   double next_watch = 0;
   {
@@ -645,7 +684,7 @@ void Radio::scan_step_done() {
         if (_resume_hz > 0 && std::fabs(p.mhz * 1e6 - _resume_hz) < 4e6) next_watch = p.mhz * 1e6;
       if (next_watch == 0)
         for (const auto &p : _pilots)
-          if (p.seen_ms >= scan_start) {
+          if (p.seen_ms >= scan_start && p.digital.empty()) {  // a digital one shows no picture
             next_watch = p.mhz * 1e6;
             break;
           }
@@ -735,7 +774,9 @@ std::string Radio::status_json() {
   for (size_t i = 0; i < _pilots.size(); i++) {
     const auto &p = _pilots[i];
     o << (i ? "," : "") << "{\"mhz\":" << p.mhz << ",\"name\":" << jstr(p.name) << ",\"std\":" << jstr(p.std_name)
-      << ",\"snr\":" << p.snr_db << ",\"age_s\":" << (t - p.seen_ms) / 1000 << "}";
+      << ",\"snr\":" << p.snr_db << ",\"age_s\":" << (t - p.seen_ms) / 1000;
+    if (!p.digital.empty()) o << ",\"digital\":" << jstr(p.digital) << ",\"bw\":" << p.bw_mhz;
+    o << "}";
   }
   o << "]}";
   return o.str();

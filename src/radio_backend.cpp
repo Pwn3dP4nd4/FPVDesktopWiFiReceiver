@@ -61,6 +61,7 @@ void RadioBackend::ensureObjects() {
     if (!radio_) {
         radio_ = std::make_unique<fpv::Radio>([this](const kp::Frame &f) { onFrame(f); });
         radio_->set_scan_plan(scanPlan_);  // seleccion recibida antes de crear la radio
+        radio_->set_digital_scan(digitalScan_);
         // Filtro peine de croma NTSC (cmake/kepyur_patches.cmake): menos arcoiris en detalles finos y en el texto
         // del OSD a cambio de ~6 % de un nucleo. En el PC sobra CPU, asi que siempre activo.
         radio_->set_comb(true);
@@ -193,6 +194,12 @@ void RadioBackend::record(double seconds, const QString &prefix) {
     if (radio_) radio_->record(seconds, prefix.toStdString());
 }
 
+void RadioBackend::setDigitalScan(bool on) {
+    digitalScan_ = on;
+    KP_LOGI("escaneo: senales digitales (experimental) %s", on ? "si" : "no");
+    if (radio_) radio_->set_digital_scan(on);  // cmake/kepyur_patches.cmake, conjunto "digital"
+}
+
 void RadioBackend::onFrame(const kp::Frame &f) {
     const qint64 t = perf_now_ns();
     const bool tap = tapActive();      // grabando video: este fotograma hace falta aunque la GUI vaya retrasada
@@ -271,7 +278,9 @@ void RadioBackend::poll() {
         x.name = p.value("name").toString();
         x.stdName = p.value("std").toString();
         x.ageS = p.value("age_s").toInt();
-        key += QStringLiteral("%1|%2|%3|%4;").arg(x.freqMHz, 0, 'f', 1).arg(x.snrDb, 0, 'f', 1).arg(x.name, x.stdName).toUtf8();
+        x.digital = p.value("digital").toString();  // cmake/kepyur_patches.cmake, conjunto "digital"
+        x.bwMHz = p.value("bw").toDouble();
+        key += QStringLiteral("%1|%2|%3|%4|%5;").arg(x.freqMHz, 0, 'f', 1).arg(x.snrDb, 0, 'f', 1).arg(x.name, x.stdName, x.digital).toUtf8();
         ps.push_back(x);
     }
     if (key != lastPilotsKey_ || forcePilots_) {

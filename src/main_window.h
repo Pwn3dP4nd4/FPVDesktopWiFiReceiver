@@ -1,5 +1,6 @@
 #pragma once
 #include "backend.h"
+#include <QDateTime>
 #include <QElapsedTimer>
 #include <QMainWindow>
 #include <QStringList>
@@ -15,6 +16,7 @@ class QComboBox;
 class QLabel;
 class QSettings;
 class QTimer;
+class QJsonObject;
 class VideoWidget;
 class VideoRecorder;
 
@@ -41,6 +43,7 @@ signals:
     void requestWatchRate(int rateSel);
     void requestGain(double db);
     void requestRecord(double seconds, const QString &prefix);
+    void requestDigitalScan(bool on);
 
 protected:
     void closeEvent(QCloseEvent *e) override;
@@ -58,6 +61,9 @@ private:
     void onLost(const QString &msg);
     void onPilots(const QVector<Pilot> &p);
     void onStatus(const RadioStatus &s);
+    // Senales digitales (HDZero...): salen en la lista de pilotos pero no tienen imagen
+    QString digitalKind(const Pilot &p) const;  // "HDZero", "HDZero estrecho", "digital 18 MHz"
+    const Pilot *digitalPilotAt(double mhz) const;
     void watchChannelFromCombo();
     void chooseScanChannels();
     void updateScanButton();
@@ -83,6 +89,7 @@ private:
     void updateRecordButton();
     void startRecording();
     void checkRecording();
+    void writeSigmfMeta(const QJsonObject &rec);  // PREFIX.sigmf-meta junto al .cs16 (inspectrum, GNU Radio, URH)
 
     Backend *backend_;
     QWidget *side_;
@@ -103,6 +110,8 @@ private:
     QAction *snapDirOpenAct_ = nullptr, *snapDirChangeAct_ = nullptr, *videoDirOpenAct_ = nullptr, *videoDirChangeAct_ = nullptr;
     QAction *recDirAct_ = nullptr, *logDirAct_ = nullptr, *shortcutAct_ = nullptr, *driverAct_ = nullptr, *quitAct_ = nullptr;
     QAction *devModeAct_ = nullptr;
+    QAction *expModeAct_ = nullptr;  // modo experimental (se guarda): senales digitales (HDZero) al escanear
+    bool expMode_ = false;
     QAction *autoConnectAct_ = nullptr, *onConnectSection_ = nullptr, *resumeLastAct_ = nullptr, *scanAct_ = nullptr;
     QAction *langSystemAct_ = nullptr, *manualAct_ = nullptr, *aboutAct_ = nullptr;
     QActionGroup *langGroup_ = nullptr;
@@ -113,10 +122,15 @@ private:
     Screen screen_ = Screen::Idle;
     QString openError_;  // texto para Screen::Error / Screen::Lost
     RadioStatus lastStatus_;
+    QVector<Pilot> pilots_;  // ultima lista recibida
+    bool digitalWatch_ = false;  // viendo una senal digital: sin imagen, con un aviso en su lugar
+    Pilot digitalPilot_;
     // grabacion de IQ en curso ("" = ninguna)
     static constexpr int kRecSeconds = 5;
     QString recPrefix_;
     QElapsedTimer recStarted_;
+    QDateTime recStartedAt_;
+    Pilot recPilot_;  // lo que se grababa (frecuencia; tipo y ancho si era una senal digital)
     QTimer *recCheck_ = nullptr;
     // grabacion de video (DVR)
     VideoRecorder *dvr_ = nullptr;

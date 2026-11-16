@@ -16,6 +16,9 @@
 #include <QTimer>
 #include <QFormLayout>
 #include <QHBoxLayout>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QLabel>
 #include <QListWidget>
 #include <QMenuBar>
@@ -156,9 +159,11 @@ MainWindow::MainWindow(Backend *backend, QWidget *parent) : QMainWindow(parent),
     connect(this, &MainWindow::requestWatchRate, backend, &Backend::setWatchRate);
     connect(this, &MainWindow::requestGain, backend, &Backend::setGain);
     connect(this, &MainWindow::requestRecord, backend, &Backend::record);
+    connect(this, &MainWindow::requestDigitalScan, backend, &Backend::setDigitalScan);
     // backend -> GUI
     connect(backend, &Backend::frameReady, this, [this](const QImage &img, qint64 producedNs) {
-        video_->setFrame(img, producedNs);
+        // senal digital: el decodificador analogico no tiene nada que mostrar (si saliera algo, seria ruido)
+        if (!digitalWatch_) video_->setFrame(img, producedNs);
         backend_->frameConsumed();
     });
     connect(backend, &Backend::opened, this, &MainWindow::onOpened);
@@ -188,6 +193,8 @@ MainWindow::MainWindow(Backend *backend, QWidget *parent) : QMainWindow(parent),
     scanChannels_ = settings().value("scanChannels").toStringList();
     if (ScanChannelsDialog::frequencies(scanChannels_).isEmpty()) scanChannels_.clear();
     emit requestScanChannels(ScanChannelsDialog::frequencies(scanChannels_));
+    expMode_ = expModeAct_->isChecked();
+    emit requestDigitalScan(expMode_);
     connect(stopBtn_, &QPushButton::clicked, this, [this] {
         emit requestStop();
         video_->clear();
@@ -316,6 +323,19 @@ void MainWindow::buildMenus() {
         settings().setValue("developerMode", on);
         applyDeveloperMode(on);
     });
+    // Modo experimental: lo que aun no esta probado con equipos reales (deteccion de HDZero y otras senales
+    // digitales al escanear, src/kp_ext/digital_scan.h). Apagado, el escaneo es el de kepyur sin cambios.
+    expModeAct_ = optMenu_->addAction(QString());
+    expModeAct_->setCheckable(true);
+    expModeAct_->setChecked(settings().value("experimentalMode", false).toBool());
+    connect(expModeAct_, &QAction::toggled, this, [this](bool on) {
+        settings().setValue("experimentalMode", on);
+        expMode_ = on;
+        emit requestDigitalScan(on);
+        onPilots(pilots_);       // mostrar u ocultar las digitales ya encontradas
+        onStatus(lastStatus_);   // y dejar de tratar como digital el canal que se esta viendo
+        if (on) statusBar()->showMessage(tr("Experimental mode: digital signals will be listed from the next scan"), 8000);
+    });
 
     // Idioma: los nombres de cada idioma van siempre en ese idioma
     langMenu_ = menuBar()->addMenu(QString());
@@ -396,6 +416,10 @@ void MainWindow::retranslate() {
     autoConnectAct_->setText(tr("&Connect the adapter on startup"));
     devModeAct_->setText(tr("&Developer mode"));
     devModeAct_->setToolTip(tr("Shows sample rate, gain, IQ recording and the receiver's technical data"));
+    expModeAct_->setText(tr("E&xperimental mode (HDZero)"));
+    expModeAct_->setToolTip(tr("Features not yet tested with real equipment: the scan also lists digital signals "
+                               "(HDZero, others) without showing their video, so you can see which channels are "
+                               "taken and record their signal in developer mode"));
     onConnectSection_->setText(tr("On connect"));
     resumeLastAct_->setText(tr("Go back to the &last channel"));
     scanAct_->setText(tr("&Scan the bands"));
@@ -429,6 +453,17 @@ void MainWindow::updatePlaceholder() {
         video_->setPlaceholder(tr("Connecting to the adapter..."));
         break;
     case Screen::Ready:
+        if (digitalWatch_) {
+            const Pilot &p = digitalPilot_;
+            const QString where = p.name.isEmpty() ? QStringLiteral("%1 MHz").arg(p.freqMHz, 0, 'f', 0)
+                                                   : QStringLiteral("%1 (%2 MHz)").arg(p.name).arg(p.freqMHz, 0, 'f', 0);
+            video_->setPlaceholder(
+                tr("%1 on %2, %3 MHz wide.\n\nIt is digital video: this program shows analog video only and cannot "
+                   "decode it.\nIn developer mode (Options menu), \"Record IQ\" saves the raw signal for analysis.")
+                    .arg(digitalKind(p), where)
+                    .arg(p.bwMHz, 0, 'f', 0));
+            break;
+        }
         video_->setPlaceholder(tr("Adapter ready. Scan or pick a channel."));
         break;
     case Screen::Error:
@@ -746,10 +781,18 @@ void MainWindow::updateRecordButton() {
     } else {
         recBtn_->setText(tr("Record IQ 5 s"));
         const double msps = lastStatus_.msps > 0 ? lastStatus_.msps : 20;
-        recBtn_->setToolTip(tr("Saves 5 s of the raw signal of the channel being watched (about %1 MB at %2 MS/s), "
-                               "for analysis or replay with kepyur's kp_replay.")
-                                .arg(qRound(msps * 1e6 * 4 * kRecSeconds / 1e6))
-                                .arg(msps, 0, 'f', 0));
+        QString tip = tr("Saves 5 s of the raw signal of the channel being watched (about %1 MB at %2 MS/s), "
+                         "for analysis or replay with kepyur's kp_replay. A .sigmf-meta file next to it opens it "
+                         "in inspectrum, GNU Radio or Universal Radio Hacker.")
+                          .arg(qRound(msps * 1e6 * 4 * kRecSeconds / 1e6))
+                          .arg(msps, 0, 'f', 0);
+        if (digitalWatch_ && lastStatus_.msps > 0 && lastStatus_.msps < 40)
+            tip += QStringLiteral("\n\n") + tr("At %1 MS/s only about %2 MHz of this %3 MHz wide signal fit: choose "
+                                               "40 MS/s to record all of it.")
+                                                .arg(lastStatus_.msps, 0, 'f', 0)
+                                                .arg(lastStatus_.msps * 0.9, 0, 'f', 0)
+                                                .arg(digitalPilot_.bwMHz, 0, 'f', 0);
+        recBtn_->setToolTip(tip);
     }
 }
 
@@ -766,11 +809,25 @@ void MainWindow::startRecording() {
                                  .arg(QDir::toNativeSeparators(dir)).arg(bytes / 1000000).arg(avail / 1000000));
         return;
     }
-    recPrefix_ = dir + "/rec-" + QDateTime::currentDateTime().toString("yyyyMMdd-HHmmss");
+    recStartedAt_ = QDateTime::currentDateTimeUtc();
+    // nombre con el canal: rec-AAAAMMDD-HHMMSS-R4[-hdzero]
+    recPilot_ = digitalWatch_ ? digitalPilot_ : Pilot{};
+    if (!digitalWatch_) {
+        recPilot_.freqMHz = lastStatus_.watchMHz;
+        if (const auto *ch = kp::nearest_channel(lastStatus_.watchMHz)) recPilot_.name = QString::fromLatin1(ch->name);
+    }
+    QString tag = recPilot_.name.isEmpty() ? QStringLiteral("%1").arg(recPilot_.freqMHz, 0, 'f', 0) : recPilot_.name;
+    if (recPilot_.isDigital()) tag += QLatin1Char('-') + recPilot_.digital;
+    recPrefix_ = dir + "/rec-" + QDateTime::currentDateTime().toString("yyyyMMdd-HHmmss") + QLatin1Char('-') + tag;
     recStarted_.start();
     emit requestRecord(kRecSeconds, recPrefix_);
-    statusBar()->showMessage(tr("Recording %1 s (about %2 MB) to %3.cs16...")
-                                 .arg(kRecSeconds).arg(bytes / 1000000).arg(QDir::toNativeSeparators(recPrefix_)));
+    QString msg = tr("Recording %1 s (about %2 MB) to %3.cs16...")
+                      .arg(kRecSeconds).arg(bytes / 1000000).arg(QDir::toNativeSeparators(recPrefix_));
+    if (digitalWatch_ && lastStatus_.msps < 40)  // p.ej. Windows, que ve a 20 MS/s por defecto
+        msg += QStringLiteral("  ") + tr("WARNING: at %1 MS/s only part of this %2 MHz wide signal is recorded.")
+                                          .arg(lastStatus_.msps, 0, 'f', 0)
+                                          .arg(digitalPilot_.bwMHz, 0, 'f', 0);
+    statusBar()->showMessage(msg);
     recCheck_->start();
     updateRecordButton();
 }
@@ -783,8 +840,15 @@ void MainWindow::checkRecording() {
     if (!done && !timedOut) return;
     recCheck_->stop();
     if (done) {
-        statusBar()->showMessage(tr("Recorded: %1 (%2 MB)").arg(QDir::toNativeSeparators(cs.absoluteFilePath()))
-                                     .arg(cs.size() / 1000000), 15000);
+        QFile jf(js.absoluteFilePath());
+        QJsonObject rec;
+        if (jf.open(QIODevice::ReadOnly)) rec = QJsonDocument::fromJson(jf.readAll()).object();
+        writeSigmfMeta(rec);
+        // huecos del flujo (cmake/kepyur_patches.cmake, conjunto "iqrec"): muestras perdidas dentro del fichero
+        const int gaps = rec.value("gaps").toInt();
+        QString msg = tr("Recorded: %1 (%2 MB)").arg(QDir::toNativeSeparators(cs.absoluteFilePath())).arg(cs.size() / 1000000);
+        if (gaps > 0) msg += QStringLiteral("  ") + tr("WARNING: %n gap(s) in the stream, listed in the .json", "", gaps);
+        statusBar()->showMessage(msg, 20000);
     } else {
         const QString why = cs.exists() ? tr("incomplete, the channel was left while recording")
                                         : tr("the file could not be created, see the log (File > Open log folder)");
@@ -792,6 +856,47 @@ void MainWindow::checkRecording() {
     }
     recPrefix_.clear();
     updateRecordButton();
+}
+
+void MainWindow::writeSigmfMeta(const QJsonObject &rec) {
+    // SigMF (https://sigmf.org): el .cs16 tal cual (core:dataset, "non-conforming dataset"), int16 I/Q little
+    // endian con el valor de 12 bits del chip desplazado 4 bits. Cada hueco del flujo abre un capture nuevo, que es
+    // como SigMF marca una discontinuidad.
+    const double fs = rec.value("sample_rate").toDouble();
+    if (fs <= 0) return;
+    const double centre = rec.value("centre_hz").toDouble();
+    const double samples = rec.value("samples").toDouble();
+    QJsonObject global{
+        {"core:datatype", "ci16_le"},
+        {"core:sample_rate", fs},
+        {"core:version", "1.0.0"},
+        {"core:dataset", QFileInfo(recPrefix_ + ".cs16").fileName()},
+        {"core:recorder", QStringLiteral("FPVDesktopWiFiReceiver %1").arg(KP_VERSION)},
+        {"core:hw", "RTL8812BU (RTL8822B baseband logic-analyser tap via wifi-sdr), 12-bit samples << 4"},
+        {"core:description", QStringLiteral("Watched %1 MHz (%2)").arg(recPilot_.freqMHz, 0, 'f', 1)
+                                 .arg(recPilot_.isDigital() ? recPilot_.digital : QStringLiteral("analog"))},
+    };
+    QJsonArray captures;
+    captures.append(QJsonObject{{"core:sample_start", 0},
+                                {"core:frequency", centre},
+                                {"core:datetime", recStartedAt_.toString(Qt::ISODateWithMs)}});
+    for (const auto &g : rec.value("gap_at").toArray())
+        captures.append(QJsonObject{{"core:sample_start", g.toDouble()}, {"core:frequency", centre}});
+    QJsonArray annotations;
+    if (recPilot_.isDigital()) {
+        annotations.append(QJsonObject{
+            {"core:sample_start", 0},
+            {"core:sample_count", samples},
+            {"core:freq_lower_edge", (recPilot_.freqMHz - recPilot_.bwMHz / 2) * 1e6},
+            {"core:freq_upper_edge", (recPilot_.freqMHz + recPilot_.bwMHz / 2) * 1e6},
+            {"core:label", recPilot_.digital},
+            {"core:comment", QStringLiteral("found by the scan: %1 MHz wide, %2 dB over the noise floor")
+                                 .arg(recPilot_.bwMHz, 0, 'f', 1).arg(recPilot_.snrDb, 0, 'f', 1)},
+        });
+    }
+    const QJsonObject meta{{"global", global}, {"captures", captures}, {"annotations", annotations}};
+    QFile f(recPrefix_ + ".sigmf-meta");
+    if (f.open(QIODevice::WriteOnly | QIODevice::Truncate)) f.write(QJsonDocument(meta).toJson(QJsonDocument::Indented));
 }
 
 void MainWindow::onLost(const QString &msg) {
@@ -813,12 +918,41 @@ void MainWindow::onLost(const QString &msg) {
     statusBar()->showMessage(tr("Adapter disconnected"));
 }
 
+QString MainWindow::digitalKind(const Pilot &p) const {
+    if (p.digital == QLatin1String("hdzero")) return tr("HDZero");
+    if (p.digital == QLatin1String("hdzero_narrow")) return tr("HDZero narrow");
+    return tr("digital %1 MHz").arg(p.bwMHz, 0, 'f', 0);
+}
+
+const Pilot *MainWindow::digitalPilotAt(double mhz) const {
+    if (!expMode_) return nullptr;
+    for (const Pilot &p : pilots_)
+        if (p.isDigital() && qAbs(p.freqMHz - mhz) < 4) return &p;
+    return nullptr;
+}
+
 void MainWindow::onPilots(const QVector<Pilot> &pilots) {
+    pilots_ = pilots;
     const double sel = list_->currentItem() ? list_->currentItem()->data(Qt::UserRole).toDouble() : 0;
     list_->clear();
     for (const Pilot &p : pilots) {
-        auto *it = new QListWidgetItem(QStringLiteral("%1   %2 dB").arg(p.label()).arg(p.snrDb, 0, 'f', 1));
+        if (p.isDigital() && !expMode_) continue;  // de un escaneo con el modo experimental activo
+        QString text = p.label();
+        if (p.isDigital()) {
+            text = p.name.isEmpty() ? QStringLiteral("%1 MHz").arg(p.freqMHz, 0, 'f', 0)
+                                    : QStringLiteral("%1  %2 MHz").arg(p.name).arg(p.freqMHz, 0, 'f', 0);
+            text += QStringLiteral("  ") + digitalKind(p);
+        }
+        auto *it = new QListWidgetItem(QStringLiteral("%1   %2 dB").arg(text).arg(p.snrDb, 0, 'f', 1));
         it->setData(Qt::UserRole, p.freqMHz);
+        if (p.isDigital()) {
+            QFont f = it->font();
+            f.setItalic(true);
+            it->setFont(f);
+            it->setToolTip(tr("Digital signal, %1 MHz wide: its video cannot be shown (this program decodes analog "
+                              "video only). In developer mode you can record its raw signal (Record IQ).")
+                               .arg(p.bwMHz, 0, 'f', 1));
+        }
         list_->addItem(it);
         if (qAbs(p.freqMHz - sel) < 1) list_->setCurrentItem(it);
     }
@@ -826,10 +960,22 @@ void MainWindow::onPilots(const QVector<Pilot> &pilots) {
 
 void MainWindow::onStatus(const RadioStatus &s) {
     lastStatus_ = s;
+    watching_ = s.mode == QLatin1String("watch") ? s.watchMHz : 0;
+    // Viendo una senal digital de la lista: sin imagen (no se decodifica), con un aviso en su lugar. Si el
+    // decodificador analogico engancha, ahora hay video analogico en ese canal (la lista es de un escaneo anterior).
+    const Pilot *dp = watching_ > 0 && !s.locked ? digitalPilotAt(watching_) : nullptr;
+    if (bool(dp) != digitalWatch_ || (dp && qAbs(dp->freqMHz - digitalPilot_.freqMHz) > 0.5)) {
+        digitalWatch_ = dp != nullptr;
+        if (dp) {
+            digitalPilot_ = *dp;
+            video_->clear();
+        }
+        updatePlaceholder();
+    }
     updateRecordButton();
     updateMediaButtons();
-    watching_ = s.mode == QLatin1String("watch") ? s.watchMHz : 0;
-    if (watching_ > 0 && qAbs(watching_ - lastSaved_) > 0.5 && s.chip != QLatin1String("demo")) {
+    // una senal digital no se retoma al abrir el programa (no habria imagen)
+    if (watching_ > 0 && !digitalWatch_ && qAbs(watching_ - lastSaved_) > 0.5 && s.chip != QLatin1String("demo")) {
         lastSaved_ = watching_;
         settings().setValue("lastMHz", watching_);
     }
@@ -841,7 +987,10 @@ void MainWindow::onStatus(const RadioStatus &s) {
         osd = QStringLiteral("%1%2 MHz").arg(ch ? QString::fromLatin1(ch->name) + "  " : QString())
                   .arg(s.watchMHz, 0, 'f', 0);
         if (s.snrDb >= 0) osd += QStringLiteral("  SNR %1 dB").arg(s.snrDb, 0, 'f', 0);
-        osd += QStringLiteral("  ") + (s.locked ? (s.colour ? s.videoStd : tr("%1 B/W").arg(s.videoStd)) : tr("no sync"));
+        if (digitalWatch_)
+            osd += QStringLiteral("  ") + tr("%1 (digital, no picture)").arg(digitalKind(digitalPilot_));
+        else
+            osd += QStringLiteral("  ") + (s.locked ? (s.colour ? s.videoStd : tr("%1 B/W").arg(s.videoStd)) : tr("no sync"));
     }
     video_->setOsd(osd);
 

@@ -26,7 +26,10 @@ void StubBackend::startScan() {
     ensureTimer();
     emit message(tr("Scanning (simulated)..."));
     QVector<Pilot> p;
-    for (const Pilot &f : {Pilot{5769, 18.5, "R4", "NTSC", 0}, Pilot{5806, 11.2, "R5", "PAL", 0}}) {
+    // R2: una senal HDZero (digital: sale en la lista pero no tiene imagen)
+    for (const Pilot &f : {Pilot{5769, 18.5, "R4", "NTSC", 0}, Pilot{5695, 14.2, "R2", "", 0, "hdzero", 27.1},
+                           Pilot{5806, 11.2, "R5", "PAL", 0}}) {
+        if (f.isDigital() && !digital_) continue;
         bool in = scanMHz_.isEmpty();
         for (double m : scanMHz_) in = in || qAbs(m - f.freqMHz) <= 10;
         if (in) p.push_back(f);
@@ -52,8 +55,10 @@ void StubBackend::stop() {
 }
 
 void StubBackend::tick() {
-    // R5 (5806 MHz) simula un canal sin senal: no llegan fotogramas, como al apagarse un VTX
-    const bool noSignal = qAbs(watching_ - 5806) < 1;
+    // R5 (5806 MHz) simula un canal sin senal: no llegan fotogramas, como al apagarse un VTX. R2 (5695 MHz) es
+    // HDZero: tampoco hay fotogramas (no se decodifica), pero si senal.
+    const bool hdzero = qAbs(watching_ - 5695) < 1;
+    const bool noSignal = hdzero || qAbs(watching_ - 5806) < 1;
     if (noSignal) {
         if (++n_ % 15 == 0) {
             RadioStatus s;
@@ -62,9 +67,9 @@ void StubBackend::tick() {
             s.usb3 = true;
             s.mode = QStringLiteral("watch");
             s.watchMHz = watching_;
-            s.msps = 20;
-            s.snrDb = 2;
-            s.videoStd = QStringLiteral("PAL");
+            s.msps = hdzero ? 40 : 20;
+            s.snrDb = hdzero ? 14 : 2;
+            s.videoStd = hdzero ? QString() : QStringLiteral("PAL");
             emit statusChanged(s);
         }
         return;
