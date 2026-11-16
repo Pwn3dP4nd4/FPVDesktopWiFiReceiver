@@ -34,30 +34,38 @@ libusb), or build it as explained below.
 ```
 FPVDesktopWiFiReceiver/
 ├── src/                     Qt GUI: window, video, real backend and demo backend
+│   └── radio/               fpv::Radio: the radio (scan, watch, IQ recording), derived from kepyur's
 ├── third_party/kepyur/      submodule -> github.com/gilankpam/kepyur  (UNMODIFIED)
-│   ├── native/dsp, native/radio    the core the Android app also builds
+│   ├── native/dsp           the analog video decoder the Android app also builds
 │   └── third_party/wifi-sdr, libusb (submodules pinned by kepyur)
 │       └── external/devourer
-├── compat/win32/            shim for 2 POSIX functions on Windows (instead of patching kepyur)
+├── test/                    test benches; radio_sim.cpp: fpv::Radio without an adapter (recording)
+├── compat/win32/            WinUSB on Windows (RAW_IO on the streaming endpoint)
 ├── scripts/                 build, dependency updates, MIPS binutils, Windows deployment
 ├── assets/                  logo (logo.svg) and generated icons (scripts/make-icons.sh)
 ├── translations/            UI translations (Spanish: FPVDesktopWiFiReceiver_es.ts)
 └── packaging/               Linux: udev rule and .desktop · Windows: .exe icon and version info
 ```
 
-- `src/radio_backend.cpp` does what `native/jni/kepyur_jni.cpp` does on Android: it creates a `kp::Radio`,
+- From kepyur we use the hard, well-tuned part: `native/dsp` (the analog video decoder: `FrontEnd`, `Psd`,
+  `find_humps`, `check_video`, the channel table `kp::fpv_channels()`), unmodified, plus wifi-sdr + devourer,
+  which come as its submodules. It is all built with `add_subdirectory(third_party/kepyur/native)`.
+- The radio is our own: `src/radio` (`fpv::Radio`, GPL-2.0-only) is derived from kepyur's
+  `native/radio/radio.cpp` and sits directly on `wsdr::Receiver`. It does the same (stepped scan at 40 MS/s, watch
+  with the decoder on another thread, 20 MS/s fallback, stream test, IQ recording) and also, as plain code,
+  scanning only the chosen channels (`set_scan_plan`) and the NTSC chroma comb (`set_comb`). kepyur's
+  `native/radio` is no longer built.
+- `src/radio_backend.cpp` does what `native/jni/kepyur_jni.cpp` does on Android: it creates an `fpv::Radio`,
   requests the USB 2 → USB 3 switch (`wsdr::request_usb3`), opens the adapter and runs `scan()` / `watch()`.
-  Frames (`kp::Frame`, RGBX 720×480/576) go to the window as a `QImage` instead of to a `Surface`; status is
-  read from `Radio::status_json()`, as the app does.
-- The channel table (`kp::fpv_channels()`) and pilot detection are kepyur's.
-- No dependency is forked and the submodules are never modified: upstream is built with
-  `add_subdirectory(third_party/kepyur/native)`. Two additions are applied at build time to copies of `native/dsp`
-  and `native/radio` in the build folder, as text replacements listed in `cmake/kepyur_patches.cmake`:
-  `kp::Radio::set_scan_plan()` (scan only the chosen channels) and an NTSC chroma comb filter
-  (`DecoderOpts::comb`, fewer rainbows on fine detail and on the OSD text; proposed to kepyur). If kepyur changes
-  one of those lines, CMake stops with a message saying which.
-  The only Windows-specific piece is `compat/win32/sys/resource.h`
-  (`gettid`/`setpriority` → `SetThreadPriority`), which is only on the include path on Windows.
+  Frames (`kp::Frame`, RGBX 720×480/576) go to the window as a `QImage` instead of to a `Surface`; status is read
+  from `Radio::status_json()`, with the same keys as kepyur's.
+- The submodules are never modified. The little that still changes in kepyur is applied at build time to copies
+  in the build folder, as text replacements listed in `cmake/kepyur_patches.cmake`: `comb` (the comb filter in
+  `native/dsp`, proposed to kepyur) and `rxdma` (unwedging the 8822B RX DMA in wifi-sdr). If upstream changes one
+  of those lines, CMake stops with a message saying which.
+- Without an adapter: `cmake --build build/msys2 --target radio_sim` and
+  `KP_SIM_FILE=recording.cs16 build/msys2/radio_sim --scan` (or `--watch MHZ`), which plays back a 40 MS/s
+  recording centred on 5770 MHz as if it were the adapter (kepyur's `sim_receiver.cpp`).
 
 ## Updating the dependencies when the original repositories improve
 

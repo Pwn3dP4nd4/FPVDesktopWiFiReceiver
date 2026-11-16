@@ -35,30 +35,38 @@ libusb del sistema), o compílalo como se explica abajo.
 ```
 FPVDesktopWiFiReceiver/
 ├── src/                     GUI Qt: ventana, vídeo, backend real y backend demo
+│   └── radio/               fpv::Radio: la radio (escaneo, vista, grabación IQ), derivada de la de kepyur
 ├── third_party/kepyur/      submódulo -> github.com/gilankpam/kepyur  (SIN modificar)
-│   ├── native/dsp, native/radio    el núcleo que también compila la app Android
+│   ├── native/dsp           el decodificador de vídeo analógico que también compila la app Android
 │   └── third_party/wifi-sdr, libusb (submódulos fijados por kepyur)
 │       └── external/devourer
-├── compat/win32/            shim de 2 funciones POSIX para Windows (en vez de parchear kepyur)
+├── test/                    bancos de prueba; radio_sim.cpp: fpv::Radio sin adaptador (grabación)
+├── compat/win32/            WinUSB en Windows (RAW_IO en el endpoint de streaming)
 ├── scripts/                 build, actualización de dependencias, binutils MIPS, despliegue Windows
 ├── assets/                  logo (logo.svg) e iconos generados (scripts/make-icons.sh)
 ├── translations/            traducciones de la interfaz (español: FPVDesktopWiFiReceiver_es.ts)
 └── packaging/               Linux: regla udev y .desktop · Windows: icono y versión del .exe
 ```
 
-- `src/radio_backend.cpp` hace lo mismo que `native/jni/kepyur_jni.cpp` en Android: crea un `kp::Radio`,
-  pide el cambio USB 2 → USB 3 (`wsdr::request_usb3`), abre el adaptador, y lanza `scan()` / `watch()`.
-  Los fotogramas (`kp::Frame`, RGBX 720×480/576) salen como `QImage` hacia la ventana en vez de a una
-  `Surface`; el estado se lee de `Radio::status_json()` igual que la app.
-- La tabla de canales (`kp::fpv_channels()`) y la detección de pilotos son las de kepyur.
-- Ninguna dependencia está forkeada y los submódulos no se modifican nunca: upstream se compila con
-  `add_subdirectory(third_party/kepyur/native)`. Dos añadidos se aplican al compilar sobre copias de `native/dsp` y
-  `native/radio` en la carpeta de compilación, como sustituciones de texto listadas en `cmake/kepyur_patches.cmake`:
-  `kp::Radio::set_scan_plan()` (escanear solo los canales elegidos) y un filtro peine de croma NTSC
-  (`DecoderOpts::comb`, menos arcoíris en los detalles finos y en el texto del OSD; propuesto a kepyur). Si kepyur
-  cambia alguna de esas líneas, CMake se para diciendo cuál.
-  Lo único específico de Windows es `compat/win32/sys/resource.h`
-  (`gettid`/`setpriority` → `SetThreadPriority`), que solo entra en el include path en Windows.
+- De kepyur se usa lo difícil y bien ajustado: `native/dsp` (el decodificador de vídeo analógico: `FrontEnd`,
+  `Psd`, `find_humps`, `check_video`, la tabla de canales `kp::fpv_channels()`), sin modificar, y wifi-sdr +
+  devourer, que llegan como submódulos suyos. Todo se compila con `add_subdirectory(third_party/kepyur/native)`.
+- La radio es propia: `src/radio` (`fpv::Radio`, GPL-2.0-only) deriva de `native/radio/radio.cpp` de kepyur y va
+  directamente sobre `wsdr::Receiver`. Hace lo mismo (escaneo por pasos a 40 MS/s, vista con el decodificador en
+  otro hilo, caída a 20 MS/s, prueba de flujo, grabación IQ) y además, como código normal, escanear solo los
+  canales elegidos (`set_scan_plan`) y el filtro peine de croma NTSC (`set_comb`). `native/radio` de kepyur ya no
+  se compila.
+- `src/radio_backend.cpp` hace lo mismo que `native/jni/kepyur_jni.cpp` en Android: crea un `fpv::Radio`, pide el
+  cambio USB 2 → USB 3 (`wsdr::request_usb3`), abre el adaptador y lanza `scan()` / `watch()`. Los fotogramas
+  (`kp::Frame`, RGBX 720×480/576) salen como `QImage` hacia la ventana en vez de a una `Surface`; el estado se lee
+  de `Radio::status_json()`, con las mismas claves que en kepyur.
+- Los submódulos no se modifican nunca. Lo poco que sigue cambiando en kepyur se aplica al compilar sobre copias
+  en la carpeta de compilación, como sustituciones de texto listadas en `cmake/kepyur_patches.cmake`: `comb` (el
+  filtro peine en `native/dsp`, propuesto a kepyur) y `rxdma` (desatascar el RX DMA del 8822B en wifi-sdr). Si
+  upstream cambia alguna de esas líneas, CMake se para diciendo cuál.
+- Sin adaptador: `cmake --build build/msys2 --target radio_sim` y
+  `KP_SIM_FILE=grabacion.cs16 build/msys2/radio_sim --scan` (o `--watch MHZ`), que reproduce una grabación de
+  40 MS/s centrada en 5770 MHz como si fuera el adaptador (`sim_receiver.cpp` de kepyur).
 
 ## Actualizar las dependencias cuando haya mejoras en los repos originales
 

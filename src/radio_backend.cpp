@@ -59,7 +59,7 @@ void RadioBackend::ensureObjects() {
         connect(reconnect_, &QTimer::timeout, this, &RadioBackend::tryReconnect);
     }
     if (!radio_) {
-        radio_ = std::make_unique<kp::Radio>([this](const kp::Frame &f) { onFrame(f); });
+        radio_ = std::make_unique<fpv::Radio>([this](const kp::Frame &f) { onFrame(f); });
         radio_->set_scan_plan(scanPlan_);  // seleccion recibida antes de crear la radio
         // Filtro peine de croma NTSC (cmake/kepyur_patches.cmake): menos arcoiris en detalles finos y en el texto
         // del OSD a cambio de ~6 % de un nucleo. En el PC sobra CPU, asi que siempre activo.
@@ -169,7 +169,7 @@ void RadioBackend::setScanChannels(const QVector<double> &mhz) {
     scanPlan_ = scan_plan_for(std::vector<double>(mhz.begin(), mhz.end()));
     KP_LOGI("escaneo: %d canal(es) -> %d paso(s)%s", int(mhz.size()), int(scanPlan_.size()),
             scanPlan_.empty() ? " (plan completo)" : "");
-    // kp::Radio lo guarda para los siguientes scan(), tambien tras reabrir (recover/reconexion)
+    // fpv::Radio lo guarda para los siguientes scan(), tambien tras reabrir (recover/reconexion)
     if (radio_) radio_->set_scan_plan(scanPlan_);
 }
 

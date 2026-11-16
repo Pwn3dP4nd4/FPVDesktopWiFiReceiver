@@ -2,7 +2,7 @@
 // si llegan bancos de muestras en cada ciclo. Sirve para diagnosticar la reapertura dentro del mismo proceso y
 // comparar los backends de libusb en Windows (WinUSB con RAW_IO frente a UsbDk).
 //   reopen_test [--cycles N] [--secs S] [--rate 20|40] [--mhz F] [--reuse] [--usbdk] [--stress S]
-//     --reuse    reutiliza el mismo kp::Radio (como la app); si no, uno nuevo por ciclo
+//     --reuse    reutiliza el mismo fpv::Radio (como la app); si no, uno nuevo por ciclo
 //     --usbdk    backend UsbDk de libusb (no necesita Zadig; requiere UsbDk instalado)
 //     --stress S antes del primer cierre, S segundos a 40 MS/s para provocar fallos de stream
 //     --usb2     devolver antes el chip a USB 2 (para reproducir "cambio a USB 3 y abrir en el mismo proceso")
@@ -103,17 +103,17 @@ int main(int argc, char **argv) {
   if (sw.requested) kpd::wait_adapter(10000);
   if (settle > 0) std::this_thread::sleep_for(std::chrono::duration<double>(settle));
   if (dummy) {
-    kp::Radio r([](const kp::Frame &) {});
+    fpv::Radio r([](const kp::Frame &) {});
     try { r.open(-1); r.close(); std::printf("apertura previa sin ver: ok\n"); }
     catch (const std::exception &e) { std::printf("apertura previa: %s\n", e.what()); }
     for (int i = 0; i < 40 && !kpd::adapter_present(); i++) std::this_thread::sleep_for(250ms);
     std::this_thread::sleep_for(1000ms);
   }
 
-  std::unique_ptr<kp::Radio> radio;
+  std::unique_ptr<fpv::Radio> radio;
   int ok = 0;
   for (int c = 1; c <= cycles; c++) {
-    if (!radio || !reuse) radio = std::make_unique<kp::Radio>([](const kp::Frame &) {});
+    if (!radio || !reuse) radio = std::make_unique<fpv::Radio>([](const kp::Frame &) {});
     const auto t0 = std::chrono::steady_clock::now();
     try {
       radio->open(-1);

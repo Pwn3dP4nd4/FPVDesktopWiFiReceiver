@@ -22,7 +22,7 @@ struct Pilot {
     }
 };
 
-// Resumen de kp::Radio::status_json() para la GUI.
+// Resumen de fpv::Radio::status_json() para la GUI.
 struct RadioStatus {
     bool open = false;
     bool usb3 = false;

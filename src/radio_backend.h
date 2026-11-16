@@ -7,11 +7,13 @@
 
 class QTimer;
 namespace kp {
-class Radio;
 struct Frame;
 }
+namespace fpv {
+class Radio;
+}
 
-// Backend real sobre kp::Radio (third_party/kepyur/native/radio): lo mismo que hace native/jni en Android,
+// Backend real sobre fpv::Radio (src/radio, derivada de native/radio de kepyur): lo mismo que hace native/jni en Android,
 // pero los fotogramas salen como QImage en lugar de pintarse en una Surface.
 class RadioBackend : public Backend {
     Q_OBJECT
@@ -38,8 +40,8 @@ private:
     void recover(const QString &mode, double watchMHz);
     void adapterLost(const QString &mode, double watchMHz);
     void tryReconnect();
-    void onFrame(const kp::Frame &f);  // hilo decodificador de kp::Radio
-    std::unique_ptr<kp::Radio> radio_;
+    void onFrame(const kp::Frame &f);  // hilo decodificador de fpv::Radio
+    std::unique_ptr<fpv::Radio> radio_;
     QTimer *poll_ = nullptr;
     QTimer *reconnect_ = nullptr;  // tras desenchufar: comprobar cada 2 s si el adaptador ha vuelto
     QString resumeMode_;           // lo que se hacia al perderlo, para retomarlo

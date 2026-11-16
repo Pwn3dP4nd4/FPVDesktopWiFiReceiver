@@ -4,11 +4,13 @@
 # falla diciendo cual: revisar aqui. Cuando upstream incorpore un conjunto, se borra de esta lista.
 #
 # Conjuntos:
-#   scan_plan  kp::Radio::set_scan_plan(): escanear solo los canales elegidos (propio de esta app)
-#   comb       DecoderOpts::comb + kp::Radio::set_comb(): filtro peine adaptativo de 3 lineas para la croma
-#              NTSC (propuesto a kepyur: gilankpam/kepyur PR 2)
+#   comb       DecoderOpts::comb: filtro peine adaptativo de 3 lineas para la croma NTSC en native/dsp (video.h,
+#              video.cpp) y --comb en kp_replay (propuesto a kepyur: gilankpam/kepyur PR 2). Lo activa
+#              fpv::Radio::set_comb() (src/radio)
 #   rxdma      wifi-sdr Receiver: tras un "no packet within timeout" del 8822B, apagar y encender el RX DMA
 #              (REG_CR) antes de reiniciar el flujo; desatasca el C2H en ~10 ms sin reabrir (test/wedge_test.cpp)
+#
+# La radio ya no se parchea: es propia (src/radio) y native/radio de kepyur no se compila.
 #
 # Uso desde CMake:  include(cmake/kepyur_patches.cmake) y kp_patch_files(<origen> <destino> <conjuntos...>)
 # Uso suelto (p.ej. preparar el PR sobre un clon de kepyur, en el sitio):
@@ -29,26 +31,6 @@ function(_kp_change set file anchor new)
   set(_kp_n ${i} PARENT_SCOPE)
 endfunction()
 set(_kp_n 0)
-
-# ---- scan_plan ---------------------------------------------------------------------------------------------
-_kp_change(scan_plan native/radio/radio.h "  void scan(double prefer_hz = 0);\n" [=[  void scan(double prefer_hz = 0);
-  // [FPVDesktopWiFiReceiver, added at build time] step centres for scan() in Hz (40 MS/s, +-16.5 MHz each);
-  // empty (the default) = the full plan. Takes effect on the next scan().
-  void set_scan_plan(std::vector<double> centres_hz) {
-    std::lock_guard<std::mutex> l(_m);
-    _scan_plan_override = std::move(centres_hz);
-  }
-
-private:
-  std::vector<double> _scan_plan_override;
-
-public:
-]=])
-_kp_change(scan_plan native/radio/radio.cpp "        _plan = scan_plan();\n" [=[        {
-          std::lock_guard<std::mutex> l(_m);
-          _plan = _scan_plan_override.empty() ? scan_plan() : _scan_plan_override;
-        }
-]=])
 
 # ---- rxdma -------------------------------------------------------------------------------------------------
 # En algunos controladores USB 3 (aqui AMD 1022:43D5 en Windows; wifi-sdr lo vio en Linux con 1022:15b9) el
@@ -256,48 +238,6 @@ _kp_change(comb native/dsp/video.cpp
 ]=]
   [=[      rephases++;
       comb_epoch++;
-]=])
-_kp_change(comb native/radio/radio.h
-  [=[  void set_gain(double db);
-]=]
-  [=[  void set_gain(double db);
-  // NTSC chroma comb (DecoderOpts::comb), taken at the next watch(): fewer rainbows on fine detail and OSD
-  // text, ~15 % more decode CPU. Off by default. Android: Native.setComb (the "comb" debug extra).
-  void set_comb(bool on);
-]=])
-_kp_change(comb native/radio/radio.h
-  [=[  double _gain_db = -1;
-]=]
-  [=[  double _gain_db = -1;
-  bool _comb = false;
-  bool _watch_comb = false;  // _comb as of the current watch (DSP thread only)
-]=])
-_kp_change(comb native/radio/radio.cpp
-  [=[}
-
-void Radio::record(double seconds, const std::string &prefix) {
-]=]
-  [=[}
-
-void Radio::set_comb(bool on) {
-  std::lock_guard<std::mutex> l(_m);
-  _comb = on;
-}
-
-void Radio::record(double seconds, const std::string &prefix) {
-]=])
-_kp_change(comb native/radio/radio.cpp
-  [=[          rate = _fallback && _watch_rate == 1 ? 2 : _watch_rate;
-]=]
-  [=[          rate = _fallback && _watch_rate == 1 ? 2 : _watch_rate;
-          _watch_comb = _comb;  // a decoder rebuilt later in this watch (fallback, shift) keeps it
-]=])
-_kp_change(comb native/radio/radio.cpp
-  [=[    _fe = std::make_shared<FrontEnd>(b.fs, b.shift_hz, _frames);
-]=]
-  [=[    DecoderOpts o;
-    o.comb = _watch_comb;
-    _fe = std::make_shared<FrontEnd>(b.fs, b.shift_hz, _frames, o);
 ]=])
 _kp_change(comb native/tools/kp_replay.cpp
   [=[//   kp_replay REC.cs16 [--offset HZ] [--start S] [--seconds S] [--cnr DB] [--frames] [--woven] [-v]
