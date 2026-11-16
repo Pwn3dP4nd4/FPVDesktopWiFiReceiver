@@ -19,6 +19,8 @@
 
 #include "log.h"
 #include "radio.h"
+#include "scan_plan.h"
+#include "channel_advisor.h"
 
 #ifndef RADIO_NS
 #define RADIO_NS fpv
@@ -71,9 +73,7 @@ int main(int argc, char **argv) {
   radio.set_comb(comb);
   if (watch_rate) radio.set_watch_rate(watch_rate);
   if (mode == "survey") {
-    std::vector<double> plan;  // como survey_plan_for() (src/scan_plan.cpp): pasos cada 30 MHz
-    for (double c = survey_lo + 15; c - 15 < survey_hi; c += 30) plan.push_back(c * 1e6);
-    radio.set_scan_plan(plan);
+    radio.set_scan_plan(survey_plan_for(survey_lo, survey_hi));  // el mismo plan que la app
     radio.survey();
   } else if (mode == "scan") radio.scan();
   else if (mode == "watch") {
@@ -106,6 +106,22 @@ int main(int argc, char **argv) {
           n++;
         }
       if (n) std::fprintf(stderr, "  %4.0f-%4.0f MHz: mean max %5.1f dB, peak %5.1f dB, duty %.2f\n", f, f + 10, m, pk, du / n);
+    }
+    // cada piloto en el aire: como puntua el recomendador su canal y los de al lado, sin y con "es mio"
+    // (advisor::mask_signal, lo que hace la ventana al marcarlo)
+    std::vector<advisor::Bin> ab;
+    for (const auto &b : bins) ab.push_back(advisor::Bin{b.mhz, b.mean_db, b.peak_db, b.duty});
+    const auto chans = advisor::analog_channels("ABEFR");
+    for (const auto &p : radio.pilots()) {
+      const advisor::Signal sig{p.mhz, p.bw_mhz, !p.digital.empty(), p.name};
+      auto masked = ab;
+      advisor::mask_signal(masked, sig);
+      std::fprintf(stderr, "pilot %s %.1f MHz (%.0f dB): channels within 45 MHz, noise without / with \"mine\"\n",
+                   p.name.c_str(), p.mhz, p.snr_db);
+      for (const auto &c : chans)
+        if (std::fabs(c.mhz - p.mhz) < 45)
+          std::fprintf(stderr, "  %-3s %4.0f MHz: %5.1f dB -> %5.1f dB\n", c.name.c_str(), c.mhz,
+                       advisor::rate(c, ab, {}).noise_db, advisor::rate(c, masked, {}).noise_db);
     }
   }
   radio.close();

@@ -66,6 +66,8 @@ constexpr float kSurveyRaiseUnder = 0.12f;
 constexpr double kSurveyReach = 10e6;
 // survey: a pilot not seen for this many sweeps has left
 constexpr int kSurveyLostSweeps = 3;
+// survey: an analog pilot this close to a stronger one is its sideband copy (see scan_step_done)
+constexpr double kSurveySidebandMhz = 15;
 // survey: a hump already checked for video is not checked again (streaming, ~100 ms) for this many sweeps
 constexpr int kSurveyRecheckSweeps = 5;
 constexpr int64_t kFallbackWindowMs = 5000;
@@ -822,6 +824,19 @@ void Radio::scan_step_done() {
       else it->seen_ms = f.seen_ms;
     }
     std::sort(_pilots.begin(), _pilots.end(), [](const Pilot &a, const Pilot &b) { return a.snr_db > b.snr_db; });
+    if (_survey) {
+      // survey: an analog VTX has a copy of its signal ~12 MHz away, a few dB weaker, whose video can lock too
+      // (measured: R3 at 5731.4 MHz 35 dB and 5743.4 MHz 32 dB, lock 0.75). An analog pilot that close to a
+      // stronger one is taken as that copy, not as another pilot (two real ones that close would be unflyable)
+      std::vector<Pilot> kept;
+      for (const auto &p : _pilots) {  // strongest first
+        const bool copy = p.digital.empty() && std::any_of(kept.begin(), kept.end(), [&](const Pilot &k) {
+          return k.digital.empty() && std::fabs(k.mhz - p.mhz) < kSurveySidebandMhz && k.snr_db >= p.snr_db + 2;
+        });
+        if (!copy) kept.push_back(p);
+      }
+      _pilots.swap(kept);
+    }
     if (done && _survey) {
       // survey: sweep again; pilots not seen for kSurveyLostSweeps sweeps are gone
       _grid.end_sweep();
