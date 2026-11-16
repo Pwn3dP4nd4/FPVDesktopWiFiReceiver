@@ -54,6 +54,9 @@ constexpr int kSettleBanks = 40;     // ~8 ms after a retune (chip AGC)
 constexpr int64_t kSnrEveryMs = 500;  // live SNR while watching (~2 % of a core at 20 MS/s)
 constexpr double kSnrSpan = 8e6;      // +- span the BW20 RX filter passes flat (-3 dB at ~9.2 MHz)
 constexpr int kFallbackFaults = 3;
+// survey: a fixed grid of 156.25 kHz bins (40 MS/s / 256) over 5300..6000 MHz
+constexpr double kSurveyLo = 5300e6, kSurveyBin = 40e6 / 256;
+constexpr int kSurveyBins = 4480;
 constexpr int64_t kFallbackWindowMs = 5000;
 
 // Raise this thread's priority (the USB stream thread must never miss a chip deadline; the DSP thread
@@ -205,13 +208,43 @@ void Radio::tune(double hz, int rate_sel) {
 
 void Radio::scan(double prefer_hz) {
   std::lock_guard<std::mutex> l(_m);
+  _survey = false;
   _resume_hz = prefer_hz > 0 ? prefer_hz : _mode == Mode::Watch ? _watch_hz : 0;
   _mode = Mode::Scan;
   _mode_epoch++;
 }
 
+void Radio::survey() {
+  std::lock_guard<std::mutex> l(_m);
+  _survey = true;
+  _resume_hz = 0;
+  _survey_acc.assign(kSurveyBins, SurveyAcc{});
+  _survey_sweeps = 0;
+  _pilots.clear();
+  _mode = Mode::Scan;
+  _mode_epoch++;
+}
+
+std::vector<SurveyBin> Radio::survey_spectrum(int *sweeps) {
+  std::lock_guard<std::mutex> l(_m);
+  if (sweeps) *sweeps = _survey_sweeps;
+  std::vector<SurveyBin> out;
+  for (size_t i = 0; i < _survey_acc.size(); i++) {
+    const auto &a = _survey_acc[i];
+    if (a.n == 0) continue;
+    SurveyBin b;
+    b.mhz = (kSurveyLo + (static_cast<double>(i) + 0.5) * kSurveyBin) / 1e6;
+    b.mean_db = static_cast<float>(10 * std::log10(a.mean_lin / a.n));
+    b.peak_db = a.peak_db;
+    b.duty = static_cast<float>(a.duty / a.n);
+    out.push_back(b);
+  }
+  return out;
+}
+
 void Radio::watch(double hz) {
   std::lock_guard<std::mutex> l(_m);
+  _survey = false;
   _watch_hz = hz;
   _mode = Mode::Watch;
   _mode_epoch++;
@@ -220,6 +253,7 @@ void Radio::watch(double hz) {
 void Radio::stream_test(int rate_sel, double seconds) {
   std::lock_guard<std::mutex> l(_m);
   _mode = Mode::Test;
+  _survey = false;
   _mode_epoch++;
   _req_rate = rate_sel;
   _test_end_ms = static_cast<int64_t>(seconds * 1000);
@@ -227,6 +261,7 @@ void Radio::stream_test(int rate_sel, double seconds) {
 
 void Radio::idle() {
   std::lock_guard<std::mutex> l(_m);
+  _survey = false;
   _mode = Mode::Idle;
   _mode_epoch++;
 }
@@ -344,7 +379,7 @@ void Radio::dsp_loop() {
         _settle = -1;
         {
           std::lock_guard<std::mutex> l(_m);
-          if (!_digital_on) _digital.reset();
+          if (!_digital_on && !_survey) _digital.reset();  // the survey always lists digital signals
           else if (!_digital) _digital = std::make_unique<kpx::DigitalScan>();
         }
         if (_digital) _digital->reset();
@@ -614,6 +649,12 @@ void Radio::handle_scan(Bank &b) {
     const std::vector<float> psd_db = psd.db();
     _humps = find_humps(psd_db, kFs, kEdge);
     if (_digital) _digital->analyse(psd_db, x.data(), x.size(), kFs, kEdge);
+    bool survey;
+    {
+      std::lock_guard<std::mutex> l(_m);
+      survey = _survey;
+    }
+    if (survey) survey_add(x, _cap_centre);
     if (!_humps.empty()) {
       _cap_need = static_cast<size_t>(kCapture * kFs);
       return;
@@ -668,6 +709,7 @@ void Radio::scan_step_done() {
     }
   bool done = _step >= _plan.size();
   double next_watch = 0;
+  bool restart = false;
   {
     std::lock_guard<std::mutex> l(_m);
     for (const auto &f : found) {
@@ -677,7 +719,14 @@ void Radio::scan_step_done() {
       else it->seen_ms = f.seen_ms;
     }
     std::sort(_pilots.begin(), _pilots.end(), [](const Pilot &a, const Pilot &b) { return a.snr_db > b.snr_db; });
-    if (done) {
+    if (done && _survey) {
+      // survey: sweep again; pilots not seen for 3 sweeps are gone
+      _survey_sweeps++;
+      restart = true;
+      const int64_t keep = now_ms() - 3 * 1000 * std::max<int64_t>(5, static_cast<int64_t>(_plan.size()) / 5);
+      _pilots.erase(std::remove_if(_pilots.begin(), _pilots.end(), [&](const Pilot &p) { return p.seen_ms < keep; }),
+                    _pilots.end());
+    } else if (done) {
       // after a scan: the pilot watched before, if still there, else the strongest seen in this scan
       const int64_t scan_start = now_ms() - 60000;
       for (const auto &p : _pilots)
@@ -700,6 +749,60 @@ void Radio::scan_step_done() {
     }
   }
   _cap.clear();
+  if (restart) {
+    _step = 0;
+    _settle = -1;
+    if (_digital) _digital->reset();
+    tune(_plan[0], 1);
+  }
+}
+
+// One survey step: 117 slices of 0.1 ms (16 FFTs of 256, Hann) over the 12 ms spectrum capture. Per bin: mean
+// power, strongest slice and how often it is 6 dB over the floor, all relative to this step's floor (10th
+// percentile of the usable bins). Bins near DC (the chip's LO leak) and outside +-kEdge are left out.
+void Radio::survey_add(const std::vector<cf> &x, double centre_hz) {
+  constexpr int kN = 256, kFrames = 16, kSlice = kN * kFrames;
+  const size_t slices = x.size() / kSlice;
+  if (slices < 8) return;
+  std::vector<float> win(kN);
+  for (int i = 0; i < kN; i++) win[i] = static_cast<float>(0.5 - 0.5 * std::cos(2 * M_PI * i / kN));
+  std::vector<cf> buf(kN);
+  std::vector<std::vector<float>> p(slices, std::vector<float>(kN, 0.f));
+  for (size_t s = 0; s < slices; s++)
+    for (int fr = 0; fr < kFrames; fr++) {
+      const cf *src = x.data() + s * kSlice + static_cast<size_t>(fr) * kN;
+      for (int i = 0; i < kN; i++) buf[i] = src[i] * win[i];
+      fft_inplace(buf.data(), kN);
+      for (int k = 0; k < kN; k++) p[s][k] += std::norm(buf[k]);
+    }
+  const auto freq = [&](int k) { return (k < kN / 2 ? k : k - kN) * kFs / kN; };
+  std::vector<int> use;
+  for (int k = 0; k < kN; k++)
+    if (std::fabs(freq(k)) < kEdge && std::fabs(freq(k)) > 0.3e6) use.push_back(k);
+  std::vector<double> mean(kN, 0);
+  for (int k : use)
+    for (size_t s = 0; s < slices; s++) mean[k] += p[s][k];
+  std::vector<double> m;
+  for (int k : use) m.push_back(mean[k] /= static_cast<double>(slices));
+  std::nth_element(m.begin(), m.begin() + m.size() / 10, m.end());
+  const double floor = std::max(m[m.size() / 10], 1e-12);
+  std::lock_guard<std::mutex> l(_m);
+  if (_survey_acc.size() != static_cast<size_t>(kSurveyBins)) return;
+  for (int k : use) {
+    const long i = std::lround((centre_hz + freq(k) - kSurveyLo) / kSurveyBin - 0.5);
+    if (i < 0 || i >= kSurveyBins) continue;
+    float pk = 0;
+    int on = 0;
+    for (size_t s = 0; s < slices; s++) {
+      pk = std::max(pk, p[s][k]);
+      on += p[s][k] > 4 * floor;
+    }
+    auto &a = _survey_acc[static_cast<size_t>(i)];
+    a.mean_lin += mean[k] / floor;
+    a.peak_db = std::max(a.peak_db, static_cast<float>(10 * std::log10(pk / floor)));
+    a.duty += static_cast<double>(on) / static_cast<double>(slices);
+    a.n++;
+  }
 }
 
 void Radio::handle_test(Bank &b) {
@@ -764,6 +867,7 @@ std::string Radio::status_json() {
     << ",\"fallback\":" << (_fallback ? "true" : "false");
   if (_mode == Mode::Watch && _snr_db >= 0) o << ",\"snr_db\":" << _snr_db;
   if (_mode == Mode::Scan) o << ",\"scan_step\":" << _step << ",\"scan_steps\":" << _plan.size();
+  if (_survey) o << ",\"survey\":true,\"sweeps\":" << _survey_sweeps;
   o << ",\"video\":{\"locked\":" << (!_vstats.acquiring && _vstats.lock_recent > 0.5f ? "true" : "false")
     << ",\"lock\":" << _vstats.lock_recent << ",\"std\":" << jstr(_vstats.std_name) << ",\"fps\":" << _fps
     << ",\"acquisitions\":" << _vstats.acquisitions << ",\"losses\":" << _vstats.losses

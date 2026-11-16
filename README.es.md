@@ -231,6 +231,25 @@ Opciones de línea de comandos (opcionales, para pruebas): `--demo` sin hardware
 `--no-connect` no conectar al abrir · `--lang en|es|system` idioma de la interfaz (se guarda) ·
 `--verbose` log de depuración.
 
+## Analizador de canales
+
+**Herramientas → Analizador de canales** recomienda qué canales usar cuando varios pilotos vuelan a la vez:
+
+1. Elige las **bandas** a analizar (A, B, E, F, R, L) y cuántos pilotos **analógicos** y **HDZero** van a volar.
+2. **Empezar el análisis**: el adaptador barre esas bandas sin parar (no se ve vídeo mientras tanto). Apaga tus
+   propios VTX: todo lo que esté en el aire se toma como ocupado.
+3. La gráfica muestra el nivel medio sobre el ruido, la ráfaga más fuerte vista y las zonas con interferencia a
+   ráfagas (WiFi de 5 GHz), los pilotos que ya están en el aire (analógicos y HDZero) y cada canal coloreado (verde
+   limpio, amarillo con algo de interferencia, rojo ocupado o con ruido). Debajo, los canales **recomendados** con
+   su interferencia y notas. Se actualiza con cada barrido: cuanto más tiempo, más ráfagas de WiFi capta.
+
+Cómo elige: cada canal se puntúa por la interferencia dentro de su ancho (analógico 20 MHz, HDZero 27 MHz), con
+más peso para las ráfagas; un canal donde ya hay un piloto queda descartado. Entre los elegidos exige una
+separación mínima (20 MHz entre analógicos, 24 analógico-HDZero, 27 entre HDZero), penaliza quedar por debajo de
+la ideal (37, 40 y 37 MHz), evita la intermodulación de 3.er orden entre analógicos (2·f1 − f2 sobre otro canal) y,
+con la banda limpia, los separa todo lo posible (4 pilotos en Raceband: R1, R3, R6, R8). Si no caben con
+separación segura, lo dice. El cálculo está en `src/channel_advisor.cpp` (banco: `channel_advisor_test`).
+
 ## HDZero (experimental)
 
 HDZero es un sistema de vídeo **digital** (OFDM de unos 27 MHz, con un códec propio de Divimath, sin

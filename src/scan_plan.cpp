@@ -25,6 +25,12 @@ std::vector<double> scan_plan_for(std::vector<double> mhz) {
     return plan;
 }
 
+std::vector<double> survey_plan_for(double lo, double hi) {
+    std::vector<double> plan;
+    for (double c = lo + 15; c - 15 < hi; c += 30) plan.push_back(c * 1e6);
+    return plan;
+}
+
 int full_scan_steps() {
     int n = 0;
     for (double c = 5652; c <= 5940; c += 20) n++;

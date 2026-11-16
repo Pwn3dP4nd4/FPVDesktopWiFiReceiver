@@ -49,6 +49,15 @@ struct Pilot {
   float bw_mhz = 0;      // occupied width of a digital signal
 };
 
+// Channel survey (Radio::survey): what each 156.25 kHz of the band looked like over every sweep, in dB over
+// the noise floor of the step that saw it (steps have different gains: only levels over their floor compare).
+struct SurveyBin {
+  double mhz = 0;      // centre of the bin
+  float mean_db = 0;   // average power
+  float peak_db = 0;   // strongest 0.1 ms slice seen (bursts: WiFi)
+  float duty = 0;      // fraction of 0.1 ms slices more than 6 dB over the floor
+};
+
 class Radio {
 public:
   explicit Radio(FrameSink frames);
@@ -71,6 +80,10 @@ public:
   void set_scan_plan(std::vector<double> centres_hz);
   // Also list digital signals (HDZero...) found by scan(); off by default. Takes effect on the next scan().
   void set_digital_scan(bool on);
+  // Channel survey: sweep the scan plan (set_scan_plan) over and over, listing pilots (digital ones too) and
+  // accumulating the spectrum (survey_spectrum) until another mode is set. Never tunes to a pilot.
+  void survey();
+  std::vector<SurveyBin> survey_spectrum(int *sweeps = nullptr);
   void watch(double hz);
   void stream_test(int rate_sel, double seconds);
   void idle();
@@ -107,6 +120,7 @@ private:
   void handle_scan(Bank &b);
   void handle_test(Bank &b);
   void scan_step_done();
+  void survey_add(const std::vector<cf> &x, double centre_hz);
   void unpack(const Bank &b, std::vector<cf> &out);
 
   FrameSink _frames;
@@ -185,6 +199,16 @@ private:
   std::vector<double> _scan_plan_override;     // set_scan_plan() (under _m)
   std::unique_ptr<kpx::DigitalScan> _digital;  // digital signals in this scan, or null
   bool _digital_on = false;                    // set_digital_scan() (under _m)
+  // survey (accumulators under _m)
+  bool _survey = false;
+  struct SurveyAcc {
+    double mean_lin = 0;
+    float peak_db = -100;
+    double duty = 0;
+    int n = 0;
+  };
+  std::vector<SurveyAcc> _survey_acc;
+  int _survey_sweeps = 0;
   // test
   uint64_t _test_banks = 0, _test_gaps = 0, _test_last_seq = 0, _test_runs = 0;
   uint32_t _test_gen = 0;

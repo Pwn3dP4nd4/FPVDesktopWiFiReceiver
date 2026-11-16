@@ -3,6 +3,9 @@
 #include <QPainter>
 #include <QTimer>
 
+#include <algorithm>
+#include <cmath>
+
 #include "video_widget.h"  // perf_now_ns()
 
 StubBackend::StubBackend(QObject *parent) : Backend(parent) {}
@@ -52,6 +55,45 @@ void StubBackend::stop() {
     s.mode = QStringLiteral("idle");
     s.chip = QStringLiteral("demo");
     emit statusChanged(s);
+}
+
+// Analizador simulado: un WiFi a rafagas en 5650-5690 MHz (canales 132/136), un piloto analogico en R4, un HDZero
+// en R6 y algo de ruido. Las rafagas se van descubriendo barrido a barrido, como con el adaptador.
+void StubBackend::startSurvey(double lo, double hi) {
+    if (!survey_) {
+        survey_ = new QTimer(this);
+        connect(survey_, &QTimer::timeout, this, &StubBackend::surveyTick);
+    }
+    stop();
+    surveyLo_ = lo;
+    surveyHi_ = hi;
+    sweeps_ = 0;
+    survey_->start(1000);
+    surveyTick();
+}
+
+void StubBackend::stopSurvey() {
+    if (survey_) survey_->stop();
+}
+
+void StubBackend::surveyTick() {
+    SurveyData d;
+    d.sweeps = sweeps_++;
+    const double seen = std::min(1.0, 0.3 + 0.15 * sweeps_);  // fraccion de rafagas captadas
+    for (double f = surveyLo_ + 0.078; f < surveyHi_; f += 0.15625) {
+        SpectrumPoint p{f, 0.4f + float((qHash(qint64(f * 1000)) % 100) / 100.0), 3.f, 0.f};
+        if (f > 5650 && f < 5690) {
+            p.meanDb = float(3 + 2 * seen);
+            p.peakDb = float(30 * seen);
+            p.duty = 0.2f;
+        }
+        if (std::abs(f - 5769) < 6) p.meanDb = p.peakDb = 22 - float(std::abs(f - 5769)) * 2, p.duty = 1;
+        if (std::abs(f - 5845) < 13.5) p.meanDb = p.peakDb = 25, p.duty = 1;  // HDZero en R6
+        d.bins.push_back(p);
+    }
+    d.pilots.push_back(Pilot{5769, 20, "R4", "NTSC", 0});
+    d.pilots.push_back(Pilot{5843, 24, "R6", "", 0, "hdzero", 27});
+    emit surveyUpdated(d);
 }
 
 void StubBackend::tick() {

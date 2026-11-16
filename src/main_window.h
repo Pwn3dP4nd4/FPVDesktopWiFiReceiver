@@ -16,6 +16,7 @@ class QComboBox;
 class QLabel;
 class QSettings;
 class QTimer;
+class ChannelAnalyzer;
 class QJsonObject;
 class VideoWidget;
 class VideoRecorder;
@@ -110,6 +111,11 @@ private:
     QAction *snapDirOpenAct_ = nullptr, *snapDirChangeAct_ = nullptr, *videoDirOpenAct_ = nullptr, *videoDirChangeAct_ = nullptr;
     QAction *recDirAct_ = nullptr, *logDirAct_ = nullptr, *shortcutAct_ = nullptr, *driverAct_ = nullptr, *quitAct_ = nullptr;
     QAction *devModeAct_ = nullptr;
+    QMenu *toolsMenu_ = nullptr;
+    QAction *analyzerAct_ = nullptr;
+    ChannelAnalyzer *analyzer_ = nullptr;  // se crea al abrirlo
+    bool analyzing_ = false;               // el analizador barre: sin escaneo ni video
+    void openAnalyzer();
     QAction *expModeAct_ = nullptr;  // modo experimental (se guarda): senales digitales (HDZero) al escanear
     bool expMode_ = false;
     QAction *autoConnectAct_ = nullptr, *onConnectSection_ = nullptr, *resumeLastAct_ = nullptr, *scanAct_ = nullptr;

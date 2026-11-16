@@ -7,5 +7,8 @@
 // Vacio = todos los canales: se usa el plan completo de kepyur (que tambien cubre frecuencias no estandar).
 std::vector<double> scan_plan_for(std::vector<double> channelsMHz);
 
+// Analizador de canales: pasos que cubren sin huecos lo..hi MHz (cada paso ve +-16.5 MHz; van cada 30 MHz).
+std::vector<double> survey_plan_for(double loMHz, double hiMHz);
+
 // Pasos del plan completo de kepyur (radio.cpp, scan_plan(): 5652..5940 y 5370..5630 cada 20 MHz).
 int full_scan_steps();

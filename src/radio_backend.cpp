@@ -128,7 +128,8 @@ void RadioBackend::tryReconnect() {
     }
     reconnect_->setInterval(2000);
     emit opened(true, {});
-    if (resumeMode_ == QLatin1String("watch") && resumeMHz_ > 0) radio_->watch(resumeMHz_ * 1e6);
+    if (!surveyPlan_.empty()) radio_->survey();
+    else if (resumeMode_ == QLatin1String("watch") && resumeMHz_ > 0) radio_->watch(resumeMHz_ * 1e6);
     else if (resumeMode_ == QLatin1String("scan")) radio_->scan();
     emit message(tr("Adapter reconnected"));
     poll();
@@ -146,7 +147,8 @@ void RadioBackend::recover(const QString &mode, double watchMHz) {
         emit opened(false, QString::fromLocal8Bit(e.what()) + hint(false));
         return;
     }
-    if (mode == QLatin1String("watch") && watchMHz > 0) radio_->watch(watchMHz * 1e6);
+    if (!surveyPlan_.empty()) radio_->survey();
+    else if (mode == QLatin1String("watch") && watchMHz > 0) radio_->watch(watchMHz * 1e6);
     else if (mode == QLatin1String("scan")) radio_->scan();
     poll_->start();
     emit message(tr("Adapter recovered"));
@@ -162,6 +164,7 @@ void RadioBackend::closeDevice() {
 }
 
 void RadioBackend::startScan() {
+    if (!surveyPlan_.empty()) stopSurvey();
     forcePilots_ = true;  // la GUI vacia la lista al escanear: reenviarla aunque salgan los mismos pilotos
     if (radio_ && radio_->is_open()) radio_->scan();
 }
@@ -175,6 +178,7 @@ void RadioBackend::setScanChannels(const QVector<double> &mhz) {
 }
 
 void RadioBackend::watch(double freqMHz) {
+    if (!surveyPlan_.empty()) stopSurvey();
     if (radio_ && radio_->is_open()) radio_->watch(freqMHz * 1e6);
 }
 
@@ -198,6 +202,44 @@ void RadioBackend::setDigitalScan(bool on) {
     digitalScan_ = on;
     KP_LOGI("escaneo: senales digitales (experimental) %s", on ? "si" : "no");
     if (radio_) radio_->set_digital_scan(on);  // cmake/kepyur_patches.cmake, conjunto "digital"
+}
+
+void RadioBackend::startSurvey(double loMHz, double hiMHz) {
+    surveyPlan_ = survey_plan_for(loMHz, hiMHz);
+    KP_LOGI("analizador: %.0f-%.0f MHz, %d paso(s)", loMHz, hiMHz, int(surveyPlan_.size()));
+    if (!radio_ || !radio_->is_open()) return;
+    radio_->set_scan_plan(surveyPlan_);
+    radio_->survey();
+}
+
+void RadioBackend::stopSurvey() {
+    if (surveyPlan_.empty()) return;
+    surveyPlan_.clear();
+    KP_LOGI("analizador: parado");
+    if (!radio_) return;
+    radio_->set_scan_plan(scanPlan_);  // la seleccion de canales del escaneo normal
+    if (radio_->is_open()) radio_->idle();
+    forcePilots_ = true;
+}
+
+void RadioBackend::emitSurvey(const QJsonArray &pilots) {
+    SurveyData d;
+    std::vector<fpv::SurveyBin> bins = radio_->survey_spectrum(&d.sweeps);
+    d.bins.reserve(int(bins.size()));
+    for (const auto &b : bins) d.bins.push_back(SpectrumPoint{b.mhz, b.mean_db, b.peak_db, b.duty});
+    for (const auto &e : pilots) {
+        const QJsonObject p = e.toObject();
+        Pilot x;
+        x.freqMHz = p.value("mhz").toDouble();
+        x.snrDb = p.value("snr").toDouble();
+        x.name = p.value("name").toString();
+        x.stdName = p.value("std").toString();
+        x.ageS = p.value("age_s").toInt();
+        x.digital = p.value("digital").toString();
+        x.bwMHz = p.value("bw").toDouble();
+        d.pilots.push_back(x);
+    }
+    emit surveyUpdated(d);
 }
 
 void RadioBackend::onFrame(const kp::Frame &f) {
@@ -268,6 +310,11 @@ void RadioBackend::poll() {
     // Solo se avisa a la GUI si cambia lo que se muestra. "age_s" sube cada segundo: si entrara en la
     // comparacion, la lista se reconstruiria sin parar (parpadeo, scroll perdido, clics perdidos).
     const QJsonArray pa = o.value("pilots").toArray();
+    // Analizador: su propia vista (cada segundo); la lista de pilotos de la ventana principal no se toca
+    if (!surveyPlan_.empty() && o.value("survey").toBool()) {
+        if (polls_ % 4 == 0) emitSurvey(pa);
+        return;
+    }
     QVector<Pilot> ps;
     QByteArray key;
     for (const auto &e : pa) {

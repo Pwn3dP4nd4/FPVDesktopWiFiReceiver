@@ -226,6 +226,25 @@ Command-line options (optional, for testing): `--demo` no hardware (colour bars)
 `--watch 5800` connect and watch that frequency · `--rate 20|40` sample rate when watching · `--fullscreen` start in full screen · `--no-connect` don't
 connect on startup · `--lang en|es|system` interface language (saved) · `--verbose` debug log.
 
+## Channel analyzer
+
+**Tools → Channel analyzer** recommends which channels to use when several pilots fly together:
+
+1. Choose the **bands** to analyse (A, B, E, F, R, L) and how many **analog** and **HDZero** pilots will fly.
+2. **Start analysis**: the adapter sweeps those bands continuously (no video meanwhile). Switch your own VTXs off:
+   anything on the air is treated as taken.
+3. The graph shows the average level over the noise floor, the strongest burst seen and the areas with bursty
+   interference (5 GHz WiFi), the pilots already on the air (analog and HDZero) and each channel coloured (green
+   clean, yellow some interference, red busy or noisy). Below, the **recommended** channels with their interference
+   and notes. It updates with every sweep: the longer it runs, the more WiFi bursts it catches.
+
+How it chooses: each channel is scored by the interference within its width (analog 20 MHz, HDZero 27 MHz), with
+more weight for bursts; a channel where a pilot already is is ruled out. Between the chosen ones it requires a
+minimum spacing (20 MHz between analog, 24 analog-HDZero, 27 between HDZero), penalises going under the ideal (37,
+40 and 37 MHz), avoids 3rd-order intermodulation between analog pilots (2·f1 − f2 on another channel) and, with a
+clean band, spreads them as far as possible (4 pilots on Raceband: R1, R3, R6, R8). If they don't fit with safe
+spacing, it says so. The maths is in `src/channel_advisor.cpp` (test bench: `channel_advisor_test`).
+
 ## HDZero (experimental)
 
 HDZero is a **digital** video system (OFDM about 27 MHz wide, with Divimath's own codec, not publicly
