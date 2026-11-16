@@ -14,6 +14,10 @@ struct Pilot {
     QString name;   // canal estandar ("R4"), vacio si no coincide
     QString stdName;  // NTSC / PAL
     int ageS = 0;   // segundos desde el ultimo barrido que lo vio
+    // Senal digital (no se decodifica): "hdzero", "hdzero_narrow" o "digital"; vacio = video analogico
+    QString digital;
+    double bwMHz = 0;  // ancho ocupado de la senal digital
+    bool isDigital() const { return !digital.isEmpty(); }
     QString label() const {
         QString s = name.isEmpty() ? QStringLiteral("%1 MHz").arg(freqMHz, 0, 'f', 0)
                                    : QStringLiteral("%1  %2 MHz").arg(name).arg(freqMHz, 0, 'f', 0);
@@ -98,6 +102,8 @@ public slots:
     virtual void setWatchRate(int rateSel) { Q_UNUSED(rateSel); }  // 1 = 40 MS/s, 2 = 20 MS/s
     virtual void setGain(double db) { Q_UNUSED(db); }             // < 0 = AGC
     virtual void record(double seconds, const QString &prefix) { Q_UNUSED(seconds); Q_UNUSED(prefix); }
+    // Modo experimental: listar tambien senales digitales (HDZero...) al escanear; en el siguiente escaneo
+    virtual void setDigitalScan(bool on) { Q_UNUSED(on); }
 
 signals:
     void opened(bool ok, const QString &error);

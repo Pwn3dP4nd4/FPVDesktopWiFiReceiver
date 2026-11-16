@@ -11,6 +11,7 @@ public:
     QString name() const override { return QStringLiteral("demo"); }
 
 public slots:
+    void setDigitalScan(bool on) override { digital_ = on; }
     void openDevice() override;
     void closeDevice() override;
     void startScan() override;
@@ -25,4 +26,5 @@ private:
     int n_ = 0;
     double watching_ = 0;
     QVector<double> scanMHz_;  // vacio = todos
+    bool digital_ = false;     // modo experimental: tambien el piloto HDZero simulado
 };

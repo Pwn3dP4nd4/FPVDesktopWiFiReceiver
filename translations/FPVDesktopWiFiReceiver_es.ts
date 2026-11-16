@@ -46,6 +46,10 @@ S: captura   R: grabar vídeo</translation>
         <translation>Pilotos encontrados (clic = ver):</translation>
     </message>
     <message>
+        <source>Experimental mode: digital signals will be listed from the next scan</source>
+        <translation>Modo experimental: las señales digitales saldrán en la lista desde el próximo escaneo</translation>
+    </message>
+    <message>
         <source>Scan 1 channel</source>
         <translation>Escanear 1 canal</translation>
     </message>
@@ -182,6 +186,14 @@ S: captura   R: grabar vídeo</translation>
         <translation>Muestra el muestreo, la ganancia, la grabación IQ y los datos técnicos del receptor</translation>
     </message>
     <message>
+        <source>E&amp;xperimental mode (HDZero)</source>
+        <translation>Modo e&amp;xperimental (HDZero)</translation>
+    </message>
+    <message>
+        <source>Features not yet tested with real equipment: the scan also lists digital signals (HDZero, others) without showing their video, so you can see which channels are taken and record their signal in developer mode</source>
+        <translation>Funciones aún sin probar con equipos reales: el escaneo lista también las señales digitales (HDZero y otras) sin mostrar su vídeo, para ver qué canales están ocupados y grabar su señal en el modo desarrollador</translation>
+    </message>
+    <message>
         <source>On connect</source>
         <translation>Al conectar</translation>
     </message>
@@ -228,6 +240,16 @@ S: captura   R: grabar vídeo</translation>
     <message>
         <source>Connecting to the adapter...</source>
         <translation>Conectando con el adaptador...</translation>
+    </message>
+    <message>
+        <source>%1 on %2, %3 MHz wide.
+
+It is digital video: this program shows analog video only and cannot decode it.
+In developer mode (Options menu), &quot;Record IQ&quot; saves the raw signal for analysis.</source>
+        <translation>%1 en %2, de %3 MHz de ancho.
+
+Es vídeo digital: este programa solo muestra vídeo analógico y no puede decodificarlo.
+En el modo desarrollador (menú Opciones), «Grabar IQ» guarda la señal sin procesar para analizarla.</translation>
     </message>
     <message>
         <source>Adapter ready. Scan or pick a channel.</source>
@@ -395,8 +417,12 @@ Lo grabado hasta entonces se ha guardado en %2</translation>
         <translation>Grabando...</translation>
     </message>
     <message>
-        <source>Saves 5 s of the raw signal of the channel being watched (about %1 MB at %2 MS/s), for analysis or replay with kepyur&apos;s kp_replay.</source>
-        <translation>Guarda 5 s de la señal sin procesar del canal que estás viendo (unos %1 MB a %2 MS/s), para analizarla o reproducirla con kp_replay de kepyur.</translation>
+        <source>Saves 5 s of the raw signal of the channel being watched (about %1 MB at %2 MS/s), for analysis or replay with kepyur&apos;s kp_replay. A .sigmf-meta file next to it opens it in inspectrum, GNU Radio or Universal Radio Hacker.</source>
+        <translation>Guarda 5 s de la señal sin procesar del canal que estás viendo (unos %1 MB a %2 MS/s), para analizarla o reproducirla con kp_replay de kepyur. Con el fichero .sigmf-meta que se guarda al lado se abre en inspectrum, GNU Radio o Universal Radio Hacker.</translation>
+    </message>
+    <message>
+        <source>At %1 MS/s only about %2 MHz of this %3 MHz wide signal fit: choose 40 MS/s to record all of it.</source>
+        <translation>A %1 MS/s solo caben unos %2 MHz de esta señal de %3 MHz: elige 40 MS/s para grabarla entera.</translation>
     </message>
     <message>
         <source>Not enough free space in %1: the recording needs about %2 MB and there are %3 MB free.</source>
@@ -407,8 +433,19 @@ Lo grabado hasta entonces se ha guardado en %2</translation>
         <translation>Grabando %1 s (unos %2 MB) en %3.cs16...</translation>
     </message>
     <message>
+        <source>WARNING: at %1 MS/s only part of this %2 MHz wide signal is recorded.</source>
+        <translation>AVISO: a %1 MS/s solo se graba parte de esta señal de %2 MHz.</translation>
+    </message>
+    <message>
         <source>Recorded: %1 (%2 MB)</source>
         <translation>Grabado: %1 (%2 MB)</translation>
+    </message>
+    <message numerus="yes">
+        <source>WARNING: %n gap(s) in the stream, listed in the .json</source>
+        <translation>
+            <numerusform>AVISO: %n hueco en el flujo, anotado en el .json</numerusform>
+            <numerusform>AVISO: %n huecos en el flujo, anotados en el .json</numerusform>
+        </translation>
     </message>
     <message>
         <source>incomplete, the channel was left while recording</source>
@@ -427,8 +464,28 @@ Lo grabado hasta entonces se ha guardado en %2</translation>
         <translation>Adaptador desconectado</translation>
     </message>
     <message>
+        <source>HDZero</source>
+        <translation>HDZero</translation>
+    </message>
+    <message>
+        <source>HDZero narrow</source>
+        <translation>HDZero estrecho</translation>
+    </message>
+    <message>
+        <source>digital %1 MHz</source>
+        <translation>digital %1 MHz</translation>
+    </message>
+    <message>
+        <source>Digital signal, %1 MHz wide: its video cannot be shown (this program decodes analog video only). In developer mode you can record its raw signal (Record IQ).</source>
+        <translation>Señal digital de %1 MHz de ancho: su vídeo no se puede mostrar (este programa solo decodifica vídeo analógico). En el modo desarrollador puedes grabar su señal sin procesar (Grabar IQ).</translation>
+    </message>
+    <message>
         <source>Scanning %1/%2</source>
         <translation>Escaneando %1/%2</translation>
+    </message>
+    <message>
+        <source>%1 (digital, no picture)</source>
+        <translation>%1 (digital, sin imagen)</translation>
     </message>
     <message>
         <source>%1 B/W</source>

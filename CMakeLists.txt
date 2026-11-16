@@ -102,29 +102,40 @@ if(TARGET kp_replay)  # banco de kepyur (no se compila por defecto): con --comb
 endif()
 
 # ---- radio propia (src/radio): fpv::Radio sobre wsdr::Receiver, con el DSP de kepyur ----------------------------
-# Deriva de native/radio de kepyur; lleva como codigo normal lo que antes eran parches (plan de escaneo, peine).
-# native/radio de kepyur ya no se compila.
+# Deriva de native/radio de kepyur; lleva como codigo normal lo que antes eran parches: plan de escaneo, peine,
+# senales digitales (src/kp_ext) y huecos en la grabacion de IQ. native/radio de kepyur ya no se compila.
 if(KP_WITH_RADIO)
-  add_library(fpv_radio STATIC src/radio/radio.cpp src/radio/radio.h)
-  target_include_directories(fpv_radio PUBLIC src/radio)
+  set(_fpv_radio_src src/radio/radio.cpp src/radio/radio.h src/kp_ext/digital_scan.cpp src/kp_ext/digital_scan.h)
+  add_library(fpv_radio STATIC ${_fpv_radio_src})
+  target_include_directories(fpv_radio PUBLIC src/radio PRIVATE src/kp_ext)
   target_link_libraries(fpv_radio PUBLIC kepyur_dsp wsdrcore)
   target_compile_options(fpv_radio PRIVATE -O2 -Wall -Wextra)
   # radio_sim: fpv::Radio sin adaptador (KP_SIM_FILE=grabacion.cs16), como kp_sim de kepyur: sim_receiver.cpp
   # da todos los simbolos de wsdr::Receiver, asi que el receiver.o de wsdrcore no se enlaza.
-  #   cmake --build build/msys2 --target radio_sim  ->  radio_sim --scan | --watch MHZ (ver test/radio_sim.cpp)
+  #   cmake --build build/msys2 --target radio_sim  ->  radio_sim --scan [--digital] (ver test/radio_sim.cpp)
   find_package(Threads REQUIRED)
-  add_executable(radio_sim EXCLUDE_FROM_ALL test/radio_sim.cpp src/radio/radio.cpp
-                 "${KEPYUR_DIR}/native/tools/sim_receiver.cpp")
-  target_include_directories(radio_sim PRIVATE src/radio)
+  add_executable(radio_sim EXCLUDE_FROM_ALL test/radio_sim.cpp ${_fpv_radio_src} "${KEPYUR_DIR}/native/tools/sim_receiver.cpp")
+  target_include_directories(radio_sim PRIVATE src/radio src/kp_ext)
   target_link_libraries(radio_sim PRIVATE kepyur_dsp wsdrcore Threads::Threads)
   target_compile_options(radio_sim PRIVATE -O2 -Wall -Wextra)
   if(WIN32)
     target_link_options(radio_sim PRIVATE -static-libgcc -static-libstdc++)
   endif()
+  # radio_live: lo mismo con el adaptador de verdad (p.ej. grabar IQ desde la consola)
+  #   radio_live --watch 5658 --rate 1 --record 5 rec/hdzero --seconds 12
+  add_executable(radio_live EXCLUDE_FROM_ALL test/radio_sim.cpp)
+  target_link_libraries(radio_live PRIVATE fpv_radio Threads::Threads)
+  target_compile_options(radio_live PRIVATE -O2 -Wall -Wextra)
+  if(WIN32)
+    target_sources(radio_live PRIVATE compat/win32/winusb_raw_io.cpp)
+    target_link_libraries(radio_live PRIVATE winmm)
+    target_link_options(radio_live PRIVATE -Wl,--wrap=libusb_submit_transfer -Wl,--wrap=libusb_close
+                        -static-libgcc -static-libstdc++)
+  endif()
 endif()
 if(WIN32)
   # GCC/MinGW comprueba printf con las reglas de msvcrt y avisa de %zu, que UCRT si soporta: falso positivo.
-  foreach(t kepyur_dsp fpv_radio radio_sim)
+  foreach(t kepyur_dsp fpv_radio radio_sim radio_live)
     if(TARGET ${t})
       target_compile_options(${t} PRIVATE -Wno-format -Wno-format-extra-args)
     endif()
@@ -204,6 +215,14 @@ endif()
 
 # ---- Banco de pruebas de reapertura (no se instala ni se compila por defecto) --------------------------------
 # cmake --build build/msys2 --target reopen_test  ->  build/msys2/reopen_test.exe --help (ver test/)
+# Detector de senales digitales con senales sinteticas (sin adaptador): cmake --build <dir> --target digital_scan_test
+add_executable(digital_scan_test EXCLUDE_FROM_ALL test/digital_scan_test.cpp src/kp_ext/digital_scan.cpp)
+target_include_directories(digital_scan_test PRIVATE src/kp_ext)
+target_link_libraries(digital_scan_test PRIVATE kepyur_dsp)
+if(WIN32)
+  target_link_options(digital_scan_test PRIVATE -static-libgcc -static-libstdc++)
+endif()
+
 if(KP_WITH_RADIO)
   add_executable(reopen_test EXCLUDE_FROM_ALL test/reopen_test.cpp src/usb3_switch.cpp)
   target_include_directories(reopen_test PRIVATE src)

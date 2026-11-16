@@ -32,6 +32,7 @@ public slots:
     void setWatchRate(int rateSel) override;
     void setGain(double db) override;
     void record(double seconds, const QString &prefix) override;
+    void setDigitalScan(bool on) override;
 
 private:
     void ensureObjects();
@@ -51,5 +52,6 @@ private:
     unsigned polls_ = 0;
     qint64 lastRecoverMs_ = 0;
     QString lastFault_;  // ultimo last_fault registrado (cada fallo del flujo, una linea en el log)
-    std::vector<double> scanPlan_;  // centros de paso (Hz); vacio = plan completo de kepyur
+    std::vector<double> scanPlan_;  // centros de paso (Hz); vacio = plan completo
+    bool digitalScan_ = false;      // modo experimental (se aplica tambien a una radio creada despues)
 };

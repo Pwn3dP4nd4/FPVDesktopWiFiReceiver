@@ -35,7 +35,8 @@ libusb del sistema), o compílalo como se explica abajo.
 ```
 FPVDesktopWiFiReceiver/
 ├── src/                     GUI Qt: ventana, vídeo, backend real y backend demo
-│   └── radio/               fpv::Radio: la radio (escaneo, vista, grabación IQ), derivada de la de kepyur
+│   ├── radio/               fpv::Radio: la radio (escaneo, vista, grabación IQ), derivada de la de kepyur
+│   └── kp_ext/              detector de señales digitales (HDZero, experimental)
 ├── third_party/kepyur/      submódulo -> github.com/gilankpam/kepyur  (SIN modificar)
 │   ├── native/dsp           el decodificador de vídeo analógico que también compila la app Android
 │   └── third_party/wifi-sdr, libusb (submódulos fijados por kepyur)
@@ -53,9 +54,10 @@ FPVDesktopWiFiReceiver/
   devourer, que llegan como submódulos suyos. Todo se compila con `add_subdirectory(third_party/kepyur/native)`.
 - La radio es propia: `src/radio` (`fpv::Radio`, GPL-2.0-only) deriva de `native/radio/radio.cpp` de kepyur y va
   directamente sobre `wsdr::Receiver`. Hace lo mismo (escaneo por pasos a 40 MS/s, vista con el decodificador en
-  otro hilo, caída a 20 MS/s, prueba de flujo, grabación IQ) y además, como código normal, escanear solo los
-  canales elegidos (`set_scan_plan`) y el filtro peine de croma NTSC (`set_comb`). `native/radio` de kepyur ya no
-  se compila.
+  otro hilo, caída a 20 MS/s, prueba de flujo, grabación IQ) y además, como código normal: escanear solo los
+  canales elegidos (`set_scan_plan`), el filtro peine de croma NTSC (`set_comb`), las señales digitales en el
+  escaneo (`set_digital_scan`, detector en `src/kp_ext/digital_scan.cpp`) y los huecos del flujo en el `.json` de
+  las grabaciones IQ. `native/radio` de kepyur ya no se compila.
 - `src/radio_backend.cpp` hace lo mismo que `native/jni/kepyur_jni.cpp` en Android: crea un `fpv::Radio`, pide el
   cambio USB 2 → USB 3 (`wsdr::request_usb3`), abre el adaptador y lanza `scan()` / `watch()`. Los fotogramas
   (`kp::Frame`, RGBX 720×480/576) salen como `QImage` hacia la ventana en vez de a una `Surface`; el estado se lee
@@ -65,8 +67,9 @@ FPVDesktopWiFiReceiver/
   filtro peine en `native/dsp`, propuesto a kepyur) y `rxdma` (desatascar el RX DMA del 8822B en wifi-sdr). Si
   upstream cambia alguna de esas líneas, CMake se para diciendo cuál.
 - Sin adaptador: `cmake --build build/msys2 --target radio_sim` y
-  `KP_SIM_FILE=grabacion.cs16 build/msys2/radio_sim --scan` (o `--watch MHZ`), que reproduce una grabación de
-  40 MS/s centrada en 5770 MHz como si fuera el adaptador (`sim_receiver.cpp` de kepyur).
+  `KP_SIM_FILE=grabacion.cs16 build/msys2/radio_sim --scan [--digital]` (o `--watch MHZ`), que reproduce una
+  grabación de 40 MS/s centrada en 5770 MHz como si fuera el adaptador (`sim_receiver.cpp` de kepyur).
+  `digital_scan_test --write` genera grabaciones sintéticas.
 
 ## Actualizar las dependencias cuando haya mejoras en los repos originales
 
@@ -189,9 +192,13 @@ español, inglés en otro caso).
   (⚙) de al lado elige qué canales escanear: el barrido completo son 29 pasos de 20 MHz (~26 s en Windows) y una
   sola banda unos 4 (~3 s). La selección se recuerda.
   Clic en un piloto para verlo, o elige un canal fijo en el desplegable.
+  Con **Opciones → Modo experimental (HDZero)** activado, las **señales digitales** también salen en la lista, en cursiva: *HDZero* (27 MHz), *HDZero estrecho* (17 MHz,
+  modo 540p60) u otra señal digital con su ancho (DJI, Walksnail...). Su vídeo no se puede ver (ver
+  [HDZero](#hdzero-experimental)); sirve para saber qué canales están ocupados y para grabar su señal.
 - **Opciones → Modo desarrollador** (desactivado por defecto, se recuerda) muestra lo que un usuario normal no
   necesita: muestreo 40/20 MS/s y ganancia (AGC o fija), **Grabar IQ 5 s** (guarda
-  `Documentos/FPVDesktopWiFiReceiver/rec-*.cs16` + `.json`, reproducible con `kp_replay` de kepyur), *Archivo →
+  `Documentos/FPVDesktopWiFiReceiver/rec-*.cs16` + `.json`, reproducible con `kp_replay` de kepyur, y un
+  `.sigmf-meta` para abrirla en inspectrum, GNU Radio o Universal Radio Hacker), *Archivo →
   Abrir carpeta de grabaciones* y los datos técnicos del receptor bajo los botones (chip, USB, enganche, fps,
   perdidos). Al desactivarlo, muestreo y ganancia vuelven a sus valores por defecto (20 MS/s en Windows, 40 en
   Linux; AGC). Los errores y el aviso de USB 2 se ven en los dos modos.
@@ -223,6 +230,37 @@ Opciones de línea de comandos (opcionales, para pruebas): `--demo` sin hardware
 `--auto` conectar y escanear · `--watch 5800` conectar y ver esa frecuencia · `--rate 20|40` muestreo al ver · `--fullscreen` arrancar en pantalla completa ·
 `--no-connect` no conectar al abrir · `--lang en|es|system` idioma de la interfaz (se guarda) ·
 `--verbose` log de depuración.
+
+## HDZero (experimental)
+
+HDZero es un sistema de vídeo **digital** (OFDM de unos 27 MHz, con un códec propio de Divimath, sin
+documentación pública). Este programa **no decodifica su vídeo**. Todo lo de esta sección va en **Opciones → Modo
+experimental (HDZero)**, desactivado por defecto y que se recuerda: apagado, el escaneo es el de kepyur sin cambios.
+Lo que hace:
+
+1. **Lo detecta al escanear.** Busca bloques anchos y planos en el espectro (así es una señal OFDM), presentes todo
+   el tiempo (HDZero emite sin parar; el WiFi va a ráfagas). Por ancho y frecuencia los marca como *HDZero*
+   (22-31 MHz centrado en un canal de HDZero: R1-R8, E1, F1, F2, F4, L1-L8), *HDZero estrecho* (14-22 MHz en un canal
+   de HDZero) u otra señal digital. Cada paso del escaneo ve ±16,5 MHz y los pasos van cada 20 MHz, así que una
+   señal de 27 MHz casi nunca cabe en uno: si un paso la ve cortada por un borde y el anterior por el otro, se
+   unen. Al terminar el escaneo se sintoniza el piloto **analógico** más fuerte, nunca uno digital.
+2. **Graba su señal** para analizarla: clic en el piloto HDZero (en lugar de imagen sale un aviso) y, en modo
+   desarrollador, **Grabar IQ 5 s** a **40 MS/s** (a 20 MS/s, lo que usa Windows por defecto, solo cabe parte de los
+   27 MHz). El `.json` anota los huecos del flujo (`gaps`, `gap_at`: muestra del fichero tras cada uno) y el
+   `.sigmf-meta` los marca como discontinuidades, con la señal anotada. A 40 MS/s son 160 MB por segundo.
+
+Límites conocidos: el detector se ha probado con señales sintéticas (`test/digital_scan_test.cpp`: OFDM continuo
+de 27 y 17 MHz, WiFi a ráfagas, FM analógica con barras e imagen cargada), **no con un VTX HDZero real**; los
+umbrales pueden necesitar ajuste con capturas de verdad. Una señal de 17 MHz de otro sistema centrada en un canal de
+HDZero se marcaría como *HDZero estrecho*. Con una selección de canales que no centre un paso en el canal HDZero
+(p. ej. la banda F entera) o en L1, en el extremo del barrido, puede no verse.
+
+```bash
+cmake --build build/release --target digital_scan_test && build/release/digital_scan_test
+```
+
+**Uso responsable:** recibe solo tus propios equipos, o los de otros pilotos con su permiso. Grabar o difundir el
+vídeo de otra persona sin permiso puede vulnerar su intimidad o el secreto de las comunicaciones.
 
 ## Logo
 
