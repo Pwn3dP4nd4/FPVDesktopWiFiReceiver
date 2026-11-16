@@ -46,7 +46,19 @@ struct RadioStatus {
     quint64 dropped = 0, restarts = 0;
 };
 
+// Analizador de canales: el espectro acumulado (fpv::SurveyBin), en dB sobre el suelo de ruido
+struct SpectrumPoint {
+    double mhz = 0;
+    float meanDb = 0, peakDb = 0, duty = 0;
+};
+struct SurveyData {
+    QVector<SpectrumPoint> bins;  // por frecuencia, cada 156.25 kHz
+    QVector<Pilot> pilots;        // lo que hay en el aire (analogicos y digitales)
+    int sweeps = 0;               // barridos completos hasta ahora
+};
+
 Q_DECLARE_METATYPE(Pilot)
+Q_DECLARE_METATYPE(SurveyData)
 Q_DECLARE_METATYPE(RadioStatus)
 
 // Interfaz entre la GUI y la radio. Vive en un QThread propio: los slots bloqueantes (openDevice tarda ~5 s
@@ -104,6 +116,9 @@ public slots:
     virtual void record(double seconds, const QString &prefix) { Q_UNUSED(seconds); Q_UNUSED(prefix); }
     // Modo experimental: listar tambien senales digitales (HDZero...) al escanear; en el siguiente escaneo
     virtual void setDigitalScan(bool on) { Q_UNUSED(on); }
+    // Analizador de canales: barrer lo..hi MHz sin parar (sin ver video) hasta stopSurvey(); surveyUpdated() cada s
+    virtual void startSurvey(double loMHz, double hiMHz) { Q_UNUSED(loMHz); Q_UNUSED(hiMHz); }
+    virtual void stopSurvey() {}
 
 signals:
     void opened(bool ok, const QString &error);
@@ -113,4 +128,7 @@ signals:
     void statusChanged(const RadioStatus &status);
     void message(const QString &text);        // linea para la barra de estado / log
     void lost(const QString &text);           // adaptador desenchufado: se reconecta solo al volver
+    void surveyUpdated(const SurveyData &data);
+    // El analizador se ha parado (por stopSurvey() o porque otra orden, escanear o ver un canal, lo ha parado)
+    void surveyStopped();
 };

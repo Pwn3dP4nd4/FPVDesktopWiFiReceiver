@@ -18,6 +18,8 @@ public slots:
     void setScanChannels(const QVector<double> &mhz) override { scanMHz_ = mhz; }
     void watch(double freqMHz) override;
     void stop() override;
+    void startSurvey(double loMHz, double hiMHz) override;
+    void stopSurvey() override;
 
 private:
     void tick();
@@ -27,4 +29,8 @@ private:
     double watching_ = 0;
     QVector<double> scanMHz_;  // vacio = todos
     bool digital_ = false;     // modo experimental: tambien el piloto HDZero simulado
+    QTimer *survey_ = nullptr;  // analizador simulado: un barrido por segundo
+    double surveyLo_ = 0, surveyHi_ = 0;
+    int sweeps_ = 0;
+    void surveyTick();
 };

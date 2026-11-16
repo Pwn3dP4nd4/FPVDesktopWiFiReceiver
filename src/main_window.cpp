@@ -1,3 +1,4 @@
+#include "channel_analyzer.h"
 #include "main_window.h"
 
 #include <QActionGroup>
@@ -355,9 +356,32 @@ void MainWindow::buildMenus() {
     }
     connect(langGroup_, &QActionGroup::triggered, this, [](QAction *a) { i18n::apply(a->data().toString()); });
 
+    toolsMenu_ = menuBar()->addMenu(QString());
+    analyzerAct_ = toolsMenu_->addAction(QString(), this, &MainWindow::openAnalyzer);
+
     helpMenu_ = menuBar()->addMenu(QString());
     manualAct_ = helpMenu_->addAction(QString(), this, [] { QDesktopServices::openUrl(QUrl(QString::fromLatin1(kRepoUrl))); });
     aboutAct_ = helpMenu_->addAction(QString(), this, &MainWindow::showAbout);
+}
+
+void MainWindow::openAnalyzer() {
+    if (!analyzer_) {
+        analyzer_ = new ChannelAnalyzer(backend_, this);
+        connect(analyzer_, &ChannelAnalyzer::runningChanged, this, [this](bool on) {
+            analyzing_ = on;
+            if (on) {
+                video_->clear();
+                statusBar()->showMessage(tr("Channel analyzer running: no video until it stops"));
+            } else {
+                statusBar()->showMessage(tr("Channel analyzer stopped"), 5000);
+            }
+            side_->setEnabled(!on);
+        });
+    }
+    analyzer_->setAdapterOpen(open_);
+    analyzer_->show();
+    analyzer_->raise();
+    analyzer_->activateWindow();
 }
 
 void MainWindow::chooseScanChannels() {
@@ -425,6 +449,9 @@ void MainWindow::retranslate() {
     scanAct_->setText(tr("&Scan the bands"));
     langMenu_->setTitle(tr("&Language"));
     langSystemAct_->setText(tr("&System default"));
+    toolsMenu_->setTitle(tr("&Tools"));
+    analyzerAct_->setText(tr("Channel &analyzer..."));
+    analyzerAct_->setToolTip(tr("Find the cleanest channels for several analog and HDZero pilots flying together"));
     helpMenu_->setTitle(tr("&Help"));
     manualAct_->setText(tr("&Manual and source code (GitHub)"));
     aboutAct_->setText(tr("&About %1").arg(kAppName));

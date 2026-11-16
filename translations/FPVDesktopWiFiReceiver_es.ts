@@ -2,6 +2,215 @@
 <!DOCTYPE TS>
 <TS version="2.1" language="es_ES">
 <context>
+    <name>ChannelAnalyzer</name>
+    <message>
+        <source>Channel analyzer</source>
+        <translation>Analizador de canales</translation>
+    </message>
+    <message>
+        <source>Bands to analyse</source>
+        <translation>Bandas a analizar</translation>
+    </message>
+    <message>
+        <source>L  Low band</source>
+        <translation>L  Banda baja</translation>
+    </message>
+    <message>
+        <source>Pilots flying together</source>
+        <translation>Pilotos que vuelan a la vez</translation>
+    </message>
+    <message>
+        <source>Analog</source>
+        <translation>Analógico</translation>
+    </message>
+    <message>
+        <source>Stop</source>
+        <translation>Parar</translation>
+    </message>
+    <message>
+        <source>Start analysis</source>
+        <translation>Empezar el análisis</translation>
+    </message>
+    <message>
+        <source>System</source>
+        <translation>Sistema</translation>
+    </message>
+    <message>
+        <source>Channel</source>
+        <translation>Canal</translation>
+    </message>
+    <message>
+        <source>MHz</source>
+        <translation>MHz</translation>
+    </message>
+    <message>
+        <source>Interference</source>
+        <translation>Interferencia</translation>
+    </message>
+    <message>
+        <source>Spectrum</source>
+        <translation>Espectro</translation>
+    </message>
+    <message>
+        <source>Channel marks</source>
+        <translation>Marcas de canal</translation>
+    </message>
+    <message>
+        <source>Average level over the noise floor</source>
+        <translation>Nivel medio sobre el ruido</translation>
+    </message>
+    <message>
+        <source>Clean</source>
+        <translation>Limpio</translation>
+    </message>
+    <message>
+        <source>Some interference</source>
+        <translation>Algo de interferencia</translation>
+    </message>
+    <message>
+        <source>Bursty interference (WiFi)</source>
+        <translation>Interferencia a ráfagas (WiFi)</translation>
+    </message>
+    <message>
+        <source>Busy or noisy</source>
+        <translation>Ocupado o con ruido</translation>
+    </message>
+    <message>
+        <source>Pilot already on the air</source>
+        <translation>Piloto ya en el aire</translation>
+    </message>
+    <message>
+        <source>Recommended analog channel</source>
+        <translation>Canal analógico recomendado</translation>
+    </message>
+    <message>
+        <source>Recommended HDZero channel</source>
+        <translation>Canal HDZero recomendado</translation>
+    </message>
+    <message>
+        <source>Strongest recent burst</source>
+        <translation>Ráfaga más fuerte reciente</translation>
+    </message>
+    <message>
+        <source>Share of the time the channel is hit by intermittent signals (WiFi and similar): they come and go, much stronger than the average, which hides them. 0% = nothing intermittent.</source>
+        <translation>Parte del tiempo que pisan el canal señales intermitentes (WiFi y similares): van y vienen, mucho más fuertes que la media, que las esconde. 0% = nada intermitente.</translation>
+    </message>
+    <message>
+        <source>Anything on the air is treated as taken: switch your own VTXs off, or tick them in the list. It follows the last minute or so of the band. No video while it runs.</source>
+        <translation>Todo lo que esté en el aire cuenta como ocupado: apaga tus VTX o márcalos en la lista. Sigue más o menos el último minuto de la banda. No se ve vídeo mientras analiza.</translation>
+    </message>
+    <message>
+        <source>HDZero narrow mode</source>
+        <translation>HDZero en modo estrecho</translation>
+    </message>
+    <message>
+        <source>HDZero in narrow mode takes about 17 MHz instead of 27: more of them fit.</source>
+        <translation>HDZero en modo estrecho ocupa unos 17 MHz en vez de 27: caben más.</translation>
+    </message>
+    <message>
+        <source>On the air (tick yours)</source>
+        <translation>En el aire (marca los tuyos)</translation>
+    </message>
+    <message>
+        <source>Pilots the analyzer has seen. Tick the ones that are yours: their channel is not treated as taken.</source>
+        <translation>Pilotos que ha visto el analizador. Marca los tuyos: su canal no cuenta como ocupado.</translation>
+    </message>
+    <message>
+        <source>(none)</source>
+        <translation>(ninguno)</translation>
+    </message>
+    <message>
+        <source>Stopped: the receiver went back to scanning or watching.</source>
+        <translation>Parado: el receptor ha vuelto a escanear o a ver un canal.</translation>
+    </message>
+    <message>
+        <source>Bursts</source>
+        <translation>Ráfagas</translation>
+    </message>
+    <message>
+        <source>Average interference level across the channel width, in dB above the noise floor.</source>
+        <translation>Nivel medio de interferencia en el ancho del canal, en dB sobre el suelo de ruido.</translation>
+    </message>
+    <message>
+        <source>Notes</source>
+        <translation>Notas</translation>
+    </message>
+    <message>
+        <source>Connect the adapter first.</source>
+        <translation>Conecta antes el adaptador.</translation>
+    </message>
+    <message>
+        <source>Analysing %1-%2 MHz...</source>
+        <translation>Analizando %1-%2 MHz...</translation>
+    </message>
+    <message numerus="yes">
+        <source>Stopped after %n sweep(s).</source>
+        <translation>
+            <numerusform>Parado tras %n barrido.</numerusform>
+            <numerusform>Parado tras %n barridos.</numerusform>
+        </translation>
+    </message>
+    <message>
+        <source>Analysing %1-%2 MHz: first sweep...</source>
+        <translation>Analizando %1-%2 MHz: primer barrido...</translation>
+    </message>
+    <message numerus="yes">
+        <source>Analysing %1-%2 MHz: %n sweep(s).</source>
+        <translation>
+            <numerusform>Analizando %1-%2 MHz: %n barrido.</numerusform>
+            <numerusform>Analizando %1-%2 MHz: %n barridos.</numerusform>
+        </translation>
+    </message>
+    <message>
+        <source>already in use (%1)</source>
+        <translation>ya está en uso (%1)</translation>
+    </message>
+    <message>
+        <source>closer than ideal to another pilot</source>
+        <translation>más cerca de lo ideal de otro piloto</translation>
+    </message>
+    <message>
+        <source>intermodulation from two other pilots lands here</source>
+        <translation>aquí cae la intermodulación de otros dos pilotos</translation>
+    </message>
+    <message>
+        <source>partly outside the analysed range</source>
+        <translation>en parte fuera de la zona analizada</translation>
+    </message>
+    <message>
+        <source>WiFi-like bursts nearby</source>
+        <translation>ráfagas tipo WiFi cerca</translation>
+    </message>
+    <message>
+        <source>Waiting for the first sweep...</source>
+        <translation>Esperando al primer barrido...</translation>
+    </message>
+    <message>
+        <source>Choose the bands and how many pilots will fly, then start the analysis.</source>
+        <translation>Elige las bandas y cuántos pilotos van a volar, y empieza el análisis.</translation>
+    </message>
+    <message>
+        <source>Set how many pilots will fly.</source>
+        <translation>Indica cuántos pilotos van a volar.</translation>
+    </message>
+    <message>
+        <source>Recommended: %1.</source>
+        <translation>Recomendados: %1.</translation>
+    </message>
+    <message>
+        <source>Not enough room for that many pilots in these bands with safe spacing: add bands or fly fewer at once.</source>
+        <translation>No caben tantos pilotos en estas bandas con una separación segura: añade bandas o volad menos a la vez.</translation>
+    </message>
+    <message>
+        <source>Even the best channels have noticeable interference here.</source>
+        <translation>Incluso los mejores canales tienen interferencia apreciable aquí.</translation>
+    </message>
+    <message>
+        <source>(still learning: let it run a few sweeps)</source>
+        <translation>(aún aprendiendo: déjalo unos cuantos barridos)</translation>
+    </message>
+</context>
+<context>
     <name>MainWindow</name>
     <message>
         <source>Desktop shortcut created</source>
@@ -48,6 +257,14 @@ S: captura   R: grabar vídeo</translation>
     <message>
         <source>Experimental mode: digital signals will be listed from the next scan</source>
         <translation>Modo experimental: las señales digitales saldrán en la lista desde el próximo escaneo</translation>
+    </message>
+    <message>
+        <source>Channel analyzer running: no video until it stops</source>
+        <translation>Analizador de canales en marcha: sin vídeo hasta que pare</translation>
+    </message>
+    <message>
+        <source>Channel analyzer stopped</source>
+        <translation>Analizador de canales parado</translation>
     </message>
     <message>
         <source>Scan 1 channel</source>
@@ -212,6 +429,18 @@ S: captura   R: grabar vídeo</translation>
     <message>
         <source>&amp;System default</source>
         <translation>Idioma del &amp;sistema</translation>
+    </message>
+    <message>
+        <source>&amp;Tools</source>
+        <translation>&amp;Herramientas</translation>
+    </message>
+    <message>
+        <source>Channel &amp;analyzer...</source>
+        <translation>&amp;Analizador de canales...</translation>
+    </message>
+    <message>
+        <source>Find the cleanest channels for several analog and HDZero pilots flying together</source>
+        <translation>Busca los canales más limpios para varios pilotos analógicos y HDZero que vuelan a la vez</translation>
     </message>
     <message>
         <source>&amp;Help</source>
@@ -616,6 +845,13 @@ Lo grabado hasta entonces se ha guardado en %2</translation>
     <message>
         <source>%1 of %2 channels: %3 of %4 steps.</source>
         <translation>%1 de %2 canales: %3 de %4 pasos.</translation>
+    </message>
+</context>
+<context>
+    <name>SpectrumView</name>
+    <message>
+        <source>Analog</source>
+        <translation>Analógico</translation>
     </message>
 </context>
 <context>

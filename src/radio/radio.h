@@ -6,6 +6,7 @@
 //   test   - stream at a given rate and only count banks (USB/controller soak, no DSP)
 // The Receiver's sink only copies banks into a queue (wifi-sdr rule); everything else runs on the DSP thread.
 #pragma once
+#include "survey.h"
 #include <atomic>
 #include <condition_variable>
 #include <cstdint>
@@ -49,6 +50,7 @@ struct Pilot {
   float bw_mhz = 0;      // occupied width of a digital signal
 };
 
+
 class Radio {
 public:
   explicit Radio(FrameSink frames);
@@ -71,6 +73,10 @@ public:
   void set_scan_plan(std::vector<double> centres_hz);
   // Also list digital signals (HDZero...) found by scan(); off by default. Takes effect on the next scan().
   void set_digital_scan(bool on);
+  // Channel survey: sweep the scan plan (set_scan_plan) over and over, listing pilots (digital ones too) and
+  // accumulating the spectrum (survey_spectrum) until another mode is set. Never tunes to a pilot.
+  void survey();
+  std::vector<SurveyBin> survey_spectrum(int *sweeps = nullptr);
   void watch(double hz);
   void stream_test(int rate_sel, double seconds);
   void idle();
@@ -185,6 +191,10 @@ private:
   std::vector<double> _scan_plan_override;     // set_scan_plan() (under _m)
   std::unique_ptr<kpx::DigitalScan> _digital;  // digital signals in this scan, or null
   bool _digital_on = false;                    // set_digital_scan() (under _m)
+  // survey (accumulators under _m)
+  bool _survey = false;
+  SurveyGrid _grid;
+  int64_t _sweep_start_ms = 0, _sweep_ms = 0;  // survey: how long a sweep takes
   // test
   uint64_t _test_banks = 0, _test_gaps = 0, _test_last_seq = 0, _test_runs = 0;
   uint32_t _test_gen = 0;
