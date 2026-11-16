@@ -105,7 +105,7 @@ endif()
 # Deriva de native/radio de kepyur; lleva como codigo normal lo que antes eran parches: plan de escaneo, peine,
 # senales digitales (src/kp_ext) y huecos en la grabacion de IQ. native/radio de kepyur ya no se compila.
 if(KP_WITH_RADIO)
-  set(_fpv_radio_src src/radio/radio.cpp src/radio/radio.h src/kp_ext/digital_scan.cpp src/kp_ext/digital_scan.h)
+  set(_fpv_radio_src src/radio/radio.cpp src/radio/radio.h src/radio/survey.cpp src/radio/survey.h src/kp_ext/digital_scan.cpp src/kp_ext/digital_scan.h)
   add_library(fpv_radio STATIC ${_fpv_radio_src})
   target_include_directories(fpv_radio PUBLIC src/radio PRIVATE src/kp_ext)
   target_link_libraries(fpv_radio PUBLIC kepyur_dsp wsdrcore)
@@ -225,10 +225,19 @@ if(WIN32)
 endif()
 
 # Captura del analizador con el backend de demo: QT_QPA_PLATFORM=offscreen analyzer_shot salida.png [N M [s]]
-add_executable(analyzer_shot EXCLUDE_FROM_ALL test/analyzer_shot.cpp src/channel_analyzer.cpp src/channel_analyzer.h
+add_executable(analyzer_shot test/analyzer_shot.cpp src/channel_analyzer.cpp src/channel_analyzer.h
                src/channel_advisor.cpp src/stub_backend.cpp src/stub_backend.h src/backend.h src/video_widget.cpp)
 target_include_directories(analyzer_shot PRIVATE src)
 target_link_libraries(analyzer_shot PRIVATE Qt6::Widgets kepyur_dsp)
+
+# Medida del analizador (src/radio/survey.cpp) con IQ sinteticos: cmake --build <dir> --target survey_test
+add_executable(survey_test EXCLUDE_FROM_ALL test/survey_test.cpp src/radio/survey.cpp)
+target_include_directories(survey_test PRIVATE src/radio)
+target_link_libraries(survey_test PRIVATE kepyur_dsp)
+target_compile_options(survey_test PRIVATE -O2 -Wall -Wextra)
+if(WIN32)
+  target_link_options(survey_test PRIVATE -static-libgcc -static-libstdc++)
+endif()
 
 # Recomendador de canales (analizador) con espectros sinteticos: cmake --build <dir> --target channel_advisor_test
 add_executable(channel_advisor_test EXCLUDE_FROM_ALL test/channel_advisor_test.cpp src/channel_advisor.cpp)

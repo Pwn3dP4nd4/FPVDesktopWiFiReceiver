@@ -6,6 +6,7 @@
 #include "channel_advisor.h"
 
 class QCheckBox;
+class QListWidget;
 class QLabel;
 class QPushButton;
 class QSpinBox;
@@ -53,6 +54,8 @@ private:
     void retranslate();
     void toggle();
     void stop();
+    void onStopped();     // el backend lo ha parado (otra orden): solo la ventana
+    void updateAir();     // lista de pilotos en el aire
     void onSurvey(const SurveyData &d);
     void recompute();
     QString bands() const;
@@ -61,6 +64,11 @@ private:
 
     QVector<QCheckBox *> bandBoxes_;
     QSpinBox *nAnalog_ = nullptr, *nHdz_ = nullptr;
+    QCheckBox *narrow_ = nullptr;
+    QListWidget *air_ = nullptr;  // pilotos en el aire; marcados = mios (su canal no cuenta como ocupado)
+    QLabel *airTitle_ = nullptr;
+    QStringList mine_;            // nombres de canal (o MHz) marcados como mios
+    QVector<int> seenIdx_;        // Signal pasada al recomendador -> indice en last_.pilots
     QPushButton *startBtn_ = nullptr;
     QLabel *bandsTitle_ = nullptr, *pilotsTitle_ = nullptr, *analogLbl_ = nullptr, *hdzLbl_ = nullptr;
     QLabel *hint_ = nullptr, *state_ = nullptr, *summary_ = nullptr;

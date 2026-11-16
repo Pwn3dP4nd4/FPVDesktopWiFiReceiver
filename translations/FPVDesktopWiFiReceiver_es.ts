@@ -32,10 +32,6 @@
         <translation>Empezar el análisis</translation>
     </message>
     <message>
-        <source>Switch your own VTXs off while analysing: anything on the air is treated as taken. The longer it runs, the more WiFi bursts it catches. No video while it runs.</source>
-        <translation>Apaga tus VTX mientras analizas: todo lo que esté en el aire se toma como ocupado. Cuanto más tiempo, más ráfagas de WiFi capta. No se ve vídeo mientras analiza.</translation>
-    </message>
-    <message>
         <source>System</source>
         <translation>Sistema</translation>
     </message>
@@ -68,10 +64,6 @@
         <translation>Limpio</translation>
     </message>
     <message>
-        <source>Strongest burst seen</source>
-        <translation>Ráfaga más fuerte vista</translation>
-    </message>
-    <message>
         <source>Some interference</source>
         <translation>Algo de interferencia</translation>
     </message>
@@ -96,16 +88,48 @@
         <translation>Canal HDZero recomendado</translation>
     </message>
     <message>
+        <source>Strongest recent burst</source>
+        <translation>Ráfaga más fuerte reciente</translation>
+    </message>
+    <message>
+        <source>Share of the time the channel is hit by intermittent signals (WiFi and similar): they come and go, much stronger than the average, which hides them. 0% = nothing intermittent.</source>
+        <translation>Parte del tiempo que pisan el canal señales intermitentes (WiFi y similares): van y vienen, mucho más fuertes que la media, que las esconde. 0% = nada intermitente.</translation>
+    </message>
+    <message>
+        <source>Anything on the air is treated as taken: switch your own VTXs off, or tick them in the list. It follows the last minute or so of the band. No video while it runs.</source>
+        <translation>Todo lo que esté en el aire cuenta como ocupado: apaga tus VTX o márcalos en la lista. Sigue más o menos el último minuto de la banda. No se ve vídeo mientras analiza.</translation>
+    </message>
+    <message>
+        <source>HDZero narrow mode</source>
+        <translation>HDZero en modo estrecho</translation>
+    </message>
+    <message>
+        <source>HDZero in narrow mode takes about 17 MHz instead of 27: more of them fit.</source>
+        <translation>HDZero en modo estrecho ocupa unos 17 MHz en vez de 27: caben más.</translation>
+    </message>
+    <message>
+        <source>On the air (tick yours)</source>
+        <translation>En el aire (marca los tuyos)</translation>
+    </message>
+    <message>
+        <source>Pilots the analyzer has seen. Tick the ones that are yours: their channel is not treated as taken.</source>
+        <translation>Pilotos que ha visto el analizador. Marca los tuyos: su canal no cuenta como ocupado.</translation>
+    </message>
+    <message>
+        <source>(none)</source>
+        <translation>(ninguno)</translation>
+    </message>
+    <message>
+        <source>Stopped: the receiver went back to scanning or watching.</source>
+        <translation>Parado: el receptor ha vuelto a escanear o a ver un canal.</translation>
+    </message>
+    <message>
         <source>Bursts</source>
         <translation>Ráfagas</translation>
     </message>
     <message>
         <source>Average interference level across the channel width, in dB above the noise floor.</source>
         <translation>Nivel medio de interferencia en el ancho del canal, en dB sobre el suelo de ruido.</translation>
-    </message>
-    <message>
-        <source>Share of the channel width hit by strong intermittent bursts (WiFi and similar): signals that come and go, much stronger than the average. 0% = nothing intermittent.</source>
-        <translation>Parte del ancho del canal con ráfagas fuertes intermitentes (WiFi y similares): señales que van y vienen, mucho más fuertes que la media. 0% = nada intermitente.</translation>
     </message>
     <message>
         <source>Notes</source>

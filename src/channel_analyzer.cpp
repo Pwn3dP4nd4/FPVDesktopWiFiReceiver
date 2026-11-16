@@ -1,4 +1,5 @@
 #include "channel_analyzer.h"
+#include "log.h"
 
 #include <QCheckBox>
 #include <QCloseEvent>
@@ -7,7 +8,10 @@
 #include <QGroupBox>
 #include <QHBoxLayout>
 #include <QHeaderView>
+#include <QElapsedTimer>
+#include <QSignalBlocker>
 #include <QLabel>
+#include <QListWidget>
 #include <QPainter>
 #include <QPainterPath>
 #include <QPushButton>
@@ -84,7 +88,7 @@ void SpectrumView::paintEvent(QPaintEvent *) {
 
     // recomendados: franja con su ancho
     for (const auto &pk : advice_.picks) {
-        const double half = (pk.r.ch.hdzero ? advisor::kHdzBw : advisor::kAnalogBw) / 2;
+        const double half = advisor::width(pk.r.ch) / 2;
         QColor c = pk.r.ch.hdzero ? QColor(0x7b, 0x5c, 0xd6) : QColor(0x2f, 0x80, 0xed);
         c.setAlpha(45);
         p.fillRect(QRectF(QPointF(X(pk.r.ch.mhz - half), top), QPointF(X(pk.r.ch.mhz + half), plotBottom)), c);
@@ -214,7 +218,29 @@ ChannelAnalyzer::ChannelAnalyzer(Backend *backend, QWidget *parent) : QDialog(pa
     g->addWidget(nAnalog_, 0, 1);
     g->addWidget(hdzLbl_, 1, 0);
     g->addWidget(nHdz_, 1, 1);
+    narrow_ = new QCheckBox;
+    narrow_->setChecked(settings().value("analyzer/narrow", false).toBool());
+    connect(narrow_, &QCheckBox::toggled, this, [this](bool on) {
+        settings().setValue("analyzer/narrow", on);
+        recompute();
+    });
+    g->addWidget(narrow_, 2, 0, 1, 2);
     side->addLayout(g);
+    side->addSpacing(8);
+    airTitle_ = new QLabel;
+    airTitle_->setStyleSheet(QStringLiteral("font-weight:bold;"));
+    side->addWidget(airTitle_);
+    mine_ = settings().value("analyzer/mine").toStringList();
+    air_ = new QListWidget;
+    air_->setMaximumHeight(110);
+    connect(air_, &QListWidget::itemChanged, this, [this](QListWidgetItem *it) {
+        const QString k = it->data(Qt::UserRole).toString();
+        mine_.removeAll(k);
+        if (it->checkState() == Qt::Checked) mine_ << k;
+        settings().setValue("analyzer/mine", mine_);
+        recompute();
+    });
+    side->addWidget(air_);
     side->addSpacing(8);
     startBtn_ = new QPushButton;
     startBtn_->setEnabled(false);
@@ -311,6 +337,7 @@ ChannelAnalyzer::ChannelAnalyzer(Backend *backend, QWidget *parent) : QDialog(pa
     connect(this, &ChannelAnalyzer::requestStart, backend, &Backend::startSurvey);
     connect(this, &ChannelAnalyzer::requestStop, backend, &Backend::stopSurvey);
     connect(backend, &Backend::surveyUpdated, this, &ChannelAnalyzer::onSurvey);
+    connect(backend, &Backend::surveyStopped, this, &ChannelAnalyzer::onStopped);
     connect(backend, &Backend::statusChanged, this, [this](const RadioStatus &s) { setAdapterOpen(s.open); });
 
     retranslate();
@@ -327,13 +354,18 @@ void ChannelAnalyzer::retranslate() {
     pilotsTitle_->setText(tr("Pilots flying together"));
     analogLbl_->setText(tr("Analog"));
     hdzLbl_->setText(QStringLiteral("HDZero"));
+    narrow_->setText(tr("HDZero narrow mode"));
+    narrow_->setToolTip(tr("HDZero in narrow mode takes about 17 MHz instead of 27: more of them fit."));
+    airTitle_->setText(tr("On the air (tick yours)"));
+    air_->setToolTip(tr("Pilots the analyzer has seen. Tick the ones that are yours: their channel is not "
+                        "treated as taken."));
     startBtn_->setText(running_ ? tr("Stop") : tr("Start analysis"));
-    hint_->setText(tr("Switch your own VTXs off while analysing: anything on the air is treated as taken. "
-                      "The longer it runs, the more WiFi bursts it catches. No video while it runs."));
+    hint_->setText(tr("Anything on the air is treated as taken: switch your own VTXs off, or tick them in the "
+                      "list. It follows the last minute or so of the band. No video while it runs."));
     {
         // mismo orden que se crean en el constructor
         const QStringList t{tr("Spectrum"), tr("Channel marks"),
-                            tr("Average level over the noise floor"), tr("Strongest burst seen"),
+                            tr("Average level over the noise floor"), tr("Strongest recent burst"),
                             tr("Bursty interference (WiFi)"), tr("Pilot already on the air"),
                             tr("Clean"), tr("Some interference"), tr("Busy or noisy"),
                             tr("Recommended analog channel"), tr("Recommended HDZero channel")};
@@ -341,7 +373,7 @@ void ChannelAnalyzer::retranslate() {
     }
     table_->setHeaderLabels({tr("System"), tr("Channel"), tr("MHz"), tr("Interference"), tr("Bursts"), tr("Notes")});
     table_->headerItem()->setToolTip(3, tr("Average interference level across the channel width, in dB above the noise floor."));
-    table_->headerItem()->setToolTip(4, tr("Share of the channel width hit by strong intermittent bursts (WiFi and similar): signals that come and go, much stronger than the average. 0% = nothing intermittent."));
+    table_->headerItem()->setToolTip(4, tr("Share of the time the channel is hit by intermittent signals (WiFi and similar): they come and go, much stronger than the average, which hides them. 0% = nothing intermittent."));
     recompute();
 }
 
@@ -415,6 +447,32 @@ void ChannelAnalyzer::stop() {
     emit runningChanged(false);
 }
 
+void ChannelAnalyzer::onStopped() {
+    if (!running_) return;  // lo ha parado esta ventana (stop())
+    running_ = false;
+    startBtn_->setText(tr("Start analysis"));
+    state_->setText(tr("Stopped: the receiver went back to scanning or watching."));
+    emit runningChanged(false);
+}
+
+void ChannelAnalyzer::updateAir() {
+    const QSignalBlocker b(air_);
+    air_->clear();
+    for (const auto &p : last_.pilots) {
+        if (p.ageS >= 60) continue;
+        const QString key = p.name.isEmpty() ? QString::number(p.freqMHz, 'f', 0) : p.name;
+        auto *it = new QListWidgetItem(QStringLiteral("%1  %2 MHz%3").arg(key).arg(p.freqMHz, 0, 'f', 0)
+                                           .arg(p.isDigital() ? QStringLiteral("  HDZero") : QString()), air_);
+        it->setData(Qt::UserRole, key);
+        it->setFlags(it->flags() | Qt::ItemIsUserCheckable);
+        it->setCheckState(mine_.contains(key) ? Qt::Checked : Qt::Unchecked);
+    }
+    if (air_->count() == 0) {
+        auto *it = new QListWidgetItem(tr("(none)"), air_);
+        it->setFlags(Qt::NoItemFlags);
+    }
+}
+
 void ChannelAnalyzer::closeEvent(QCloseEvent *e) {
     stop();
     QDialog::closeEvent(e);
@@ -423,6 +481,7 @@ void ChannelAnalyzer::closeEvent(QCloseEvent *e) {
 void ChannelAnalyzer::onSurvey(const SurveyData &d) {
     if (!running_) return;
     last_ = d;
+    updateAir();
     double lo, hi;
     range(lo, hi);
     state_->setText(d.sweeps == 0 ? tr("Analysing %1-%2 MHz: first sweep...").arg(lo, 0, 'f', 0).arg(hi, 0, 'f', 0)
@@ -433,8 +492,8 @@ void ChannelAnalyzer::onSurvey(const SurveyData &d) {
 
 QString ChannelAnalyzer::noteText(const advisor::Pick &p) const {
     QStringList n;
-    if (p.r.busy >= 0 && p.r.busy < last_.pilots.size()) {
-        const Pilot &s = last_.pilots[p.r.busy];
+    if (p.r.busy >= 0 && p.r.busy < seenIdx_.size()) {
+        const Pilot &s = last_.pilots[seenIdx_[p.r.busy]];
         n << tr("already in use (%1)").arg(s.name.isEmpty() ? QString::number(s.freqMHz, 'f', 0) : s.name);
     }
     for (auto k : p.notes) {
@@ -454,15 +513,24 @@ void ChannelAnalyzer::recompute() {
     const std::string b = bands().toStdString();
     std::vector<advisor::Bin> bins;
     for (const auto &x : last_.bins) bins.push_back(advisor::Bin{x.mhz, x.meanDb, x.peakDb, x.duty});
-    // el indice de busy apunta a last_.pilots: se pasan todos, los no vistos en el ultimo minuto fuera de la banda
+    // pilotos vistos en el ultimo minuto que no son mios; seenIdx_ lleva el indice de busy a last_.pilots
     std::vector<advisor::Signal> seen;
-    for (const auto &p : last_.pilots)
-        seen.push_back(p.ageS < 60 ? advisor::Signal{p.freqMHz, p.bwMHz, p.isDigital(), p.name.toStdString()}
-                                   : advisor::Signal{-1000, 0, false, {}});
+    seenIdx_.clear();
+    for (int i = 0; i < last_.pilots.size(); i++) {
+        const Pilot &p = last_.pilots[i];
+        const QString key = p.name.isEmpty() ? QString::number(p.freqMHz, 'f', 0) : p.name;
+        if (p.ageS >= 60 || mine_.contains(key)) continue;
+        seen.push_back(advisor::Signal{p.freqMHz, p.bwMHz, p.isDigital(), p.name.toStdString()});
+        seenIdx_.push_back(i);
+    }
     const bool haveData = !bins.empty();
+    QElapsedTimer t;
+    t.start();
     const advisor::Advice a = haveData ? advisor::advise(bins, seen, advisor::analog_channels(b),
-                                                         advisor::hdzero_channels(b), nAnalog_->value(), nHdz_->value())
+                                                         advisor::hdzero_channels(b, narrow_->isChecked()),
+                                                         nAnalog_->value(), nHdz_->value())
                                        : advisor::Advice{};
+    if (t.elapsed() > 100) KP_LOGW("analizador: recomendar ha tardado %lld ms", static_cast<long long>(t.elapsed()));
     double lo, hi;
     range(lo, hi);
     view_->setData(last_, a, lo, hi);

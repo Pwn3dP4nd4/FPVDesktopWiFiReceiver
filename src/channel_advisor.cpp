@@ -11,21 +11,19 @@ namespace advisor {
 namespace {
 constexpr float kBusyCost = 60;        // ya hay un piloto: solo si no queda otro remedio
 constexpr float kUnknownCost = 20;     // menos de la mitad del canal analizado
-constexpr float kBurstWeight = 10;     // dB por fraccion del ancho con rafagas (WiFi)
-constexpr double kSpacingCost = 0.4;   // dB por MHz por debajo de la separacion ideal
+constexpr float kBurstWeight = 20;     // dB si lo pisan rafagas todo el tiempo (30 % del tiempo: 6 dB)
+constexpr double kSpacingCost = 1.0;   // dB por MHz por debajo de la separacion ideal
 constexpr double kSpreadCost = 40;     // dB*MHz: 1 dB a 40 MHz, 0.5 dB a 80 MHz (separar mas, si se puede)
 constexpr float kImdCost = 3;          // dB por producto de intermodulacion encima de otro canal
-constexpr double kImdReach = 4;        // MHz: un producto a menos de esto de un canal lo afecta
+constexpr double kImdReach = 4;        // MHz: un producto a menos de esto de un canal analogico lo afecta
 constexpr float kInfeasible = 1000;    // separacion por debajo de la minima
-
-double width(bool hdz) { return hdz ? kHdzBw : kAnalogBw; }
 
 double sig_width(const Signal &s) { return s.digital && s.bw_mhz > 0 ? s.bw_mhz : kAnalogBw; }
 
 float pair_cost(const Candidate &a, const Candidate &b, bool *close) {
     const double d = std::fabs(a.mhz - b.mhz);
-    if (d < min_spacing(a.hdzero, b.hdzero)) return kInfeasible;
-    const double ideal = ideal_spacing(a.hdzero, b.hdzero);
+    if (d < min_spacing(a, b)) return kInfeasible;
+    const double ideal = ideal_spacing(a, b);
     // a little for every pair, less the further apart: with a clean band the pilots spread out
     const float spread = static_cast<float>(kSpreadCost / d);
     if (d >= ideal) return spread;
@@ -33,13 +31,17 @@ float pair_cost(const Candidate &a, const Candidate &b, bool *close) {
     return spread + static_cast<float>((ideal - d) * kSpacingCost);
 }
 
-// 2*f1 - f2 de cada par analogico sobre un tercer canal analogico elegido
+// 2*f1 - f2 de cada par de analogicos elegidos sobre otro canal elegido c (analogico: cerca de la portadora;
+// HDZero: dentro de su ancho). Solo pares analogicos: una portadora FM concentra el producto en pocos MHz; el de
+// una senal digital se reparte como ruido sobre tres veces su ancho y, en la rejilla de 37 MHz, saldria en casi
+// cualquier combinacion sin decir nada util.
 int imd_hits(const std::vector<const Candidate *> &set, const Candidate &c) {
+    const double reach = c.hdzero ? width(c) / 2 : kImdReach;
     int hits = 0;
     for (const auto *a : set)
         for (const auto *b : set) {
-            if (a == b || a->hdzero || b->hdzero) continue;
-            if (std::fabs(2 * a->mhz - b->mhz - c.mhz) < kImdReach) hits++;
+            if (a == b || a == &c || b == &c || a->hdzero || b->hdzero) continue;
+            if (std::fabs(2 * a->mhz - b->mhz - c.mhz) < reach) hits++;
         }
     return hits;
 }
@@ -56,8 +58,7 @@ struct Search {
         }
         std::vector<const Candidate *> set;
         for (int i : pick) set.push_back(&all[i].ch);
-        for (int i : pick)
-            if (!all[i].ch.hdzero) t += kImdCost * static_cast<float>(imd_hits(set, all[i].ch));
+        for (const auto *c : set) t += kImdCost * static_cast<float>(imd_hits(set, *c));
         return t;
     }
 
@@ -119,52 +120,55 @@ std::vector<Candidate> analog_channels(const std::string &bands) {
     return out;
 }
 
-std::vector<Candidate> hdzero_channels(const std::string &bands) {
+std::vector<Candidate> hdzero_channels(const std::string &bands, bool narrow) {
     static const char *kNames[] = {"R1", "R2", "R3", "R4", "R5", "R6", "R7", "R8", "E1", "F1", "F2", "F4",
                                    "L1", "L2", "L3", "L4", "L5", "L6", "L7", "L8"};
     std::vector<Candidate> out;
     for (const char *n : kNames) {
         if (bands.find(n[0]) == std::string::npos) continue;
         for (const auto &c : kp::fpv_channels())
-            if (std::string(c.name) == n) out.push_back(Candidate{c.name, c.mhz, true});
+            if (std::string(c.name) == n) out.push_back(Candidate{c.name, c.mhz, true, narrow ? kHdzNarrowBw : kHdzBw});
     }
     return out;
 }
 
-double min_spacing(bool a_hdz, bool b_hdz) {
-    if (a_hdz && b_hdz) return 27;
-    if (a_hdz || b_hdz) return 24;  // 10 + 13.5 MHz: los bordes se tocan
-    return 20;
+double width(const Candidate &c) { return c.bw_mhz > 0 ? c.bw_mhz : c.hdzero ? kHdzBw : kAnalogBw; }
+
+double min_spacing(const Candidate &a, const Candidate &b) {
+    // dos analogicos FM a 20 MHz se pisan (armonicos, desviacion) a poca distancia: 25 como minimo
+    if (!a.hdzero && !b.hdzero) return 25;
+    return (width(a) + width(b)) / 2;  // los bordes se tocan
 }
 
-double ideal_spacing(bool a_hdz, bool b_hdz) {
-    if (a_hdz && b_hdz) return 37;  // la rejilla de canales de HDZero
-    if (a_hdz || b_hdz) return 40;
-    return 37;                      // Raceband
+double ideal_spacing(const Candidate &a, const Candidate &b) {
+    if (a.hdzero && b.hdzero) return 37;  // la rejilla de canales de HDZero
+    if (a.hdzero || b.hdzero) return 40;
+    return 37;                            // Raceband
 }
 
 Rating rate(const Candidate &c, const std::vector<Bin> &bins, const std::vector<Signal> &seen) {
     Rating r;
     r.ch = c;
-    const double half = width(c.hdzero) / 2;
-    double lin = 0;
-    int n = 0, bursty = 0;
+    const double half = width(c) / 2;
+    double lin = 0, burst = 0;
+    int n = 0;
     double lo = std::numeric_limits<double>::max(), hi = -lo;
     for (const auto &b : bins) {
         if (std::fabs(b.mhz - c.mhz) > half) continue;
         lin += std::pow(10.0, b.mean_db / 10.0);
-        bursty += b.peak_db > 10 && b.peak_db - b.mean_db > 10;
+        // intermitente: su pico reciente esta muy por encima de su media; cuenta el tiempo que esta encendido
+        if (b.peak_db - b.mean_db > kBurstPeakOverMean) burst += b.duty;
         lo = std::min(lo, b.mhz);
         hi = std::max(hi, b.mhz);
         n++;
     }
     r.coverage = n ? static_cast<float>(std::min(1.0, (hi - lo + 0.15625) / (2 * half))) : 0.f;
     r.noise_db = n ? static_cast<float>(10 * std::log10(lin / n)) : 0.f;
-    r.burst = n ? static_cast<float>(bursty) / static_cast<float>(n) : 0.f;
+    r.burst = n ? static_cast<float>(burst / n) : 0.f;
     r.cost = r.noise_db + kBurstWeight * r.burst;
     if (r.coverage < 0.5f) r.cost += kUnknownCost;
     for (size_t i = 0; i < seen.size(); i++) {
-        const double gap = std::fabs(seen[i].mhz - c.mhz) - (sig_width(seen[i]) + width(c.hdzero)) / 2;
+        const double gap = std::fabs(seen[i].mhz - c.mhz) - (sig_width(seen[i]) + width(c)) / 2;
         if (gap < 0) {
             r.busy = static_cast<int>(i);
             r.cost += kBusyCost;
@@ -207,7 +211,8 @@ Advice advise(const std::vector<Bin> &bins, const std::vector<Signal> &seen, con
     std::vector<const Candidate *> set;
     for (int i : best) set.push_back(&all[i].ch);
     out.complete = true;
-    for (int i : best) {
+    for (size_t k = 0; k < best.size(); k++) {
+        const int i = best[k];
         Pick pk;
         pk.r = all[i];
         bool close = false;
@@ -216,7 +221,7 @@ Advice advise(const std::vector<Bin> &bins, const std::vector<Signal> &seen, con
                 if (pair_cost(all[i].ch, all[j].ch, &close) >= kInfeasible) out.complete = false;
             }
         if (close) pk.notes.push_back(Note::TooClose);
-        if (!all[i].ch.hdzero && imd_hits(set, all[i].ch) > 0) pk.notes.push_back(Note::Imd);
+        if (imd_hits(set, *set[k]) > 0) pk.notes.push_back(Note::Imd);
         if (all[i].busy >= 0) pk.notes.push_back(Note::Busy);
         if (all[i].coverage < 0.9f) pk.notes.push_back(Note::Partial);
         out.worst_db = std::max(out.worst_db, all[i].noise_db);

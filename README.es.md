@@ -235,18 +235,26 @@ Opciones de línea de comandos (opcionales, para pruebas): `--demo` sin hardware
 
 **Herramientas → Analizador de canales** recomienda qué canales usar cuando varios pilotos vuelan a la vez:
 
-1. Elige las **bandas** a analizar (A, B, E, F, R, L) y cuántos pilotos **analógicos** y **HDZero** van a volar.
-2. **Empezar el análisis**: el adaptador barre esas bandas sin parar (no se ve vídeo mientras tanto). Apaga tus
-   propios VTX: todo lo que esté en el aire se toma como ocupado.
-3. La gráfica muestra el nivel medio sobre el ruido, la ráfaga más fuerte vista y las zonas con interferencia a
+1. Elige las **bandas** a analizar (A, B, E, F, R, L) y cuántos pilotos **analógicos** y **HDZero** van a volar
+   (y si los HDZero van en modo estrecho, unos 17 MHz).
+2. **Empezar el análisis**: el adaptador barre esas bandas sin parar (no se ve vídeo mientras tanto). Todo lo que
+   esté en el aire se toma como ocupado: apaga tus propios VTX o márcalos en la lista **En el aire**.
+3. La gráfica muestra el nivel medio sobre el ruido, la ráfaga más fuerte reciente y las zonas con interferencia a
    ráfagas (WiFi de 5 GHz), los pilotos que ya están en el aire (analógicos y HDZero) y cada canal coloreado (verde
    limpio, amarillo con algo de interferencia, rojo ocupado o con ruido). Debajo, los canales **recomendados** con
-   su interferencia y notas. Se actualiza con cada barrido: cuanto más tiempo, más ráfagas de WiFi capta.
+   su interferencia, el % de tiempo con ráfagas y notas. Sigue más o menos el último minuto de la banda: lo que
+   aparece o se va se nota enseguida.
 
-Cómo elige: cada canal se puntúa por la interferencia dentro de su ancho (analógico 20 MHz, HDZero 27 MHz), con
-más peso para las ráfagas; un canal donde ya hay un piloto queda descartado. Entre los elegidos exige una
-separación mínima (20 MHz entre analógicos, 24 analógico-HDZero, 27 entre HDZero), penaliza quedar por debajo de
-la ideal (37, 40 y 37 MHz), evita la intermodulación de 3.er orden entre analógicos (2·f1 − f2 sobre otro canal) y,
+Cómo mide: con ganancia fija, así todos los pasos del barrido están en la misma escala, y en dB sobre el suelo del
+paso más tranquilo; un WiFi de 40/80/160 MHz que llena un paso entero se ve igual (no se confunde con el suelo).
+Por cada 156 kHz guarda la media, la ráfaga más fuerte (se apaga 1 dB por barrido) y qué parte del tiempo pasa
+6 dB del suelo, con media deslizante de ~20 barridos (`src/radio/survey.cpp`, banco: `survey_test`).
+
+Cómo elige: cada canal se puntúa por la interferencia media dentro de su ancho (analógico 20 MHz, HDZero 27 o 17
+MHz) más la parte del tiempo que lo pisan señales intermitentes (WiFi); un canal donde ya hay un piloto queda
+descartado. Entre los elegidos exige una separación mínima (25 MHz entre analógicos; con HDZero, que no se toquen
+los bordes), penaliza quedar por debajo de la ideal (37, 40 y 37 MHz), evita la intermodulación de 3.er orden
+(2·f1 − f2 de dos analógicos sobre otro canal elegido, también HDZero) y,
 con la banda limpia, los separa todo lo posible (4 pilotos en Raceband: R1, R3, R6, R8). Si no caben con
 separación segura, lo dice. El cálculo está en `src/channel_advisor.cpp` (banco: `channel_advisor_test`).
 

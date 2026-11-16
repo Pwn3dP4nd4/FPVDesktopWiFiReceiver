@@ -216,10 +216,12 @@ void RadioBackend::stopSurvey() {
     if (surveyPlan_.empty()) return;
     surveyPlan_.clear();
     KP_LOGI("analizador: parado");
-    if (!radio_) return;
-    radio_->set_scan_plan(scanPlan_);  // la seleccion de canales del escaneo normal
-    if (radio_->is_open()) radio_->idle();
+    if (radio_) {
+        radio_->set_scan_plan(scanPlan_);  // la seleccion de canales del escaneo normal
+        if (radio_->is_open()) radio_->idle();
+    }
     forcePilots_ = true;
+    emit surveyStopped();
 }
 
 void RadioBackend::emitSurvey(const QJsonArray &pilots) {

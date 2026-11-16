@@ -73,7 +73,9 @@ void StubBackend::startSurvey(double lo, double hi) {
 }
 
 void StubBackend::stopSurvey() {
-    if (survey_) survey_->stop();
+    if (!survey_ || !survey_->isActive()) return;
+    survey_->stop();
+    emit surveyStopped();
 }
 
 void StubBackend::surveyTick() {

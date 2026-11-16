@@ -230,18 +230,26 @@ connect on startup · `--lang en|es|system` interface language (saved) · `--ver
 
 **Tools → Channel analyzer** recommends which channels to use when several pilots fly together:
 
-1. Choose the **bands** to analyse (A, B, E, F, R, L) and how many **analog** and **HDZero** pilots will fly.
-2. **Start analysis**: the adapter sweeps those bands continuously (no video meanwhile). Switch your own VTXs off:
-   anything on the air is treated as taken.
-3. The graph shows the average level over the noise floor, the strongest burst seen and the areas with bursty
+1. Choose the **bands** to analyse (A, B, E, F, R, L) and how many **analog** and **HDZero** pilots will fly (and
+   whether the HDZero ones use narrow mode, about 17 MHz).
+2. **Start analysis**: the adapter sweeps those bands continuously (no video meanwhile). Anything on the air is
+   treated as taken: switch your own VTXs off or tick them in the **On the air** list.
+3. The graph shows the average level over the noise floor, the strongest recent burst and the areas with bursty
    interference (5 GHz WiFi), the pilots already on the air (analog and HDZero) and each channel coloured (green
-   clean, yellow some interference, red busy or noisy). Below, the **recommended** channels with their interference
-   and notes. It updates with every sweep: the longer it runs, the more WiFi bursts it catches.
+   clean, yellow some interference, red busy or noisy). Below, the **recommended** channels with their interference,
+   the share of time with bursts and notes. It follows roughly the last minute of the band: what appears or
+   leaves shows quickly.
 
-How it chooses: each channel is scored by the interference within its width (analog 20 MHz, HDZero 27 MHz), with
-more weight for bursts; a channel where a pilot already is is ruled out. Between the chosen ones it requires a
-minimum spacing (20 MHz between analog, 24 analog-HDZero, 27 between HDZero), penalises going under the ideal (37,
-40 and 37 MHz), avoids 3rd-order intermodulation between analog pilots (2·f1 − f2 on another channel) and, with a
+How it measures: with a fixed gain, so every step of the sweep is on the same scale, in dB over the floor of the
+quietest step; a 40/80/160 MHz WiFi that fills a whole step still shows (it is not mistaken for the floor). For
+every 156 kHz it keeps the average, the strongest burst (fading 1 dB per sweep) and how much of the time it is 6 dB
+over the floor, as a sliding average of ~20 sweeps (`src/radio/survey.cpp`, test bench: `survey_test`).
+
+How it chooses: each channel is scored by the average interference within its width (analog 20 MHz, HDZero 27 or
+17 MHz) plus the share of time intermittent signals (WiFi) hit it; a channel where a pilot already is is ruled out.
+Between the chosen ones it requires a minimum spacing (25 MHz between analog; with HDZero, edges must not touch),
+penalises going under the ideal (37, 40 and 37 MHz), avoids 3rd-order intermodulation (2·f1 − f2 of two analog pilots
+on another chosen channel, HDZero too) and, with a
 clean band, spreads them as far as possible (4 pilots on Raceband: R1, R3, R6, R8). If they don't fit with safe
 spacing, it says so. The maths is in `src/channel_advisor.cpp` (test bench: `channel_advisor_test`).
 

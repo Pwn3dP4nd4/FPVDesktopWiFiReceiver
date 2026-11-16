@@ -1,5 +1,6 @@
 // Recomendador de canales (src/channel_advisor.cpp) con espectros sinteticos, sin adaptador.
 //   channel_advisor_test        todos los casos; sale con 1 si alguno falla
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <string>
@@ -42,20 +43,20 @@ std::vector<Candidate> hdz() {
     const char *n[] = {"R1", "R2", "R3", "R4", "R5", "R6", "R7", "R8"};
     const double f[] = {5658, 5695, 5732, 5769, 5806, 5843, 5880, 5917};
     std::vector<Candidate> c;
-    for (int i = 0; i < 8; i++) c.push_back(Candidate{n[i], f[i], true});
+    for (int i = 0; i < 8; i++) c.push_back(Candidate{n[i], f[i], true, kHdzBw});
     return c;
 }
 bool spaced(const Advice &a) {
     for (size_t i = 0; i < a.picks.size(); i++)
         for (size_t j = i + 1; j < a.picks.size(); j++)
             if (std::fabs(a.picks[i].r.ch.mhz - a.picks[j].r.ch.mhz) <
-                min_spacing(a.picks[i].r.ch.hdzero, a.picks[j].r.ch.hdzero))
+                min_spacing(a.picks[i].r.ch, a.picks[j].r.ch))
                 return false;
     return true;
 }
 bool avoids(const Advice &a, double lo, double hi) {
     for (const auto &p : a.picks) {
-        const double half = (p.r.ch.hdzero ? kHdzBw : kAnalogBw) / 2;
+        const double half = width(p.r.ch) / 2;
         if (p.r.ch.mhz + half > lo && p.r.ch.mhz - half < hi) return false;
     }
     return true;
@@ -112,6 +113,14 @@ int main() {
         auto a = advise(flat(), {}, analog("ABEFR"), {}, 8, 0);
         std::printf("  8 en ABEFR: %s\n", list(a).c_str());
         check(a.complete && a.picks.size() == 8 && spaced(a), "8 analogicos con todas las bandas");
+    }
+    {
+        // el peor caso de la ventana (todas las bandas, 8 + 8): se recalcula en el hilo de la GUI cada segundo
+        const auto t0 = std::chrono::steady_clock::now();
+        auto a = advise(flat(), {}, analog("ABEFRL"), hdz(), 8, 8);
+        const double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
+        std::printf("  8 + 8 en ABEFRL: %.0f ms (%s)\n", ms, list(a).c_str());
+        check(ms < 150, "peor caso en menos de 150 ms");
     }
     std::printf("\n%s\n", failures ? "HAY FALLOS" : "todo bien");
     return failures ? 1 : 0;
