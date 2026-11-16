@@ -105,7 +105,13 @@ try {
     foreach ($d in Get-OurDrivers) { pnputil /delete-driver $d.Driver /force | Out-Null }  # version anterior
     Write-Host 'Instalando el driver...'
     pnputil /add-driver (Join-Path $work $InfName) /install | Out-Host
-    if ($LASTEXITCODE -ne 0 -and $LASTEXITCODE -ne 3010) { Write-Error "pnputil fallo (codigo $LASTEXITCODE)" }
+    # 0 = instalado, 3010 = instalado (pide reiniciar), 259 (ERROR_NO_MORE_ITEMS) = el adaptador ya usaba este
+    # driver o no esta conectado: nada que actualizar. Cualquier otro codigo es un fallo de verdad.
+    switch ($LASTEXITCODE) {
+        { $_ -in 0, 3010 } { break }
+        259 { Write-Host 'El adaptador ya tenia este driver (o no esta conectado): nada que actualizar.' }
+        default { Write-Error "pnputil fallo (codigo $LASTEXITCODE)" }
+    }
 
     if ($RemoveZadig) {
         foreach ($d in Get-ZadigDrivers) {
