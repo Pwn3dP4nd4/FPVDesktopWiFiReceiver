@@ -119,6 +119,8 @@ public slots:
     // Analizador de canales: barrer lo..hi MHz sin parar (sin ver video) hasta stopSurvey(); surveyUpdated() cada s
     virtual void startSurvey(double loMHz, double hiMHz) { Q_UNUSED(loMHz); Q_UNUSED(hiMHz); }
     virtual void stopSurvey() {}
+    // Analizador: cuantos barridos recuerda (media deslizante); se aplica al momento
+    virtual void setSurveyMemory(int sweeps) { Q_UNUSED(sweeps); }
 
 signals:
     void opened(bool ok, const QString &error);

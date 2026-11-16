@@ -233,18 +233,20 @@ connect on startup · `--lang en|es|system` interface language (saved) · `--ver
 1. Choose the **bands** to analyse (A, B, E, F, R, L) and how many **analog** and **HDZero** pilots will fly (and
    whether the HDZero ones use narrow mode, about 17 MHz).
 2. **Start analysis**: the adapter sweeps those bands continuously (no video meanwhile). Anything on the air is
-   treated as taken: switch your own VTXs off or tick them in the **On the air** list.
+   treated as taken: switch your own VTXs off or tick them in the **On the air** list (for
+   that analysis only): their signal and sidebands do not count as interference.
 3. The graph shows the average level over the noise floor, the strongest recent burst and the areas with bursty
    interference (5 GHz WiFi), the pilots already on the air (analog and HDZero) and each channel coloured (green
    clean, yellow some interference, red busy or noisy). Below, the **recommended** channels with their interference,
    the share of time with bursts and notes. It follows roughly the last minute of the band: what appears or
    leaves shows quickly.
 
-How it measures: with a fixed gain, so every step of the sweep is on the same scale. Each step is measured over its
+How it measures: with a fixed gain, so every step of the sweep is on the same scale (if a nearby VTX clips a
+step, that step is measured with 10 dB less and corrected). Each step is measured over its
 own floor, but that floor may rise at most 2 dB over its neighbours' (the chip's changes slowly: ~8 dB from 5950 to
 5640 MHz); a 40/80/160 MHz WiFi that fills a whole step raises its floor suddenly and still shows. For
 every 156 kHz it keeps the average, the strongest burst (fading 1 dB per sweep) and how much of the time it is 6 dB
-over the floor, as a sliding average of ~20 sweeps (`src/radio/survey.cpp`, test bench: `survey_test`).
+over the floor, as a sliding average of the last sweeps (5, 10, 20 or 40: **Remember**) (`src/radio/survey.cpp`, test bench: `survey_test`).
 
 How it chooses: each channel is scored by the average interference within its width (analog 20 MHz, HDZero 27 or
 17 MHz) plus the share of time intermittent signals (WiFi) hit it; a channel where a pilot already is is ruled out.

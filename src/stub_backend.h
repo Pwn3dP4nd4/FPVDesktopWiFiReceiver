@@ -20,6 +20,7 @@ public slots:
     void stop() override;
     void startSurvey(double loMHz, double hiMHz) override;
     void stopSurvey() override;
+    void setSurveyMemory(int sweeps) override { memory_ = sweeps; }
 
 private:
     void tick();
@@ -31,6 +32,7 @@ private:
     bool digital_ = false;     // modo experimental: tambien el piloto HDZero simulado
     QTimer *survey_ = nullptr;  // analizador simulado: un barrido por segundo
     double surveyLo_ = 0, surveyHi_ = 0;
+    int memory_ = 20;  // con menos barridos, las rafagas simuladas se ven antes
     int sweeps_ = 0;
     void surveyTick();
 };

@@ -3,6 +3,7 @@
 
 #include <QCheckBox>
 #include <QCloseEvent>
+#include <QComboBox>
 #include <QEvent>
 #include <QGridLayout>
 #include <QGroupBox>
@@ -49,8 +50,38 @@ SpectrumView::SpectrumView(QWidget *parent) : QWidget(parent) {
     setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
 }
 
-void SpectrumView::setData(const SurveyData &d, const advisor::Advice &a, double lo, double hi) {
+void SpectrumView::setData(const SurveyData &d, const advisor::Advice &a, double lo, double hi,
+                           const QStringList &mine) {
+    // 156 kHz por bin es mas de lo que se ve: de 1 en 1 MHz (media de potencia, pico y rafagas los maximos)
     data_ = d;
+    data_.bins.clear();
+    double cell = -1, lin = 0;
+    SpectrumPoint acc{};
+    int n = 0;
+    const auto flush = [&] {
+        if (n == 0) return;
+        acc.mhz = cell + 0.5;
+        acc.meanDb = float(10 * std::log10(lin / n));
+        data_.bins.push_back(acc);
+    };
+    for (const auto &b : d.bins) {
+        const double c = std::floor(b.mhz);
+        if (c != cell) {
+            flush();
+            cell = c;
+            lin = 0;
+            n = 0;
+            acc = SpectrumPoint{};
+            acc.peakDb = -100;
+        }
+        lin += std::pow(10.0, b.meanDb / 10.0);
+        acc.peakDb = std::max(acc.peakDb, b.peakDb);
+        // rafaga: intermitente (pico muy sobre su media); se guarda la parte del tiempo
+        if (b.peakDb - b.meanDb > advisor::kBurstPeakOverMean) acc.duty = std::max(acc.duty, b.duty);
+        n++;
+    }
+    flush();
+    mine_ = mine;
     advice_ = a;
     lo_ = lo;
     hi_ = hi;
@@ -97,8 +128,10 @@ void SpectrumView::paintEvent(QPaintEvent *) {
     // espectro: rafagas (fondo naranja), picos (linea fina) y media (area)
     if (!data_.bins.isEmpty()) {
         for (const auto &b : data_.bins) {
-            if (b.mhz < lo_ || b.mhz > hi_ || !(b.peakDb > 10 && b.peakDb - b.meanDb > 10)) continue;
-            p.fillRect(QRectF(QPointF(X(b.mhz - 0.08), top), QPointF(X(b.mhz + 0.08), plotBottom)), QColor(255, 140, 0, 40));
+            // fondo naranja mas intenso cuanto mas tiempo hay rafagas
+            if (b.mhz < lo_ || b.mhz > hi_ || b.duty < 0.02f) continue;
+            p.fillRect(QRectF(QPointF(X(b.mhz - 0.5), top), QPointF(X(b.mhz + 0.5), plotBottom)),
+                       QColor(255, 140, 0, 25 + int(std::min(1.f, b.duty * 2) * 70)));
         }
         QPainterPath peak, mean;
         bool first = true;
@@ -106,7 +139,7 @@ void SpectrumView::paintEvent(QPaintEvent *) {
         for (const auto &b : data_.bins) {
             if (b.mhz < lo_ || b.mhz > hi_) continue;
             const double x = X(b.mhz);
-            if (first || x - lastX > 4) {  // hueco (sin datos): empezar otro tramo
+            if (first || X(b.mhz) - X(b.mhz - 1.5) < x - lastX) {  // hueco (sin datos): empezar otro tramo
                 peak.moveTo(x, Y(b.peakDb));
                 mean.moveTo(x, plotBottom);
             } else {
@@ -129,11 +162,14 @@ void SpectrumView::paintEvent(QPaintEvent *) {
     // lo que hay en el aire
     for (const auto &s : data_.pilots) {
         if (s.ageS >= 60 || s.freqMHz < lo_ || s.freqMHz > hi_) continue;
-        const QString t = (s.name.isEmpty() ? QString::number(s.freqMHz, 'f', 0) : s.name) +
-                          (s.isDigital() ? QStringLiteral(" HDZ") : QString());
-        p.setPen(QPen(QColor(0xd9, 0x48, 0x3b), 1.5, Qt::DashLine));
+        const QString key = s.name.isEmpty() ? QString::number(s.freqMHz, 'f', 0) : s.name;
+        const bool mine = mine_.contains(key);
+        const QString t = key + (s.isDigital() ? QStringLiteral(" HDZ") : QString()) +
+                          (mine ? QStringLiteral(" \u2713") : QString());
+        const QColor c = mine ? QColor(0x3a, 0xa8, 0x5a) : QColor(0xd9, 0x48, 0x3b);  // tuyo: verde
+        p.setPen(QPen(c, 1.5, Qt::DashLine));
         p.drawLine(QPointF(X(s.freqMHz), top), QPointF(X(s.freqMHz), plotBottom));
-        p.setPen(QColor(0xd9, 0x48, 0x3b));
+        p.setPen(c);
         p.drawText(QPointF(X(s.freqMHz) + 3, top + fm.ascent()), t);
     }
 
@@ -225,19 +261,27 @@ ChannelAnalyzer::ChannelAnalyzer(Backend *backend, QWidget *parent) : QDialog(pa
         recompute();
     });
     g->addWidget(narrow_, 2, 0, 1, 2);
+    memoryLbl_ = new QLabel;
+    memory_ = new QComboBox;
+    for (int n : {5, 10, 20, 40}) memory_->addItem(QString(), n);
+    memory_->setCurrentIndex(qBound(0, memory_->findData(settings().value("analyzer/memory", 20).toInt()), 3));
+    connect(memory_, &QComboBox::currentIndexChanged, this, [this] {
+        const int n = memory_->currentData().toInt();
+        settings().setValue("analyzer/memory", n);
+        emit requestMemory(n);
+    });
+
     side->addLayout(g);
     side->addSpacing(8);
     airTitle_ = new QLabel;
     airTitle_->setStyleSheet(QStringLiteral("font-weight:bold;"));
     side->addWidget(airTitle_);
-    mine_ = settings().value("analyzer/mine").toStringList();
     air_ = new QListWidget;
     air_->setMaximumHeight(110);
     connect(air_, &QListWidget::itemChanged, this, [this](QListWidgetItem *it) {
         const QString k = it->data(Qt::UserRole).toString();
         mine_.removeAll(k);
         if (it->checkState() == Qt::Checked) mine_ << k;
-        settings().setValue("analyzer/mine", mine_);
         recompute();
     });
     side->addWidget(air_);
@@ -249,9 +293,15 @@ ChannelAnalyzer::ChannelAnalyzer(Backend *backend, QWidget *parent) : QDialog(pa
     state_ = new QLabel;
     state_->setWordWrap(true);
     side->addWidget(state_);
+    {
+        // memoria junto al contador de barridos: cambia como se leen
+        auto *row = new QHBoxLayout;
+        row->addWidget(memoryLbl_);
+        row->addWidget(memory_, 1);
+        side->addLayout(row);
+    }
     hint_ = new QLabel;
     hint_->setWordWrap(true);
-    hint_->setStyleSheet(QStringLiteral("color:palette(mid);"));
     side->addWidget(hint_);
     side->addStretch(1);
     auto *sideW = new QWidget;
@@ -336,11 +386,14 @@ ChannelAnalyzer::ChannelAnalyzer(Backend *backend, QWidget *parent) : QDialog(pa
 
     connect(this, &ChannelAnalyzer::requestStart, backend, &Backend::startSurvey);
     connect(this, &ChannelAnalyzer::requestStop, backend, &Backend::stopSurvey);
+    connect(this, &ChannelAnalyzer::requestMemory, backend, &Backend::setSurveyMemory);
+    emit requestMemory(memory_->currentData().toInt());
     connect(backend, &Backend::surveyUpdated, this, &ChannelAnalyzer::onSurvey);
     connect(backend, &Backend::surveyStopped, this, &ChannelAnalyzer::onStopped);
     connect(backend, &Backend::statusChanged, this, [this](const RadioStatus &s) { setAdapterOpen(s.open); });
 
     retranslate();
+    state_->setText(tr("Connect the adapter first."));  // hasta el primer estado del backend
     resize(1000, 640);
     recompute();
 }
@@ -355,13 +408,21 @@ void ChannelAnalyzer::retranslate() {
     analogLbl_->setText(tr("Analog"));
     hdzLbl_->setText(QStringLiteral("HDZero"));
     narrow_->setText(tr("HDZero narrow mode"));
+    memoryLbl_->setText(tr("Remember"));
+    for (int i = 0; i < memory_->count(); i++)
+        memory_->setItemText(i, tr("last %n sweep(s)", nullptr, memory_->itemData(i).toInt()));
+    memory_->setToolTip(tr("How many recent sweeps the graph and the advice average. Fewer: it follows changes "
+                           "faster but is noisier. More: steadier, slower to forget."));
     narrow_->setToolTip(tr("HDZero in narrow mode takes about 17 MHz instead of 27: more of them fit."));
     airTitle_->setText(tr("On the air (tick yours)"));
     air_->setToolTip(tr("Pilots the analyzer has seen. Tick the ones that are yours: their channel is not "
                         "treated as taken."));
     startBtn_->setText(running_ ? tr("Stop") : tr("Start analysis"));
     hint_->setText(tr("Anything on the air is treated as taken: switch your own VTXs off, or tick them in the "
-                      "list. It follows the last minute or so of the band. No video while it runs."));
+                      "list (only for this analysis). It averages the last sweeps (Remember). No video while it "
+                      "runs."));
+    state_->setToolTip(tr("Sweep k/N: where it is within the sweeps it remembers. The average slides: it does not "
+                          "start over at N."));
     {
         // mismo orden que se crean en el constructor
         const QStringList t{tr("Spectrum"), tr("Channel marks"),
@@ -391,7 +452,8 @@ void ChannelAnalyzer::setAdapterOpen(bool open) {
         startBtn_->setText(tr("Start analysis"));
         emit runningChanged(false);
     }
-    if (!running_) state_->setText(open_ ? QString() : tr("Connect the adapter first."));
+    if (!running_) state_->setText(open_ ? tr("Ready: choose the bands and press Start analysis.")
+                                         : tr("Connect the adapter first."));
 }
 
 void ChannelAnalyzer::setCounts(int analog, int hdzero) {
@@ -430,6 +492,8 @@ void ChannelAnalyzer::toggle() {
     double lo, hi;
     range(lo, hi);
     last_ = SurveyData{};
+    mine_.clear();  // "mio" vale para un analisis: otro dia, otro piloto puede estar en ese canal
+    updateAir();
     running_ = true;
     startBtn_->setText(tr("Stop"));
     state_->setText(tr("Analysing %1-%2 MHz...").arg(lo, 0, 'f', 0).arg(hi, 0, 'f', 0));
@@ -442,7 +506,8 @@ void ChannelAnalyzer::stop() {
     if (!running_) return;
     running_ = false;
     startBtn_->setText(tr("Start analysis"));
-    state_->setText(last_.sweeps > 0 ? tr("Stopped after %n sweep(s).", nullptr, last_.sweeps) : QString());
+    state_->setText(last_.sweeps > 0 ? tr("Stopped after %n sweep(s).", nullptr, last_.sweeps)
+                                       : tr("Ready: choose the bands and press Start analysis."));
     emit requestStop();
     emit runningChanged(false);
 }
@@ -456,16 +521,31 @@ void ChannelAnalyzer::onStopped() {
 }
 
 void ChannelAnalyzer::updateAir() {
-    const QSignalBlocker b(air_);
-    air_->clear();
+    // Se actualiza en el sitio: reconstruirla cada segundo perdia clics en la casilla y el desplazamiento
+    QStringList keys, texts;
     for (const auto &p : last_.pilots) {
         if (p.ageS >= 60) continue;
         const QString key = p.name.isEmpty() ? QString::number(p.freqMHz, 'f', 0) : p.name;
-        auto *it = new QListWidgetItem(QStringLiteral("%1  %2 MHz%3").arg(key).arg(p.freqMHz, 0, 'f', 0)
-                                           .arg(p.isDigital() ? QStringLiteral("  HDZero") : QString()), air_);
-        it->setData(Qt::UserRole, key);
-        it->setFlags(it->flags() | Qt::ItemIsUserCheckable);
-        it->setCheckState(mine_.contains(key) ? Qt::Checked : Qt::Unchecked);
+        if (keys.contains(key)) continue;
+        keys << key;
+        texts << QStringLiteral("%1  %2 MHz%3").arg(key).arg(p.freqMHz, 0, 'f', 0)
+                     .arg(p.isDigital() ? QStringLiteral("  HDZero") : QString());
+    }
+    const QSignalBlocker b(air_);
+    // fuera los que ya no estan (y el "(ninguno)")
+    for (int i = air_->count() - 1; i >= 0; i--)
+        if (!keys.contains(air_->item(i)->data(Qt::UserRole).toString())) delete air_->takeItem(i);
+    for (int k = 0; k < keys.size(); k++) {
+        QListWidgetItem *it = nullptr;
+        for (int i = 0; i < air_->count() && !it; i++)
+            if (air_->item(i)->data(Qt::UserRole).toString() == keys[k]) it = air_->item(i);
+        if (!it) {
+            it = new QListWidgetItem(air_);
+            it->setData(Qt::UserRole, keys[k]);
+            it->setFlags(it->flags() | Qt::ItemIsUserCheckable);
+            it->setCheckState(mine_.contains(keys[k]) ? Qt::Checked : Qt::Unchecked);
+        }
+        if (it->text() != texts[k]) it->setText(texts[k]);
     }
     if (air_->count() == 0) {
         auto *it = new QListWidgetItem(tr("(none)"), air_);
@@ -485,8 +565,11 @@ void ChannelAnalyzer::onSurvey(const SurveyData &d) {
     double lo, hi;
     range(lo, hi);
     state_->setText(d.sweeps == 0 ? tr("Analysing %1-%2 MHz: first sweep...").arg(lo, 0, 'f', 0).arg(hi, 0, 'f', 0)
-                                  : tr("Analysing %1-%2 MHz: %n sweep(s).", nullptr, d.sweeps)
-                                        .arg(lo, 0, 'f', 0).arg(hi, 0, 'f', 0));
+                                  // barrido dentro de la memoria (vuelve a 1 cada N) y el total, informativo
+                                  : tr("Analysing %1-%2 MHz: sweep %3/%4 (%5 in total).")
+                                        .arg(lo, 0, 'f', 0).arg(hi, 0, 'f', 0)
+                                        .arg((d.sweeps - 1) % memory_->currentData().toInt() + 1)
+                                        .arg(memory_->currentData().toInt()).arg(d.sweeps));
     recompute();
 }
 
@@ -523,6 +606,12 @@ void ChannelAnalyzer::recompute() {
         seen.push_back(advisor::Signal{p.freqMHz, p.bwMHz, p.isDigital(), p.name.toStdString()});
         seenIdx_.push_back(i);
     }
+    // mis pilotos: su propia senal (y sus bandas laterales) no es interferencia (advisor::mask_signal)
+    for (const auto &p : last_.pilots) {
+        const QString key = p.name.isEmpty() ? QString::number(p.freqMHz, 'f', 0) : p.name;
+        if (p.ageS >= 60 || !mine_.contains(key)) continue;
+        advisor::mask_signal(bins, advisor::Signal{p.freqMHz, p.bwMHz, p.isDigital(), p.name.toStdString()});
+    }
     const bool haveData = !bins.empty();
     QElapsedTimer t;
     t.start();
@@ -533,7 +622,7 @@ void ChannelAnalyzer::recompute() {
     if (t.elapsed() > 100) KP_LOGW("analizador: recomendar ha tardado %lld ms", static_cast<long long>(t.elapsed()));
     double lo, hi;
     range(lo, hi);
-    view_->setData(last_, a, lo, hi);
+    view_->setData(last_, a, lo, hi, mine_);
 
     table_->clear();
     if (!haveData) {

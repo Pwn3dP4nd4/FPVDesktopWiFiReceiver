@@ -57,8 +57,19 @@ constexpr int kFallbackFaults = 3;
 // survey: fixed gain, so every step is on the same scale (src/radio/survey.h). High enough for a far WiFi to
 // stand over the chip's noise, low enough that a VTX a few metres away does not clip.
 constexpr double kSurveyGainDb = 30;
+// survey: a step whose samples clip (more than this fraction at full scale) is measured again with less gain
+constexpr float kSurveyClipMax = 1e-4f;
+constexpr double kSurveyGainStepDown = 10, kSurveyGainStepUp = 5, kSurveyGainMin = 0;
+// ... and gets its gain back when its loudest sample is under this fraction of full scale (18 dB of headroom)
+constexpr float kSurveyRaiseUnder = 0.12f;
+// survey: each step measures [-reach, +reach) of its centre; src/scan_plan.cpp puts steps 2 x reach apart
+constexpr double kSurveyReach = 10e6;
 // survey: a pilot not seen for this many sweeps has left
 constexpr int kSurveyLostSweeps = 3;
+// survey: an analog pilot this close to a stronger one is its sideband copy (see scan_step_done)
+constexpr double kSurveySidebandMhz = 15;
+// survey: a hump already checked for video is not checked again (streaming, ~100 ms) for this many sweeps
+constexpr int kSurveyRecheckSweeps = 5;
 constexpr int64_t kFallbackWindowMs = 5000;
 
 // Raise this thread's priority (the USB stream thread must never miss a chip deadline; the DSP thread
@@ -199,10 +210,12 @@ void Radio::tune(double hz, int rate_sel) {
   s.wide = true;
   {
     std::lock_guard<std::mutex> l(_m);
-    const double g = _survey ? kSurveyGainDb : _gain_db;
+    // survey: fixed gain for the spectrum; the candidate check (_survey_cont) with the usual gain (AGC): a VTX
+    // close by clips at the survey's fixed gain and its video never locks (measured: lock 0.08 vs 0.96)
+    const double g = _survey && !_survey_cont ? survey_gain(hz) : _gain_db;
     // survey: one bank at a time (cmake/kepyur_patches.cmake, set "gapped"): it needs no contiguous samples
     // and the chip then never misses a deadline while it retunes nonstop
-    s.allow_gapped = _survey;
+    s.allow_gapped = _survey && !_survey_cont;
     s.agc = g < 0;
     if (g >= 0) s.gain_db = g;
   }
@@ -224,12 +237,29 @@ void Radio::survey() {
   std::lock_guard<std::mutex> l(_m);
   _survey = true;
   _resume_hz = 0;
-  _grid.reset();
+  {
+    const int m = _grid.memory();
+    _grid.reset();
+    _grid.set_memory(m);
+  }
   _sweep_start_ms = now_ms();
   _sweep_ms = 0;
+  _survey_cont = false;
+  _survey_gain.clear();
+  _survey_known.clear();
   _pilots.clear();
   _mode = Mode::Scan;
   _mode_epoch++;
+}
+
+double Radio::survey_gain(double hz) const {
+  const auto it = _survey_gain.find(std::lround(hz / 1e3));
+  return it == _survey_gain.end() ? kSurveyGainDb : it->second;
+}
+
+void Radio::set_survey_memory(int sweeps) {
+  std::lock_guard<std::mutex> l(_m);
+  _grid.set_memory(sweeps);
 }
 
 std::vector<SurveyBin> Radio::survey_spectrum(int *sweeps) {
@@ -644,7 +674,7 @@ void Radio::handle_scan(Bank &b) {
     psd.add(x.data(), x.size());
     const std::vector<float> psd_db = psd.db();
     _humps = find_humps(psd_db, kFs, kEdge);
-    if (_digital) _digital->analyse(psd_db, x.data(), x.size(), kFs, kEdge);
+    if (_digital && !_survey_cont) _digital->analyse(psd_db, x.data(), x.size(), kFs, kEdge);  // once a step
     bool survey;
     double floor_hint;
     {
@@ -652,12 +682,70 @@ void Radio::handle_scan(Bank &b) {
       survey = _survey;
       floor_hint = _grid.reference(_cap_centre);
     }
-    if (survey) {
-      const SurveyStep st = survey_measure(x.data(), x.size(), _cap_centre, kFs, kEdge, floor_hint);
+    if (survey && !_survey_cont) {  // (a step taken again to check a candidate is already counted)
+      double gain;
+      {
+        std::lock_guard<std::mutex> l(_m);
+        gain = survey_gain(req);
+      }
+      // measured gain dB under the survey's: back to its scale (the hint comes in that scale)
+      const double corr = kSurveyGainDb - gain;
+      SurveyStep st = survey_measure(x.data(), x.size(), _cap_centre, kFs, kSurveyReach,
+                                     floor_hint > 0 ? floor_hint / std::pow(10.0, corr / 10) : 0);
+      survey_scale(st, corr);
+      const bool clipped = st.clip > kSurveyClipMax;
       std::lock_guard<std::mutex> l(_m);
-      if (_survey) _grid.merge(st);
+      const long key = std::lround(req / 1e3);
+      if (clipped && gain > kSurveyGainMin) {
+        // a strong signal close by clips the ADC: its spurious products would read as interference. Not
+        // counted; next sweep with less gain
+        _survey_gain[key] = std::max(kSurveyGainMin, gain - kSurveyGainStepDown);
+        KP_LOGI("survey: %.1f MHz clips (%.3f%% of samples): gain %.0f -> %.0f dB", req / 1e6, st.clip * 100.0,
+                gain, _survey_gain[key]);
+      } else {
+        if (_survey) _grid.merge(st);
+        if (!clipped && st.peak_abs < kSurveyRaiseUnder && gain < kSurveyGainDb)
+          _survey_gain[key] = std::min(kSurveyGainDb, gain + kSurveyGainStepUp);
+      }
+    }
+    if (!_humps.empty() && survey && !_survey_cont) {
+      // humps checked in the last few sweeps are not checked again: a pilot with video stays listed, a hump
+      // without (a spur of the chip) is left alone
+      bool known = true;
+      {
+        std::lock_guard<std::mutex> l(_m);
+        const int sw = _grid.sweeps();
+        for (const auto &h : _humps) {
+          const double mhz = (_cap_centre + h.offset_hz) / 1e6;
+          const auto k = std::find_if(_survey_known.begin(), _survey_known.end(), [&](const SurveyKnown &s) {
+            return std::fabs(s.mhz - mhz) < 3 && sw - s.sweep < kSurveyRecheckSweeps;
+          });
+          if (k == _survey_known.end()) {
+            known = false;
+            break;
+          }
+        }
+        if (known)
+          for (const auto &h : _humps) {
+            const double mhz = (_cap_centre + h.offset_hz) / 1e6;
+            for (auto &p : _pilots)
+              if (p.digital.empty() && std::fabs(p.mhz - mhz) < 4) p.seen_ms = now_ms();
+          }
+      }
+      if (known) _humps.clear();
     }
     if (!_humps.empty()) {
+      if (survey && !_survey_cont) {
+        // the video sync check needs contiguous samples, and the survey streams gapped: the same step again,
+        // streaming (the humps are found again on its spectrum)
+        {
+          std::lock_guard<std::mutex> l(_m);
+          _survey_cont = true;
+        }
+        tune(req, 1);
+        _settle = -1;
+        return;
+      }
       _cap_need = static_cast<size_t>(kCapture * kFs);
       return;
     }
@@ -668,6 +756,12 @@ void Radio::handle_scan(Bank &b) {
 void Radio::scan_step_done() {
   const double centre = _cap_centre;  // the samples are centred on the hardware centre, not the request
   // start the next retune now; the chip settles while this step is analysed
+  bool recheck;
+  {
+    std::lock_guard<std::mutex> l(_m);
+    recheck = _survey_cont;
+    _survey_cont = false;  // survey: back to gapped
+  }
   _step++;
   if (_step < _plan.size()) {
     tune(_plan[_step], 1);
@@ -677,9 +771,11 @@ void Radio::scan_step_done() {
   for (size_t i = 0; i < x.size(); i++) x[i] = cf(_cap[i].real(), _cap[i].imag());
   const auto humps = _humps;
   std::vector<Pilot> found;
+  std::vector<SurveyKnown> checked;
   for (const auto &h : humps) {
     const auto vc = check_video(x.data(), x.size(), kFs, h.offset_hz);
     const double mhz = (centre + h.offset_hz) / 1e6;
+    if (recheck) checked.push_back({mhz, vc.video, 0});
     KP_LOGI("scan: %.1f MHz hump %+.2f MHz (%.1f MHz wide, %.1f dB) -> %s %s lock %.2f", centre / 1e6,
             h.offset_hz / 1e6, h.width_hz / 1e6, h.snr_db, vc.video ? "VIDEO" : "no video", vc.std_name, vc.lock);
     if (!vc.video) continue;
@@ -714,6 +810,13 @@ void Radio::scan_step_done() {
   bool restart = false;
   {
     std::lock_guard<std::mutex> l(_m);
+    for (auto &c : checked) {  // survey: remember what this check found
+      c.sweep = _grid.sweeps();
+      _survey_known.erase(std::remove_if(_survey_known.begin(), _survey_known.end(),
+                                         [&](const SurveyKnown &k) { return std::fabs(k.mhz - c.mhz) < 3; }),
+                          _survey_known.end());
+      _survey_known.push_back(c);
+    }
     for (const auto &f : found) {
       auto it = std::find_if(_pilots.begin(), _pilots.end(), [&](const Pilot &p) { return std::fabs(p.mhz - f.mhz) < 4; });
       if (it == _pilots.end()) _pilots.push_back(f);
@@ -721,6 +824,19 @@ void Radio::scan_step_done() {
       else it->seen_ms = f.seen_ms;
     }
     std::sort(_pilots.begin(), _pilots.end(), [](const Pilot &a, const Pilot &b) { return a.snr_db > b.snr_db; });
+    if (_survey) {
+      // survey: an analog VTX has a copy of its signal ~12 MHz away, a few dB weaker, whose video can lock too
+      // (measured: R3 at 5731.4 MHz 35 dB and 5743.4 MHz 32 dB, lock 0.75). An analog pilot that close to a
+      // stronger one is taken as that copy, not as another pilot (two real ones that close would be unflyable)
+      std::vector<Pilot> kept;
+      for (const auto &p : _pilots) {  // strongest first
+        const bool copy = p.digital.empty() && std::any_of(kept.begin(), kept.end(), [&](const Pilot &k) {
+          return k.digital.empty() && std::fabs(k.mhz - p.mhz) < kSurveySidebandMhz && k.snr_db >= p.snr_db + 2;
+        });
+        if (!copy) kept.push_back(p);
+      }
+      _pilots.swap(kept);
+    }
     if (done && _survey) {
       // survey: sweep again; pilots not seen for kSurveyLostSweeps sweeps are gone
       _grid.end_sweep();

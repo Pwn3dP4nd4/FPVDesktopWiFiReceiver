@@ -19,7 +19,7 @@ double SurveyGrid::reference(double centre_hz) const {
   const long key = std::lround(centre_hz / 1e3);
   const auto it = _step_ref.find(key);
   if (it != _step_ref.end()) return it->second;
-  // a step not seen yet: the nearest one's, plus the slope it may have over that distance (30 MHz a step)
+  // a step not seen yet: the nearest one's, plus the slope it may have over that distance
   double best = 0;
   long dist = 0;
   for (const auto &kv : _step_ref) {
@@ -30,21 +30,34 @@ double SurveyGrid::reference(double centre_hz) const {
     }
   }
   if (best <= 0) return 0;
-  return best * std::pow(10.0, kSlopeDb / 10 * std::ceil(static_cast<double>(dist) / 30e3));
+  return best * std::pow(10.0, kSlopeDbPerMhz * (static_cast<double>(dist) / 1e3) / 10);
 }
 
 void SurveyGrid::update_refs() {
-  const double k = std::pow(10.0, kSlopeDb / 10);
+  // the slope allowed between two steps: per MHz, so it does not depend on how far apart the steps are
+  const auto k = [](long a, long b) { return std::pow(10.0, kSlopeDbPerMhz * (std::labs(a - b) / 1e3) / 10); };
   _step_ref = _step_floor;
+  long pk = 0;
   double prev = 0;
   for (auto &kv : _step_ref) {  // up the band
-    if (prev > 0) kv.second = std::min(kv.second, prev * k);
+    if (prev > 0) kv.second = std::min(kv.second, prev * k(kv.first, pk));
     prev = kv.second;
+    pk = kv.first;
   }
   prev = 0;
   for (auto it = _step_ref.rbegin(); it != _step_ref.rend(); ++it) {  // and down
-    if (prev > 0) it->second = std::min(it->second, prev * k);
+    if (prev > 0) it->second = std::min(it->second, prev * k(it->first, pk));
     prev = it->second;
+    pk = it->first;
+  }
+}
+
+void survey_scale(SurveyStep &s, double db) {
+  const double f = std::pow(10.0, db / 10);
+  s.floor *= f;
+  for (auto &b : s.bins) {
+    b.mean *= f;
+    b.peak *= f;
   }
 }
 
@@ -56,12 +69,12 @@ void SurveyGrid::merge(const SurveyStep &s) {
   if (f == _step_floor.end()) _step_floor[key] = s.floor;
   else f->second += kFloorWeight * (s.floor - f->second);
   update_refs();
-  const double decay = std::pow(10.0, -kPeakDecayDb / 10);
+  const double decay = std::pow(10.0, -kPeakFadeDb / _memory / 10);
   for (const auto &b : s.bins) {
     if (b.index < 0 || b.index >= kBins) continue;
     auto &a = _acc[static_cast<size_t>(b.index)];
-    // plain average for the first kMemory updates, then exponential with the same weight
-    a.n = std::min(a.n + 1, kMemory);
+    // plain average for the first memory() updates, then exponential with the same weight
+    a.n = std::min(a.n + 1, _memory);
     const double w = 1.0 / a.n;
     a.mean += w * (b.mean - a.mean);
     a.duty += w * (b.duty - a.duty);
@@ -88,12 +101,25 @@ std::vector<SurveyBin> SurveyGrid::spectrum() const {
   return out;
 }
 
-SurveyStep survey_measure(const cfs *x, size_t n, double centre_hz, double fs, double edge_hz, double floor_hint) {
+SurveyStep survey_measure(const cfs *x, size_t n, double centre_hz, double fs, double reach_hz, double floor_hint,
+                          float full_scale) {
   constexpr int kN = 256, kFrames = 16, kSlice = kN * kFrames;
   SurveyStep out;
   out.centre_hz = centre_hz;
   const size_t slices = n / kSlice;
   if (slices < 8) return out;
+  {
+    const float clip_at = 0.95f * full_scale;
+    size_t clipped = 0;
+    float pk = 0;
+    for (size_t i = 0; i < n; i++) {
+      const float a = std::max(std::fabs(x[i].real()), std::fabs(x[i].imag()));
+      pk = std::max(pk, a);
+      clipped += a >= clip_at;
+    }
+    out.clip = static_cast<float>(clipped) / static_cast<float>(n);
+    out.peak_abs = pk / full_scale;
+  }
   std::vector<float> win(kN);
   for (int i = 0; i < kN; i++) win[i] = static_cast<float>(0.5 - 0.5 * std::cos(2 * M_PI * i / kN));
   std::vector<cfs> buf(kN);
@@ -108,7 +134,7 @@ SurveyStep survey_measure(const cfs *x, size_t n, double centre_hz, double fs, d
   const auto freq = [&](int k) { return (k < kN / 2 ? k : k - kN) * fs / kN; };
   std::vector<int> use;
   for (int k = 0; k < kN; k++)
-    if (std::fabs(freq(k)) < edge_hz && std::fabs(freq(k)) > 0.3e6) use.push_back(k);
+    if (freq(k) >= -reach_hz && freq(k) < reach_hz && std::fabs(freq(k)) > 0.3e6) use.push_back(k);
   if (use.empty()) return out;
   std::vector<double> mean(kN, 0);
   for (int k : use) {

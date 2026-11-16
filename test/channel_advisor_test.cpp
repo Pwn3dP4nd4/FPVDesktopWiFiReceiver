@@ -115,6 +115,26 @@ int main() {
         check(a.complete && a.picks.size() == 8 && spaced(a), "8 analogicos con todas las bandas");
     }
     {
+        // mi VTX analogico en R3 (5731.5) con su banda lateral a ~12 MHz: marcado como mio, R3 queda limpio
+        auto b = flat();
+        add_block(b, 5726.5, 5736.5, 34, 35, 1);
+        add_block(b, 5740.8, 5746, 31, 32, 1);
+        const Candidate r3{"R3", 5732, false}, r4{"R4", 5769, false}, r2{"R2", 5695, false};
+        const float before = rate(r3, b, {}).noise_db;
+        mask_signal(b, Signal{5731.5, 0, false, "R3"});
+        const float after = rate(r3, b, {}).noise_db;
+        std::printf("  mi VTX en R3: antes %.1f dB, quitado %.1f dB (R2 %.1f, R4 %.1f)\n", before, after,
+                    rate(r2, b, {}).noise_db, rate(r4, b, {}).noise_db);
+        check(before > 20 && after < 1.5 && rate(r2, b, {}).noise_db < 1.5 && rate(r4, b, {}).noise_db < 1.5,
+              "marcar mi VTX quita su senal y sus bandas laterales, no la de otros");
+        // otro piloto a 37 MHz (R4) sigue viendose
+        auto c = flat();
+        add_block(c, 5726.5, 5736.5, 34, 35, 1);
+        add_block(c, 5764, 5774, 30, 31, 1);
+        mask_signal(c, Signal{5731.5, 0, false, "R3"});
+        check(rate(r4, c, {}).noise_db > 20, "un piloto ajeno al lado no se quita");
+    }
+    {
         // el peor caso de la ventana (todas las bandas, 8 + 8): se recalcula en el hilo de la GUI cada segundo
         const auto t0 = std::chrono::steady_clock::now();
         auto a = advise(flat(), {}, analog("ABEFRL"), hdz(), 8, 8);

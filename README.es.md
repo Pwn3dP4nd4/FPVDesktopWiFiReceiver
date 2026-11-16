@@ -238,18 +238,20 @@ Opciones de línea de comandos (opcionales, para pruebas): `--demo` sin hardware
 1. Elige las **bandas** a analizar (A, B, E, F, R, L) y cuántos pilotos **analógicos** y **HDZero** van a volar
    (y si los HDZero van en modo estrecho, unos 17 MHz).
 2. **Empezar el análisis**: el adaptador barre esas bandas sin parar (no se ve vídeo mientras tanto). Todo lo que
-   esté en el aire se toma como ocupado: apaga tus propios VTX o márcalos en la lista **En el aire**.
+   esté en el aire se toma como ocupado: apaga tus propios VTX o márcalos en la lista **En el aire**
+   (solo para ese análisis): su señal y sus bandas laterales no cuentan como interferencia.
 3. La gráfica muestra el nivel medio sobre el ruido, la ráfaga más fuerte reciente y las zonas con interferencia a
    ráfagas (WiFi de 5 GHz), los pilotos que ya están en el aire (analógicos y HDZero) y cada canal coloreado (verde
    limpio, amarillo con algo de interferencia, rojo ocupado o con ruido). Debajo, los canales **recomendados** con
    su interferencia, el % de tiempo con ráfagas y notas. Sigue más o menos el último minuto de la banda: lo que
    aparece o se va se nota enseguida.
 
-Cómo mide: con ganancia fija, así todos los pasos del barrido están en la misma escala. Cada paso se mide sobre su
+Cómo mide: con ganancia fija, así todos los pasos del barrido están en la misma escala (si un VTX cercano satura
+un paso, ese paso se mide con 10 dB menos y se corrige). Cada paso se mide sobre su
 suelo, pero ese suelo solo puede subir 2 dB sobre el de los pasos vecinos (el del chip cambia despacio: ~8 dB de
 5950 a 5640 MHz); un WiFi de 40/80/160 MHz que llena un paso entero sube su suelo de golpe y se ve igual.
 Por cada 156 kHz guarda la media, la ráfaga más fuerte (se apaga 1 dB por barrido) y qué parte del tiempo pasa
-6 dB del suelo, con media deslizante de ~20 barridos (`src/radio/survey.cpp`, banco: `survey_test`).
+6 dB del suelo, con media deslizante de los últimos barridos (5, 10, 20 o 40: **Recordar**) (`src/radio/survey.cpp`, banco: `survey_test`).
 
 Cómo elige: cada canal se puntúa por la interferencia media dentro de su ancho (analógico 20 MHz, HDZero 27 o 17
 MHz) más la parte del tiempo que lo pisan señales intermitentes (WiFi); un canal donde ya hay un piloto queda

@@ -96,8 +96,12 @@
         <translation>Parte del tiempo que pisan el canal señales intermitentes (WiFi y similares): van y vienen, mucho más fuertes que la media, que las esconde. 0% = nada intermitente.</translation>
     </message>
     <message>
-        <source>Anything on the air is treated as taken: switch your own VTXs off, or tick them in the list. It follows the last minute or so of the band. No video while it runs.</source>
-        <translation>Todo lo que esté en el aire cuenta como ocupado: apaga tus VTX o márcalos en la lista. Sigue más o menos el último minuto de la banda. No se ve vídeo mientras analiza.</translation>
+        <source>Anything on the air is treated as taken: switch your own VTXs off, or tick them in the list (only for this analysis). It averages the last sweeps (Remember). No video while it runs.</source>
+        <translation>Todo lo que esté en el aire cuenta como ocupado: apaga tus VTX o márcalos en la lista (solo para este análisis). Promedia los últimos barridos (Recordar). No se ve vídeo mientras analiza.</translation>
+    </message>
+    <message>
+        <source>Sweep k/N: where it is within the sweeps it remembers. The average slides: it does not start over at N.</source>
+        <translation>Barrido k/N: por dónde va dentro de los barridos que recuerda. La media es deslizante: no empieza de cero al llegar a N.</translation>
     </message>
     <message>
         <source>HDZero narrow mode</source>
@@ -143,6 +147,25 @@
         <source>Analysing %1-%2 MHz...</source>
         <translation>Analizando %1-%2 MHz...</translation>
     </message>
+    <message>
+        <source>Ready: choose the bands and press Start analysis.</source>
+        <translation>Listo: elige las bandas y pulsa Empezar el análisis.</translation>
+    </message>
+    <message>
+        <source>Remember</source>
+        <translation>Recordar</translation>
+    </message>
+    <message numerus="yes">
+        <source>last %n sweep(s)</source>
+        <translation>
+            <numerusform>último %n barrido</numerusform>
+            <numerusform>últimos %n barridos</numerusform>
+        </translation>
+    </message>
+    <message>
+        <source>How many recent sweeps the graph and the advice average. Fewer: it follows changes faster but is noisier. More: steadier, slower to forget.</source>
+        <translation>Cuántos barridos recientes promedian la gráfica y la recomendación. Menos: sigue antes los cambios pero se ve más ruidosa. Más: más estable, tarda más en olvidar.</translation>
+    </message>
     <message numerus="yes">
         <source>Stopped after %n sweep(s).</source>
         <translation>
@@ -154,12 +177,9 @@
         <source>Analysing %1-%2 MHz: first sweep...</source>
         <translation>Analizando %1-%2 MHz: primer barrido...</translation>
     </message>
-    <message numerus="yes">
-        <source>Analysing %1-%2 MHz: %n sweep(s).</source>
-        <translation>
-            <numerusform>Analizando %1-%2 MHz: %n barrido.</numerusform>
-            <numerusform>Analizando %1-%2 MHz: %n barridos.</numerusform>
-        </translation>
+    <message>
+        <source>Analysing %1-%2 MHz: sweep %3/%4 (%5 in total).</source>
+        <translation>Analizando %1-%2 MHz: barrido %3/%4 (%5 en total).</translation>
     </message>
     <message>
         <source>already in use (%1)</source>

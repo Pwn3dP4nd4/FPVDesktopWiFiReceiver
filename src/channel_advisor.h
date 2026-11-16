@@ -69,6 +69,13 @@ struct Advice {
     float worst_db = 0;                  // interferencia del peor canal elegido
 };
 
+// Quita del espectro la senal de un piloto propio (marcado como mio en la ventana): no es interferencia. Un VTX
+// tiene energia mas alla de su ancho (bandas laterales: medido un bloque de 31 dB a ~12 MHz de un analogico), asi
+// que se quita su ancho y, hasta kMaskSkirt MHz mas alla, lo que este 3 dB por encima del nivel de alrededor
+// (mediana de un anillo despues de eso). Lo quitado queda a ese nivel, sin rafagas.
+constexpr double kMaskSkirt = 6, kMaskRing = 5;
+void mask_signal(std::vector<Bin> &bins, const Signal &s);
+
 // Puntuacion de un canal (sin vecinos)
 Rating rate(const Candidate &c, const std::vector<Bin> &bins, const std::vector<Signal> &seen);
 
