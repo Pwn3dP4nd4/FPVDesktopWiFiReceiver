@@ -60,6 +60,14 @@
         <translation>Ráfagas</translation>
     </message>
     <message>
+        <source>Average interference level across the channel width, in dB above the noise floor.</source>
+        <translation>Nivel medio de interferencia en el ancho del canal, en dB sobre el suelo de ruido.</translation>
+    </message>
+    <message>
+        <source>Share of the channel width hit by strong intermittent bursts (WiFi and similar): signals that come and go, much stronger than the average. 0% = nothing intermittent.</source>
+        <translation>Parte del ancho del canal con ráfagas fuertes intermitentes (WiFi y similares): señales que van y vienen, mucho más fuertes que la media. 0% = nada intermitente.</translation>
+    </message>
+    <message>
         <source>Notes</source>
         <translation>Notas</translation>
     </message>

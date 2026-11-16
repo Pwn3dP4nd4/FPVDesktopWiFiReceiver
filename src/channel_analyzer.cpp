@@ -60,7 +60,9 @@ void SpectrumView::paintEvent(QPaintEvent *) {
     p.fillRect(rect(), pal.base());
     const QFontMetrics fm(font());
     const int rowH = fm.height() + 4;
-    const int left = fm.horizontalAdvance(QStringLiteral("40 dB")) + 8, right = width() - 8, top = 8;
+    const int left = std::max({fm.horizontalAdvance(QStringLiteral("40 dB")), fm.horizontalAdvance(tr("Analog")),
+                               fm.horizontalAdvance(QStringLiteral("HDZero"))}) + 10,
+              right = width() - 8, top = 8;
     const int plotBottom = height() - 2 * rowH - fm.height() - 10;
     const double dbMax = 40;
     const auto X = [&](double mhz) { return left + (mhz - lo_) / (hi_ - lo_) * (right - left); };
@@ -274,6 +276,8 @@ void ChannelAnalyzer::retranslate() {
                         "background: bursty interference (WiFi). Dashed red: pilots already on the air. Channel marks: "
                         "green clean, yellow some interference, red busy or noisy; recommended ones in bold."));
     table_->setHeaderLabels({tr("System"), tr("Channel"), tr("MHz"), tr("Interference"), tr("Bursts"), tr("Notes")});
+    table_->headerItem()->setToolTip(3, tr("Average interference level across the channel width, in dB above the noise floor."));
+    table_->headerItem()->setToolTip(4, tr("Share of the channel width hit by strong intermittent bursts (WiFi and similar): signals that come and go, much stronger than the average. 0% = nothing intermittent."));
     recompute();
 }
 
