@@ -1,5 +1,5 @@
 // Banco de pruebas (no se distribuye): emite sin parar a 20 (o 40) MS/s con wifi-sdr directamente (Session +
-// Stream8822b, sin kp::Radio) hasta que el flujo se atasca ("no packet within timeout (bank 0 part 0)": la
+// Stream8822b, sin fpv::Radio) hasta que el flujo se atasca ("no packet within timeout (bank 0 part 0)": la
 // peticion C2H del chip se queda colgada, r294 BIT16) y entonces prueba recuperaciones de menor a mayor coste,
 // cada una seguida de un nuevo arranque del flujo, para saber cual es la mas barata que lo devuelve.
 //   wedge_test [--secs S] [--rate 20|40] [--mhz F] [--wedges N] [--from K]
