@@ -9,6 +9,9 @@
 #              fpv::Radio::set_comb() (src/radio)
 #   rxdma      wifi-sdr Receiver: tras un "no packet within timeout" del 8822B, apagar y encender el RX DMA
 #              (REG_CR) antes de reiniciar el flujo; desatasca el C2H en ~10 ms sin reabrir (test/wedge_test.cpp)
+#   gapped     wifi-sdr Receiver: con RxSettings::allow_gapped, a cualquier velocidad se captura a huecos (un
+#              banco, parar, enviar, rearmar): el analizador de canales (fpv::Radio::survey) no necesita muestras
+#              contiguas y asi el 8812BU no falla por "deadline" al resintonizar sin parar
 #
 # La radio ya no se parchea: es propia (src/radio) y native/radio de kepyur no se compila.
 #
@@ -58,6 +61,19 @@ _kp_change(rxdma third_party/wifi-sdr/src/receiver.cpp
     }
     RxState next = RxState::Starting;
     std::string why = "stream fault (restarting): " + ss.error;
+]=])
+
+# ---- gapped ------------------------------------------------------------------------------------------------
+# El analizador resintoniza cada ~15 ms y en continuo el firmware del 8812BU termina bancos tarde ("deadline:
+# bank N ended X us after due"): unos 3.5 reinicios del flujo por segundo frente a ~1.2 escaneando (medido). A
+# huecos no hay plazo que cumplir (wifi-sdr no comprueba el deadline). RxSettings::allow_gapped ya existia
+# (velocidades que el enlace no da en continuo); aqui ademas fuerza los huecos a cualquier velocidad. Sin tocar
+# receiver.h: solo se parchea receiver.cpp (ver CMakeLists.txt).
+_kp_change(gapped third_party/wifi-sdr/src/receiver.cpp
+  [=[    c.gapped = cur.rate_sel < _caps.min_rate_sel;
+]=]
+  [=[    // [FPVDesktopWiFiReceiver, added at build time] allow_gapped: gapped at any rate (channel survey)
+    c.gapped = cur.rate_sel < _caps.min_rate_sel || cur.allow_gapped;
 ]=])
 
 # ---- comb --------------------------------------------------------------------------------------------------
