@@ -200,6 +200,9 @@ void Radio::tune(double hz, int rate_sel) {
   {
     std::lock_guard<std::mutex> l(_m);
     const double g = _survey ? kSurveyGainDb : _gain_db;
+    // survey: one bank at a time (cmake/kepyur_patches.cmake, set "gapped"): it needs no contiguous samples
+    // and the chip then never misses a deadline while it retunes nonstop
+    s.allow_gapped = _survey;
     s.agc = g < 0;
     if (g >= 0) s.gain_db = g;
   }
