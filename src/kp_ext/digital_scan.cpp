@@ -186,8 +186,12 @@ std::vector<DigitalSignal> DigitalScan::step_done(double centre_hz) {
                 const Abs &lo = up ? p : a, &hi = up ? a : p;
                 if (!lo.clip_hi || lo.clip_lo || !hi.clip_lo || hi.clip_hi) continue;
                 if (std::min(lo.f1, hi.f1) - std::max(lo.f0, hi.f0) < 1e6) continue;
-                whole.push_back(Abs{lo.f0, hi.f1, false, false, std::max(lo.snr, hi.snr), std::min(lo.flat, hi.flat),
-                                    std::min(lo.duty, hi.duty)});
+                // plano y continuo: el de la mitad mejor. Cada mitad ve la senal junto al borde de su filtro y uno
+                // de los dos pasos la tiene encima de su DC: con un VTX HDZero real en R1 el paso de 5650 MHz media
+                // flat 0.6-0.8 y duty 0.5-0.9 y el de 5670 MHz 0.96 y 1.00 en cada escaneo. El WiFi sigue fuera:
+                // va a rafagas en las dos mitades.
+                whole.push_back(Abs{lo.f0, hi.f1, false, false, std::max(lo.snr, hi.snr), std::max(lo.flat, hi.flat),
+                                    std::max(lo.duty, hi.duty)});
             }
     }
     prev_ = now;
