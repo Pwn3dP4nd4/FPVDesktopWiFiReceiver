@@ -31,7 +31,9 @@ case "$MODE" in
     git submodule update --init "$K"
     nested ;;
   update|--latest)
-    old=$(git -C "$K" rev-parse --short HEAD 2>/dev/null || echo none)
+    # la version fijada en este repo (no "git -C $K": sin inicializar, p.ej. en el CI, $K no es un repo y git
+    # respondia con el commit de este repo)
+    old=$(git rev-parse --short "HEAD:$K" 2>/dev/null || echo none)
     git submodule update --init --remote "$K"
     nested
     if [ "$MODE" = --latest ]; then
@@ -44,7 +46,9 @@ case "$MODE" in
     fi
     new=$(git -C "$K" rev-parse --short HEAD)
     echo "kepyur: $old -> $new"
-    [ "$old" != none ] && [ "$old" != "$new" ] && git -C "$K" log --oneline "$old..$new" | head -30
+    if [ "$old" != none ] && [ "$old" != "$new" ]; then
+      git -C "$K" log --oneline "$old..$new" | head -30 || echo "(sin historial entre $old y $new)"
+    fi
     git submodule status --recursive 2>/dev/null | grep -v reference/ || true ;;
   *) echo "uso: $0 [--init | --latest]" >&2; exit 2 ;;
 esac
