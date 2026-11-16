@@ -226,12 +226,21 @@ void Radio::survey() {
   std::lock_guard<std::mutex> l(_m);
   _survey = true;
   _resume_hz = 0;
-  _grid.reset();
+  {
+    const int m = _grid.memory();
+    _grid.reset();
+    _grid.set_memory(m);
+  }
   _sweep_start_ms = now_ms();
   _sweep_ms = 0;
   _pilots.clear();
   _mode = Mode::Scan;
   _mode_epoch++;
+}
+
+void Radio::set_survey_memory(int sweeps) {
+  std::lock_guard<std::mutex> l(_m);
+  _grid.set_memory(sweeps);
 }
 
 std::vector<SurveyBin> Radio::survey_spectrum(int *sweeps) {

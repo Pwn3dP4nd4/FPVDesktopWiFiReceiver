@@ -6,8 +6,8 @@
 // down the band). A signal as wide as a whole step (a 40/80/160 MHz WiFi channel) raises that step's floor
 // suddenly, so it still shows; it would not if each step were measured against its own floor alone.
 //
-// Every bin keeps a sliding average (about the last kMemory sweeps), so what changes in the band (a WiFi that
-// turns on, a pilot that leaves) shows within a minute; the strongest burst fades kPeakDecayDb per sweep.
+// Every bin keeps a sliding average of about the last memory() sweeps (set_memory), so what changes in the band
+// (a WiFi that turns on, a pilot that leaves) shows; the strongest burst fades 20 dB over that many sweeps.
 #pragma once
 #include <complex>
 #include <map>
@@ -41,13 +41,15 @@ class SurveyGrid {
  public:
   static constexpr double kLo = 5300e6, kBin = 40e6 / 256;
   static constexpr int kBins = 4480;                    // 5300..6000 MHz
-  static constexpr int kMemory = 20;                    // sweeps in the sliding average (~40 s)
-  static constexpr double kPeakDecayDb = 1;             // per sweep
+  static constexpr int kMemory = 20;                    // default sweeps in the sliding average
+  static constexpr double kPeakFadeDb = 20;             // the strongest burst fades this over memory() sweeps
   static constexpr double kDutyOver = 4;                // 6 dB over the floor counts as "on"
   static constexpr double kSlopeDb = 2;                 // the chip's floor changes at most this from step to step
   static constexpr double kFloorWeight = 0.25;          // sliding average of each step's floor
 
   void reset();
+  void set_memory(int sweeps) { _memory = sweeps < 1 ? 1 : sweeps; }
+  int memory() const { return _memory; }
   // Floor to judge levels by at a step (the step's own, capped by its neighbours'), 0 = not seen yet
   double reference(double centre_hz) const;
   void merge(const SurveyStep &s);
@@ -66,6 +68,7 @@ class SurveyGrid {
   std::map<long, double> _step_floor;  // by step centre (kHz)
   std::map<long, double> _step_ref;    // _step_floor capped by the neighbours (update_refs)
   int _sweeps = 0;
+  int _memory = kMemory;
 };
 
 // One capture: 0.1 ms slices (16 FFTs of 256, Hann). Bins within 0.3 MHz of DC (the chip's LO leak) and

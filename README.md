@@ -244,7 +244,7 @@ How it measures: with a fixed gain, so every step of the sweep is on the same sc
 own floor, but that floor may rise at most 2 dB over its neighbours' (the chip's changes slowly: ~8 dB from 5950 to
 5640 MHz); a 40/80/160 MHz WiFi that fills a whole step raises its floor suddenly and still shows. For
 every 156 kHz it keeps the average, the strongest burst (fading 1 dB per sweep) and how much of the time it is 6 dB
-over the floor, as a sliding average of ~20 sweeps (`src/radio/survey.cpp`, test bench: `survey_test`).
+over the floor, as a sliding average of the last sweeps (5, 10, 20 or 40: **Remember**) (`src/radio/survey.cpp`, test bench: `survey_test`).
 
 How it chooses: each channel is scored by the average interference within its width (analog 20 MHz, HDZero 27 or
 17 MHz) plus the share of time intermittent signals (WiFi) hit it; a channel where a pilot already is is ruled out.

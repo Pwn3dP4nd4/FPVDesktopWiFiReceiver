@@ -56,12 +56,12 @@ void SurveyGrid::merge(const SurveyStep &s) {
   if (f == _step_floor.end()) _step_floor[key] = s.floor;
   else f->second += kFloorWeight * (s.floor - f->second);
   update_refs();
-  const double decay = std::pow(10.0, -kPeakDecayDb / 10);
+  const double decay = std::pow(10.0, -kPeakFadeDb / _memory / 10);
   for (const auto &b : s.bins) {
     if (b.index < 0 || b.index >= kBins) continue;
     auto &a = _acc[static_cast<size_t>(b.index)];
-    // plain average for the first kMemory updates, then exponential with the same weight
-    a.n = std::min(a.n + 1, kMemory);
+    // plain average for the first memory() updates, then exponential with the same weight
+    a.n = std::min(a.n + 1, _memory);
     const double w = 1.0 / a.n;
     a.mean += w * (b.mean - a.mean);
     a.duty += w * (b.duty - a.duty);

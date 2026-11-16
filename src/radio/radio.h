@@ -76,6 +76,8 @@ public:
   // Channel survey: sweep the scan plan (set_scan_plan) over and over, listing pilots (digital ones too) and
   // accumulating the spectrum (survey_spectrum) until another mode is set. Never tunes to a pilot.
   void survey();
+  // Survey: sweeps in the sliding average (src/radio/survey.h); applies at once, data kept
+  void set_survey_memory(int sweeps);
   std::vector<SurveyBin> survey_spectrum(int *sweeps = nullptr);
   void watch(double hz);
   void stream_test(int rate_sel, double seconds);

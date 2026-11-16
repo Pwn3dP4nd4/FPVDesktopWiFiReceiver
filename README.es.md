@@ -249,7 +249,7 @@ Cómo mide: con ganancia fija, así todos los pasos del barrido están en la mis
 suelo, pero ese suelo solo puede subir 2 dB sobre el de los pasos vecinos (el del chip cambia despacio: ~8 dB de
 5950 a 5640 MHz); un WiFi de 40/80/160 MHz que llena un paso entero sube su suelo de golpe y se ve igual.
 Por cada 156 kHz guarda la media, la ráfaga más fuerte (se apaga 1 dB por barrido) y qué parte del tiempo pasa
-6 dB del suelo, con media deslizante de ~20 barridos (`src/radio/survey.cpp`, banco: `survey_test`).
+6 dB del suelo, con media deslizante de los últimos barridos (5, 10, 20 o 40: **Recordar**) (`src/radio/survey.cpp`, banco: `survey_test`).
 
 Cómo elige: cada canal se puntúa por la interferencia media dentro de su ancho (analógico 20 MHz, HDZero 27 o 17
 MHz) más la parte del tiempo que lo pisan señales intermitentes (WiFi); un canal donde ya hay un piloto queda

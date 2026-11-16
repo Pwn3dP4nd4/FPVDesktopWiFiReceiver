@@ -6,6 +6,7 @@
 #include "channel_advisor.h"
 
 class QCheckBox;
+class QComboBox;
 class QListWidget;
 class QLabel;
 class QPushButton;
@@ -18,15 +19,17 @@ class SpectrumView : public QWidget {
     Q_OBJECT
 public:
     explicit SpectrumView(QWidget *parent = nullptr);
-    void setData(const SurveyData &d, const advisor::Advice &a, double loMHz, double hiMHz);
+    void setData(const SurveyData &d, const advisor::Advice &a, double loMHz, double hiMHz,
+                 const QStringList &mine = {});
     QSize sizeHint() const override { return {760, 300}; }
 
 protected:
     void paintEvent(QPaintEvent *) override;
 
 private:
-    SurveyData data_;
+    SurveyData data_;              // los bins juntados de 1 en 1 MHz (se dibujan mas limpios)
     advisor::Advice advice_;
+    QStringList mine_;
     double lo_ = 5640, hi_ = 5950;
 };
 
@@ -43,6 +46,7 @@ public:
 
 signals:
     void requestStart(double loMHz, double hiMHz);
+    void requestMemory(int sweeps);
     void requestStop();
     void runningChanged(bool running);
 
@@ -65,6 +69,8 @@ private:
     QVector<QCheckBox *> bandBoxes_;
     QSpinBox *nAnalog_ = nullptr, *nHdz_ = nullptr;
     QCheckBox *narrow_ = nullptr;
+    QComboBox *memory_ = nullptr;
+    QLabel *memoryLbl_ = nullptr;
     QListWidget *air_ = nullptr;  // pilotos en el aire; marcados = mios (su canal no cuenta como ocupado)
     QLabel *airTitle_ = nullptr;
     QStringList mine_;            // nombres de canal (o MHz) marcados como mios

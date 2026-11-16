@@ -36,6 +36,7 @@ public slots:
     void setDigitalScan(bool on) override;
     void startSurvey(double loMHz, double hiMHz) override;
     void stopSurvey() override;
+    void setSurveyMemory(int sweeps) override;
 
 private:
     void ensureObjects();
@@ -57,6 +58,7 @@ private:
     QString lastFault_;  // ultimo last_fault registrado (cada fallo del flujo, una linea en el log)
     std::vector<double> scanPlan_;  // centros de paso (Hz); vacio = plan completo
     bool digitalScan_ = false;      // modo experimental (se aplica tambien a una radio creada despues)
+    int surveyMemory_ = 20;            // analizador: barridos en la media (setSurveyMemory)
     std::vector<double> surveyPlan_;  // analizador de canales en marcha: sus pasos; vacio = no
     void emitSurvey(const QJsonArray &pilots);
 };

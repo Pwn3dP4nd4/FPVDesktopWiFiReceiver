@@ -143,6 +143,25 @@
         <source>Analysing %1-%2 MHz...</source>
         <translation>Analizando %1-%2 MHz...</translation>
     </message>
+    <message>
+        <source>Ready: choose the bands and press Start analysis.</source>
+        <translation>Listo: elige las bandas y pulsa Empezar el análisis.</translation>
+    </message>
+    <message>
+        <source>Remember</source>
+        <translation>Recordar</translation>
+    </message>
+    <message numerus="yes">
+        <source>last %n sweep(s)</source>
+        <translation>
+            <numerusform>último %n barrido</numerusform>
+            <numerusform>últimos %n barridos</numerusform>
+        </translation>
+    </message>
+    <message>
+        <source>How many recent sweeps the graph and the advice average. Fewer: it follows changes faster but is noisier. More: steadier, slower to forget.</source>
+        <translation>Cuántos barridos recientes promedian la gráfica y la recomendación. Menos: sigue antes los cambios pero se ve más ruidosa. Más: más estable, tarda más en olvidar.</translation>
+    </message>
     <message numerus="yes">
         <source>Stopped after %n sweep(s).</source>
         <translation>
@@ -154,12 +173,9 @@
         <source>Analysing %1-%2 MHz: first sweep...</source>
         <translation>Analizando %1-%2 MHz: primer barrido...</translation>
     </message>
-    <message numerus="yes">
-        <source>Analysing %1-%2 MHz: %n sweep(s).</source>
-        <translation>
-            <numerusform>Analizando %1-%2 MHz: %n barrido.</numerusform>
-            <numerusform>Analizando %1-%2 MHz: %n barridos.</numerusform>
-        </translation>
+    <message>
+        <source>Analysing %1-%2 MHz: sweep %3/%4 (%5 in total).</source>
+        <translation>Analizando %1-%2 MHz: barrido %3/%4 (%5 en total).</translation>
     </message>
     <message>
         <source>already in use (%1)</source>

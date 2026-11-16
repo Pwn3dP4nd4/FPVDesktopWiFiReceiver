@@ -209,7 +209,13 @@ void RadioBackend::startSurvey(double loMHz, double hiMHz) {
     KP_LOGI("analizador: %.0f-%.0f MHz, %d paso(s)", loMHz, hiMHz, int(surveyPlan_.size()));
     if (!radio_ || !radio_->is_open()) return;
     radio_->set_scan_plan(surveyPlan_);
+    radio_->set_survey_memory(surveyMemory_);
     radio_->survey();
+}
+
+void RadioBackend::setSurveyMemory(int sweeps) {
+    surveyMemory_ = sweeps;
+    if (radio_) radio_->set_survey_memory(sweeps);
 }
 
 void RadioBackend::stopSurvey() {
