@@ -647,7 +647,7 @@ void Radio::handle_scan(Bank &b) {
     {
       std::lock_guard<std::mutex> l(_m);
       survey = _survey;
-      floor_hint = _grid.floor();
+      floor_hint = _grid.reference(_cap_centre);
     }
     if (survey) {
       const SurveyStep st = survey_measure(x.data(), x.size(), _cap_centre, kFs, kEdge, floor_hint);

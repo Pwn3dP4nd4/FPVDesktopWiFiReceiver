@@ -245,8 +245,9 @@ Opciones de línea de comandos (opcionales, para pruebas): `--demo` sin hardware
    su interferencia, el % de tiempo con ráfagas y notas. Sigue más o menos el último minuto de la banda: lo que
    aparece o se va se nota enseguida.
 
-Cómo mide: con ganancia fija, así todos los pasos del barrido están en la misma escala, y en dB sobre el suelo del
-paso más tranquilo; un WiFi de 40/80/160 MHz que llena un paso entero se ve igual (no se confunde con el suelo).
+Cómo mide: con ganancia fija, así todos los pasos del barrido están en la misma escala. Cada paso se mide sobre su
+suelo, pero ese suelo solo puede subir 2 dB sobre el de los pasos vecinos (el del chip cambia despacio: ~8 dB de
+5950 a 5640 MHz); un WiFi de 40/80/160 MHz que llena un paso entero sube su suelo de golpe y se ve igual.
 Por cada 156 kHz guarda la media, la ráfaga más fuerte (se apaga 1 dB por barrido) y qué parte del tiempo pasa
 6 dB del suelo, con media deslizante de ~20 barridos (`src/radio/survey.cpp`, banco: `survey_test`).
 

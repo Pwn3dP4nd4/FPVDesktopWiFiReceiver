@@ -240,8 +240,9 @@ connect on startup · `--lang en|es|system` interface language (saved) · `--ver
    the share of time with bursts and notes. It follows roughly the last minute of the band: what appears or
    leaves shows quickly.
 
-How it measures: with a fixed gain, so every step of the sweep is on the same scale, in dB over the floor of the
-quietest step; a 40/80/160 MHz WiFi that fills a whole step still shows (it is not mistaken for the floor). For
+How it measures: with a fixed gain, so every step of the sweep is on the same scale. Each step is measured over its
+own floor, but that floor may rise at most 2 dB over its neighbours' (the chip's changes slowly: ~8 dB from 5950 to
+5640 MHz); a 40/80/160 MHz WiFi that fills a whole step raises its floor suddenly and still shows. For
 every 156 kHz it keeps the average, the strongest burst (fading 1 dB per sweep) and how much of the time it is 6 dB
 over the floor, as a sliding average of ~20 sweeps (`src/radio/survey.cpp`, test bench: `survey_test`).
 

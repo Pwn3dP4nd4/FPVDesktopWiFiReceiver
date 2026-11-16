@@ -11,19 +11,51 @@ namespace fpv {
 void SurveyGrid::reset() {
   _acc.assign(kBins, Acc{});
   _step_floor.clear();
+  _step_ref.clear();
   _sweeps = 0;
 }
 
-double SurveyGrid::floor() const {
-  double f = 0;
-  for (const auto &kv : _step_floor)
-    if (f == 0 || kv.second < f) f = kv.second;
-  return f;
+double SurveyGrid::reference(double centre_hz) const {
+  const long key = std::lround(centre_hz / 1e3);
+  const auto it = _step_ref.find(key);
+  if (it != _step_ref.end()) return it->second;
+  // a step not seen yet: the nearest one's, plus the slope it may have over that distance (30 MHz a step)
+  double best = 0;
+  long dist = 0;
+  for (const auto &kv : _step_ref) {
+    const long d = std::labs(kv.first - key);
+    if (best == 0 || d < dist) {
+      best = kv.second;
+      dist = d;
+    }
+  }
+  if (best <= 0) return 0;
+  return best * std::pow(10.0, kSlopeDb / 10 * std::ceil(static_cast<double>(dist) / 30e3));
+}
+
+void SurveyGrid::update_refs() {
+  const double k = std::pow(10.0, kSlopeDb / 10);
+  _step_ref = _step_floor;
+  double prev = 0;
+  for (auto &kv : _step_ref) {  // up the band
+    if (prev > 0) kv.second = std::min(kv.second, prev * k);
+    prev = kv.second;
+  }
+  prev = 0;
+  for (auto it = _step_ref.rbegin(); it != _step_ref.rend(); ++it) {  // and down
+    if (prev > 0) it->second = std::min(it->second, prev * k);
+    prev = it->second;
+  }
 }
 
 void SurveyGrid::merge(const SurveyStep &s) {
   if (_acc.size() != static_cast<size_t>(kBins)) _acc.assign(kBins, Acc{});
-  _step_floor[std::lround(s.centre_hz / 1e3)] = s.floor;
+  const long key = std::lround(s.centre_hz / 1e3);
+  if (s.floor <= 0) return;
+  auto f = _step_floor.find(key);
+  if (f == _step_floor.end()) _step_floor[key] = s.floor;
+  else f->second += kFloorWeight * (s.floor - f->second);
+  update_refs();
   const double decay = std::pow(10.0, -kPeakDecayDb / 10);
   for (const auto &b : s.bins) {
     if (b.index < 0 || b.index >= kBins) continue;
@@ -34,16 +66,18 @@ void SurveyGrid::merge(const SurveyStep &s) {
     a.mean += w * (b.mean - a.mean);
     a.duty += w * (b.duty - a.duty);
     a.peak = std::max(b.peak, a.peak * decay);
+    a.step = key;
   }
 }
 
 std::vector<SurveyBin> SurveyGrid::spectrum() const {
   std::vector<SurveyBin> out;
-  const double f = floor();
-  if (f <= 0) return out;
   for (size_t i = 0; i < _acc.size(); i++) {
     const auto &a = _acc[i];
     if (a.n == 0) continue;
+    const auto r = _step_ref.find(a.step);
+    if (r == _step_ref.end() || r->second <= 0) continue;
+    const double f = r->second;
     SurveyBin b;
     b.mhz = (kLo + (static_cast<double>(i) + 0.5) * kBin) / 1e6;
     b.mean_db = static_cast<float>(10 * std::log10(std::max(a.mean, 1e-30) / f));

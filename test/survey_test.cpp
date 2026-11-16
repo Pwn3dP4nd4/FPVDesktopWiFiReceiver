@@ -1,5 +1,6 @@
 // Medida del analizador (src/radio/survey.cpp) con IQ sinteticos, sin adaptador.
 //   survey_test        todos los casos; sale con 1 si alguno falla
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <random>
@@ -54,16 +55,16 @@ int main() {
         g.reset();
         for (int sweep = 0; sweep < 3; sweep++) {
             auto a = capture(0, 0);
-            g.merge(survey_measure(a.data(), a.size(), 5700e6, kFs, kEdge, g.floor()));
+            g.merge(survey_measure(a.data(), a.size(), 5700e6, kFs, kEdge, g.reference(5700e6)));
             auto b = capture(std::sqrt(10.0), 1);  // +10 dB en todo el paso
-            g.merge(survey_measure(b.data(), b.size(), 5730e6, kFs, kEdge, g.floor()));
+            g.merge(survey_measure(b.data(), b.size(), 5730e6, kFs, kEdge, g.reference(5730e6)));
             g.end_sweep();
         }
         const auto s = g.spectrum();
         const double clean = level(s, 5690, 5710, &SurveyBin::mean_db);
         const double wifi = level(s, 5720, 5740, &SurveyBin::mean_db);
         std::printf("  limpio %.1f dB, paso ocupado %.1f dB\n", clean, wifi);
-        check(std::fabs(clean) < 1.5 && wifi > 8.5 && wifi < 11.5, "un paso entero ocupado se ve (~+10 dB), no como suelo");
+        check(std::fabs(clean) < 1.5 && wifi > 6.5 && wifi < 11.5, "un paso entero ocupado se ve (+10 dB menos la pendiente)");
     }
     // A1: rafagas el 30 % del tiempo: duty ~0.3 y pico muy por encima de la media
     {
@@ -72,7 +73,7 @@ int main() {
         auto a = capture(0, 0);
         g.merge(survey_measure(a.data(), a.size(), 5700e6, kFs, kEdge, 0));
         auto b = capture(std::sqrt(100.0), 0.3);  // +20 dB el 30 % del tiempo
-        g.merge(survey_measure(b.data(), b.size(), 5730e6, kFs, kEdge, g.floor()));
+        g.merge(survey_measure(b.data(), b.size(), 5730e6, kFs, kEdge, g.reference(5730e6)));
         g.end_sweep();
         const auto s = g.spectrum();
         const double duty = level(s, 5720, 5740, &SurveyBin::duty);
@@ -92,11 +93,11 @@ int main() {
         auto b = capture(std::sqrt(100.0), 0.3);
         auto c = capture(0, 0);
         g.merge(survey_measure(a.data(), a.size(), 5700e6, kFs, kEdge, 0));
-        g.merge(survey_measure(b.data(), b.size(), 5730e6, kFs, kEdge, g.floor()));
+        g.merge(survey_measure(b.data(), b.size(), 5730e6, kFs, kEdge, g.reference(5730e6)));
         g.end_sweep();
         for (int sweep = 0; sweep < 3 * SurveyGrid::kMemory; sweep++) {
-            g.merge(survey_measure(a.data(), a.size(), 5700e6, kFs, kEdge, g.floor()));
-            g.merge(survey_measure(c.data(), c.size(), 5730e6, kFs, kEdge, g.floor()));
+            g.merge(survey_measure(a.data(), a.size(), 5700e6, kFs, kEdge, g.reference(5700e6)));
+            g.merge(survey_measure(c.data(), c.size(), 5730e6, kFs, kEdge, g.reference(5730e6)));
             g.end_sweep();
         }
         const auto s = g.spectrum();
@@ -105,6 +106,29 @@ int main() {
         std::printf("  tras %d barridos sin rafagas: media %.1f dB, duty %.3f, pico %.1f dB\n",
                     3 * SurveyGrid::kMemory, mean, duty, level(s, 5720, 5740, &SurveyBin::peak_db));
         check(mean < 1.5 && duty < 0.02, "una rafaga que se fue deja de contar en ~1 min");
+    }
+    // suelo propio del chip que sube poco a poco (0.8 dB por paso, como el 8812BU de 5950 a 5640 MHz): plano
+    {
+        SurveyGrid g;
+        g.reset();
+        for (int sweep = 0; sweep < 3; sweep++) {
+            for (int st = 0; st < 10; st++) {
+                const double c = 5650e6 + st * 30e6;
+                auto x = capture(0, 0);
+                const float gain = static_cast<float>(std::pow(10.0, 0.8 * (10 - st) / 20));
+                for (auto &v : x) v *= gain;
+                g.merge(survey_measure(x.data(), x.size(), c, kFs, kEdge, g.reference(c)));
+            }
+            g.end_sweep();
+        }
+        const auto s = g.spectrum();
+        double worst = 0, duty = 0;
+        for (const auto &b : s) {
+            worst = std::max(worst, static_cast<double>(b.mean_db));
+            duty = std::max(duty, static_cast<double>(b.duty));
+        }
+        std::printf("  suelo con pendiente de 8 dB: peor media %.1f dB, duty max %.2f\n", worst, duty);
+        check(worst < 1.5 && duty < 0.05, "la pendiente del suelo del chip no parece interferencia");
     }
     // DC y bordes fuera; rejilla alineada
     {
