@@ -3,13 +3,13 @@
 ; Por que existe: Windows trae su propio driver Realtek (netrtwlanu.inf) para 0BDA:B812 y lo vuelve a poner
 ; cada vez que el adaptador se enumera (al enchufarlo o al pasar de USB 2 a USB 3). El WinUSB que genera Zadig
 ; empata con el en puntuacion y pierde el desempate por fecha (2012 frente a 2019).
-; Este INF gana de tres formas:
-;   - FeatureScore 0x80: el driver Realtek que trae Windows Update (netrtwlanu.inf 1030.52, 2026) declara 0xFE y,
-;     como el feature score pesa mas que el ID coincidente, sin esto ganaba aunque nosotros coincidamos con el ID
-;     especifico (clasificacion 00FE0001 suya frente a 00FF0000 nuestra);
-;   - para 0BDA:B812 tambien coincide con el ID mas especifico del dispositivo (&REV_0210): mejor puntuacion
-;     que el driver Realtek, que solo coincide con el ID generico;
-;   - DriverVer posterior al driver Realtek: gana el desempate con los IDs genericos (otros modelos).
+; Este INF gana asi:
+;   - FeatureScore 0x80 (lo que decide): el driver Realtek que trae Windows Update (netrtwlanu.inf 1030.52, 2026)
+;     declara 0xFE y el feature score pesa mas que el ID coincidente. Sin esto ganaba siempre (00FE0001 suyo
+;     frente a 00FF0000 / 00FF0001 nuestro). Con el: 00800000 en USB 2 y 00800001 en USB 3.
+;   - &REV_0210 solo coincide en USB 2: en USB 3 el chip se presenta como &REV_0300 y solo vale el ID generico.
+;     Frente al driver Realtek de serie de Windows (00FF0001) basta el feature score; el ID especifico es un extra.
+;   - DriverVer posterior a los drivers Realtek: desempate si otro driver igualara el feature score.
 ; Se instala con scripts/windows-driver.ps1 (firma local, una sola vez, como administrador).
 
 [Version]

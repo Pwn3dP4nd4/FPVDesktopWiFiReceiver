@@ -29,6 +29,11 @@ Banco de pruebas: `test/reopen_test.cpp` (`cmake --build build/msys2 --target re
   `00FF0000`. `pnputil /add-driver /install` devolvía 259 (ningún dispositivo actualizado) y el adaptador se
   quedaba en `RtlWlanu`. Arreglo: `FeatureScore = 0x80` en nuestro INF, y el script ya no se fía del código de
   pnputil: si el adaptador conectado no queda en WinUSB, muestra los candidatos con su clasificación y falla.
+  Comprobado: queda en WinUSB al reenchufar y tras el cambio a USB 3 (`reopen_test --usb2`, 2.453 bloques/s).
+- **El ID específico solo cuenta en USB 2.** En USB 3 el chip se presenta como `&REV_0300`, así que `&REV_0210`
+  no coincide y solo vale el ID genérico: clasificación `00800001` nuestra frente a `00FE0001` / `00FF0001` de
+  los Realtek. Lo que decide en los dos modos es el `FeatureScore`; antes de añadirlo, en USB 3 se ganaba al
+  driver de serie solo por el desempate de fecha.
 
 ## 2. UsbDk como alternativa a Zadig
 
