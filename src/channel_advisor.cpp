@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <iterator>
 #include <limits>
 
 #include "spectrum.h"  // kp::fpv_channels()
@@ -17,8 +18,52 @@ constexpr double kSpreadCost = 40;     // dB*MHz: 1 dB a 40 MHz, 0.5 dB a 80 MHz
 constexpr float kImdCost = 3;          // dB por producto de intermodulacion encima de otro canal
 constexpr double kImdReach = 4;        // MHz: un producto a menos de esto de un canal analogico lo afecta
 constexpr float kInfeasible = 1000;    // separacion por debajo de la minima
+// Una red WiFi suma por estar ahi aunque ahora calle: 0.25 dB por dB de pico sobre kWifiCostFrom, hasta 6 dB (un
+// beacon a 20 dB: 3.5 dB, como un canal pisado el 17 % del tiempo). En el resto de su bloque, la mitad.
+constexpr float kWifiCostFrom = 6, kWifiCostPerDb = 0.25f, kWifiMaxCost = 6, kWifiBlockShare = 0.5f;
+constexpr double kWifiLitShare = 0.6;  // parte de los bins de una mitad del canal que tienen que haberse encendido
+constexpr double kBinMhz = 0.15625;    // ancho de un bin del barrido (fpv::SurveyGrid::kBin)
+// un canal WiFi detectado con otro a menos de esto (MHz entre centros) al menos tantos dB mas fuerte es su hombro
+constexpr double kWifiShoulderMhz = 40;
+constexpr float kWifiShoulderDb = 10;
+
+// Canales WiFi de 20 MHz que se buscan (de 4 en 4): 68-96 no existen ni en la UE ni en EE. UU. (hueco 5350-5470)
+struct ChRange {
+    int first, last;
+};
+constexpr ChRange kWifiChannels[] = {{36, 64}, {100, 144}, {149, 177}};
+// El bloque mas ancho que puede usar cada canal (primero y ultimo de cada uno), segun la region; un canal fuera de
+// todos va solo (20 MHz)
+constexpr ChRange kBondsEu[] = {{36, 48}, {52, 64}, {100, 112}, {116, 128}, {132, 136}, {149, 161}};
+constexpr ChRange kBondsUs[] = {{36, 48}, {52, 64}, {100, 112}, {116, 128}, {132, 144}, {149, 161}, {165, 177}};
+
+void wifi_block(int ch, Region region, double &lo, double &hi) {
+    lo = 5000 + 5.0 * ch - 10;
+    hi = lo + 20;
+    const auto pick = [&](const ChRange *b, size_t n) {
+        for (size_t i = 0; i < n; i++)
+            if (ch >= b[i].first && ch <= b[i].last) {
+                lo = 5000 + 5.0 * b[i].first - 10;
+                hi = 5000 + 5.0 * b[i].last + 10;
+            }
+    };
+    if (region == Region::Eu) pick(kBondsEu, std::size(kBondsEu));
+    else pick(kBondsUs, std::size(kBondsUs));
+}
 
 double sig_width(const Signal &s) { return s.digital && s.bw_mhz > 0 ? s.bw_mhz : kAnalogBw; }
+
+bool covered_by_pilot(const Wifi &w, const std::vector<Signal> &seen) {
+    for (const auto &s : seen)
+        if (std::fabs(w.mhz - s.mhz) < sig_width(s) / 2) return true;
+    return false;
+}
+
+float median(std::vector<float> v) {
+    if (v.empty()) return 0;
+    std::nth_element(v.begin(), v.begin() + v.size() / 2, v.end());
+    return v[v.size() / 2];
+}
 
 float pair_cost(const Candidate &a, const Candidate &b, bool *close) {
     const double d = std::fabs(a.mhz - b.mhz);
@@ -164,7 +209,117 @@ void mask_signal(std::vector<Bin> &bins, const Signal &s) {
     }
 }
 
-Rating rate(const Candidate &c, const std::vector<Bin> &bins, const std::vector<Signal> &seen) {
+std::vector<Wifi> find_wifi(const std::vector<Bin> &bins, Region region, const std::vector<Signal> &seen) {
+    std::vector<Wifi> out;
+    if (bins.empty()) return out;
+    const double half = kWifiOccupied / 2;
+    const double expect = half / kBinMhz;  // bins en una mitad
+    float lit_at;                          // pico que tiene que pasar un bin (dB sobre el suelo)
+    {
+        // percentil 25 de los picos: el ruido aunque haya mucho ocupado (WiFi, pilotos) en la banda
+        std::vector<float> pk;
+        pk.reserve(bins.size());
+        for (const auto &b : bins) pk.push_back(b.peak_db);
+        std::nth_element(pk.begin(), pk.begin() + pk.size() / 4, pk.end());
+        lit_at = std::max(kWifiPeakMin, pk[pk.size() / 4] + kWifiOverNoise);
+    }
+    for (const auto &g : kWifiChannels)
+        for (int n = g.first; n <= g.last; n += 4) {
+            const double c = 5000 + 5.0 * n;
+            int total[2] = {0, 0}, lit[2] = {0, 0};
+            double duty = 0;
+            std::vector<float> peaks, means;
+            for (const auto &b : bins) {
+                const double d = b.mhz - c;
+                if (std::fabs(d) > half) continue;
+                const int side = d < 0 ? 0 : 1;
+                total[side]++;
+                duty += b.duty;
+                means.push_back(b.mean_db);
+                if (b.peak_db - b.mean_db > kBurstPeakOverMean && b.peak_db >= lit_at) {
+                    lit[side]++;
+                    peaks.push_back(b.peak_db);
+                }
+            }
+            bool on = false;
+            for (int s = 0; s < 2; s++) on = on || (total[s] >= expect / 2 && lit[s] >= kWifiLitShare * total[s]);
+            if (!on) continue;
+            Wifi w;
+            w.ch = n;
+            w.mhz = c;
+            w.peak_db = median(peaks);
+            w.mean_db = median(means);
+            w.duty = static_cast<float>(duty / (total[0] + total[1]));
+            w.traffic = w.mean_db >= kWifiTrafficDb;
+            wifi_block(n, region, w.block_lo, w.block_hi);
+            if (!covered_by_pilot(w, seen)) out.push_back(w);
+        }
+    // los hombros de una senal fuerte (lo que derrama un WiFi a los lados: medido, un bloque de 80 MHz a 33 dB baja
+    // de 24 a 13 dB en los 30 MHz siguientes) parecen canales WiFi flojos al lado: fuera los que tienen cerca otro
+    // mucho mas fuerte
+    std::vector<Wifi> kept;
+    for (const auto &w : out) {
+        bool shoulder = false;
+        for (const auto &o : out)
+            shoulder = shoulder || (std::fabs(o.mhz - w.mhz) <= kWifiShoulderMhz && o.peak_db >= w.peak_db + kWifiShoulderDb);
+        if (!shoulder) kept.push_back(w);
+    }
+    return kept;
+}
+
+void WifiMemory::update(const std::vector<Wifi> &now, const std::vector<Signal> &seen, double t_s) {
+    // lo que tapa un piloto no es un WiFi (uno recien llegado lo parece unos barridos): se olvida
+    nets_.erase(std::remove_if(nets_.begin(), nets_.end(), [&](const Entry &e) { return covered_by_pilot(e.w, seen); }),
+                nets_.end());
+    for (const auto &w : now) {
+        if (covered_by_pilot(w, seen)) continue;
+        auto it = std::find_if(nets_.begin(), nets_.end(), [&](const Entry &e) { return e.w.ch == w.ch; });
+        if (it == nets_.end()) {
+            nets_.push_back(Entry{w, t_s});
+            continue;
+        }
+        Wifi &k = it->w;
+        k.peak_db = std::max(k.peak_db, w.peak_db);
+        k.mean_db = std::max(k.mean_db, w.mean_db);
+        k.duty = std::max(k.duty, w.duty);
+        k.traffic = k.traffic || w.traffic;
+        k.block_lo = w.block_lo;
+        k.block_hi = w.block_hi;
+        it->last_s = t_s;
+    }
+    last_update_s_ = t_s;
+}
+
+std::vector<Wifi> WifiMemory::known(double t_s) const {
+    std::vector<Wifi> out;
+    for (const auto &e : nets_) {
+        if (t_s - e.last_s > kWifiHoldS) continue;
+        Wifi w = e.w;
+        w.now = e.last_s >= last_update_s_;
+        out.push_back(w);
+    }
+    std::sort(out.begin(), out.end(), [](const Wifi &a, const Wifi &b) { return a.ch < b.ch; });
+    return out;
+}
+
+std::vector<WifiGroup> group_wifi(const std::vector<Wifi> &wifi) {
+    auto w = wifi;
+    std::sort(w.begin(), w.end(), [](const Wifi &a, const Wifi &b) { return a.ch < b.ch; });
+    std::vector<WifiGroup> out;
+    for (size_t i = 0; i < w.size(); i++) {
+        if (!out.empty() && w[i].ch == out.back().last + 4 && w[i].block_lo == w[i - 1].block_lo &&
+            w[i].block_hi == w[i - 1].block_hi) {
+            out.back().last = w[i].ch;
+            out.back().hi = w[i].mhz + kWifiOccupied / 2;
+            continue;
+        }
+        out.push_back(WifiGroup{w[i].ch, w[i].ch, w[i].mhz - kWifiOccupied / 2, w[i].mhz + kWifiOccupied / 2});
+    }
+    return out;
+}
+
+Rating rate(const Candidate &c, const std::vector<Bin> &bins, const std::vector<Signal> &seen,
+            const std::vector<Wifi> &wifi) {
     Rating r;
     r.ch = c;
     const double half = width(c) / 2;
@@ -183,7 +338,34 @@ Rating rate(const Candidate &c, const std::vector<Bin> &bins, const std::vector<
     r.coverage = n ? static_cast<float>(std::min(1.0, (hi - lo + 0.15625) / (2 * half))) : 0.f;
     r.noise_db = n ? static_cast<float>(10 * std::log10(lin / n)) : 0.f;
     r.burst = n ? static_cast<float>(burst / n) : 0.f;
-    r.cost = r.noise_db + kBurstWeight * r.burst;
+    // redes WiFi: la que mas pese, encima (por la parte del canal que pisa) o en el resto de su bloque de 80 MHz
+    const auto overlap = [&](double a, double b) {
+        return std::max(0.0, std::min(b, c.mhz + half) - std::max(a, c.mhz - half));
+    };
+    for (size_t i = 0; i < wifi.size(); i++) {
+        const Wifi &w = wifi[i];
+        const float presence = std::clamp((w.peak_db - kWifiCostFrom) * kWifiCostPerDb, 0.f, kWifiMaxCost);
+        const double on = overlap(w.mhz - kWifiOccupied / 2, w.mhz + kWifiOccupied / 2);
+        float cost;
+        bool block = false;
+        if (on > 0) {
+            cost = presence * static_cast<float>(std::min(1.0, on / std::min(2 * half, kWifiOccupied)));
+        } else {
+            // el resto de su bloque, solo si no se sabe su ancho: con trafico, lo que usa ya se enciende y se
+            // detecta (medido: un 20 MHz con trafico deja su bloque callado)
+            if (w.traffic) continue;
+            const double in = overlap(w.block_lo, w.block_hi);
+            if (in <= 0) continue;
+            cost = kWifiBlockShare * presence * static_cast<float>(std::min(1.0, in / (2 * half)));
+            block = true;
+        }
+        if (cost > r.wifi_cost) {
+            r.wifi_cost = cost;
+            r.wifi = static_cast<int>(i);
+            r.wifi_block = block;
+        }
+    }
+    r.cost = r.noise_db + kBurstWeight * r.burst + r.wifi_cost;
     if (r.coverage < 0.5f) r.cost += kUnknownCost;
     for (size_t i = 0; i < seen.size(); i++) {
         const double gap = std::fabs(seen[i].mhz - c.mhz) - (sig_width(seen[i]) + width(c)) / 2;
@@ -197,10 +379,11 @@ Rating rate(const Candidate &c, const std::vector<Bin> &bins, const std::vector<
 }
 
 Advice advise(const std::vector<Bin> &bins, const std::vector<Signal> &seen, const std::vector<Candidate> &analog,
-              const std::vector<Candidate> &hdzero, int n_analog, int n_hdzero) {
+              const std::vector<Candidate> &hdzero, int n_analog, int n_hdzero, const std::vector<Wifi> *wifi) {
     Advice out;
-    for (const auto &c : analog) out.analog.push_back(rate(c, bins, seen));
-    for (const auto &c : hdzero) out.hdzero.push_back(rate(c, bins, seen));
+    out.wifi = wifi ? *wifi : find_wifi(bins, Region::Eu, seen);
+    for (const auto &c : analog) out.analog.push_back(rate(c, bins, seen, out.wifi));
+    for (const auto &c : hdzero) out.hdzero.push_back(rate(c, bins, seen, out.wifi));
     n_analog = std::clamp(n_analog, 0, static_cast<int>(analog.size()));
     n_hdzero = std::clamp(n_hdzero, 0, static_cast<int>(hdzero.size()));
     if (n_analog + n_hdzero == 0) {

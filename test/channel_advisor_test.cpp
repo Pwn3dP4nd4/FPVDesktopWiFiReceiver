@@ -25,6 +25,23 @@ std::vector<Bin> flat() {
     for (double f = 5300.078; f < 6000; f += 0.15625) b.push_back(Bin{f, 0.5f, 3.f, 0.f});
     return b;
 }
+// suelo con ruido como el medido con el adaptador (USB 3, 54 barridos, 5480-5940 MHz): media -0.1..1.5 dB, picos
+// 4-7 dB y duty ~2 %, salvo 5510-5640 MHz, donde los picos van por 7-9 dB en casi todo el tramo
+std::vector<Bin> noisy() {
+    std::vector<Bin> b;
+    unsigned s = 12345;
+    const auto u = [&s] {  // 0..1, determinista
+        s = s * 1103515245u + 12345u;
+        return static_cast<float>((s >> 8) & 0xffff) / 65535.f;
+    };
+    for (double f = 5300.078; f < 6000; f += 0.15625) {
+        const float mean = -0.1f + 1.6f * u();
+        const bool hot = f > 5510 && f < 5640;
+        const float peak = hot ? 7.f + 2.f * u() : 4.f + 3.f * u();
+        b.push_back(Bin{f, mean, peak, 0.01f + 0.03f * u()});
+    }
+    return b;
+}
 void add_block(std::vector<Bin> &b, double lo, double hi, float mean, float peak, float duty) {
     for (auto &x : b)
         if (x.mhz >= lo && x.mhz <= hi) {
@@ -133,6 +150,182 @@ int main() {
         add_block(c, 5764, 5774, 30, 31, 1);
         mask_signal(c, Signal{5731.5, 0, false, "R3"});
         check(rate(r4, c, {}).noise_db > 20, "un piloto ajeno al lado no se quita");
+    }
+    {
+        // un AP sin trafico en el canal WiFi 153 (5765 MHz): solo beacons, pico 20 dB y encendido el 0.3 % del
+        // tiempo. Por la parte del tiempo apenas cuesta; por estar ahi, si. Su bloque de 80 MHz (149-161,
+        // 5735-5815) cubre R3-R5: ahi la mitad.
+        auto b = flat();
+        add_block(b, 5765 - 8.3, 5765 + 8.3, 0.6f, 20, 0.003f);
+        const auto w = find_wifi(b);
+        std::printf("  AP callado en 153: %zu red(es)", w.size());
+        for (const auto &x : w) std::printf(" ch%d %.0f dB [%.0f-%.0f]", x.ch, x.peak_db, x.block_lo, x.block_hi);
+        std::printf("\n");
+        check(w.size() == 1 && w[0].ch == 153 && w[0].block_lo == 5735 && w[0].block_hi == 5815,
+              "ve un WiFi sin trafico (beacons) en el canal 153");
+        const Candidate r4{"R4", 5769, false}, r5{"R5", 5806, false}, r7{"R7", 5880, false};
+        const auto c4 = rate(r4, b, {}, w), c5 = rate(r5, b, {}, w), c7 = rate(r7, b, {}, w);
+        std::printf("  coste R4 %.1f (sin redes %.1f), R5 %.1f, R7 %.1f\n", c4.cost, rate(r4, b, {}).cost, c5.cost,
+                    c7.cost);
+        check(c4.wifi == 0 && !c4.wifi_block && c4.cost > rate(r4, b, {}).cost + 2,
+              "encima del AP callado: cuesta aunque no transmita");
+        check(c5.wifi == 0 && c5.wifi_block && c5.cost > c7.cost + 1 && c5.cost < c4.cost,
+              "en el resto de su bloque de 80 MHz: menos, pero cuesta");
+        auto a = advise(b, {}, analog("R"), {}, 4, 0);
+        std::printf("  4 en R con el AP: %s\n", list(a).c_str());
+        // sin las redes salia R1 R3 R6 R8 (banda limpia): R3 pisa el bloque del AP
+        check(a.complete && a.wifi.size() == 1 && avoids(a, 5735, 5815),
+              "4 en R: nadie encima del AP callado ni en su bloque de 80 MHz");
+        auto a5 = advise(b, {}, analog("R"), {}, 5, 0);
+        std::printf("  5 en R con el AP: %s\n", list(a5).c_str());
+        check(a5.complete && avoids(a5, 5765 - 8.3, 5765 + 8.3), "5 en R: ninguno encima del AP callado");
+    }
+    {
+        // el canal 132 (5660) partido entre dos pasos del barrido: solo se han visto beacons en su mitad de abajo
+        auto b = flat();
+        add_block(b, 5660 - 8.3, 5659.9, 0.6f, 18, 0.004f);
+        const auto w = find_wifi(b);
+        check(w.size() == 1 && w[0].ch == 132, "un WiFi visto solo en una mitad (dos pasos del barrido)");
+    }
+    {
+        // una rafaga de 2 MHz en el centro del 149 no es un WiFi (no ocupa sus 16.6 MHz)
+        auto b = flat();
+        add_block(b, 5744, 5746, 0.6f, 25, 0.01f);
+        check(find_wifi(b).empty(), "una rafaga estrecha no es un WiFi");
+        // ni un piloto (constante: pico = media)
+        auto c = flat();
+        add_block(c, 5765 - 9, 5765 + 9, 25, 26, 1);
+        check(find_wifi(c).empty(), "un piloto constante no es un WiFi");
+        // un piloto que acaba de llegar (pico por delante de la media) encima de un canal WiFi: no se cuenta
+        auto d = flat();
+        add_block(d, 5765 - 9, 5765 + 9, 10, 25, 1);
+        std::vector<Signal> seen{{5769, 0, false, "R4"}};
+        check(advise(d, seen, analog("R"), {}, 2, 0).wifi.empty(), "un piloto recien llegado no cuenta como WiFi");
+    }
+    {
+        // lo medido con el adaptador: ruido con picos de 4-9 dB y una red en el canal 100 (5491.7-5508.3 MHz, picos
+        // 24-27 dB, hueco en el centro, encendida el 6 % del tiempo). Con el umbral fijo de 6 dB, el ruido de
+        // 5510-5640 salia como los canales WiFi 104-128.
+        auto b = noisy();
+        add_block(b, 5491.7, 5508.3, 6.5f, 25, 0.06f);
+        add_block(b, 5499.5, 5500.5, 2.9f, 17, 0.02f);
+        const auto w = find_wifi(b);
+        std::printf("  ruido real + red en el 100:");
+        for (const auto &x : w) std::printf(" ch%d (%.0f dB)", x.ch, x.peak_db);
+        std::printf("\n");
+        check(w.size() == 1 && w[0].ch == 100, "con ruido real: solo la red del canal 100, no el ruido");
+        check(w.size() == 1 && w[0].traffic, "la red del 100 tiene trafico (su media sube)");
+        check(find_wifi(noisy()).empty(), "ruido real solo: ninguna red");
+    }
+    {
+        // lo medido con el router en el canal 108 a 80 MHz y un video: todo el bloque 100-112 (5490-5570 MHz) a
+        // 30-39 dB, encendido el 20-35 % del tiempo, y a la derecha sus hombros, de 24 dB en 5572 a 13 dB en 5596
+        // (sin ellos, salian como redes en el 116 y el 120)
+        auto b = noisy();
+        add_block(b, 5490, 5570, 18, 33, 0.25f);
+        for (double f = 5570; f < 5600; f += 2) {
+            const float pk = 24 - static_cast<float>(f - 5570) * 0.37f;
+            add_block(b, f, f + 2, 3.5f, pk, 0.04f);
+        }
+        const auto w = find_wifi(b);
+        std::printf("  bloque de 80 MHz con trafico:");
+        for (const auto &x : w) std::printf(" ch%d (%.0f dB)", x.ch, x.peak_db);
+        std::printf("\n");
+        bool block = w.size() == 4;
+        for (size_t i = 0; block && i < w.size(); i++) block = w[i].ch == 100 + 4 * static_cast<int>(i);
+        check(block, "un 80 MHz con trafico: los cuatro canales de su bloque, no sus hombros");
+    }
+    {
+        // un AP callado se ve a ratos: cada paso mide 12 ms y hay un beacon cada ~102 ms (~12 % de pillarlo por
+        // barrido), y el pico se olvida 1 dB por barrido (Recordar 20). Beacons a 20 dB pillados en los barridos 0,
+        // 16 y 33: el espectro solo lo muestra mientras el pico no ha caido bajo el umbral; la memoria, siempre.
+        const int caught[] = {0, 16, 33};
+        float peak = 0;
+        int raw = 0, remembered = 0;
+        WifiMemory mem;
+        for (int sw = 0; sw < 40; sw++) {
+            peak -= 1;
+            for (int c : caught)
+                if (c == sw) peak = 20;
+            auto b = flat();
+            add_block(b, 5765 - 8.3, 5765 + 8.3, 0.6f, std::max(3.f, peak), 0.003f);
+            const auto now = find_wifi(b);
+            mem.update(now, {}, sw * 3.3);
+            raw += !now.empty();
+            remembered += !mem.known(sw * 3.3).empty();
+        }
+        std::printf("  AP callado, 40 barridos: visto en %d, recordado en %d\n", raw, remembered);
+        check(raw <= 32 && remembered == 40, "un AP que se ve a ratos se recuerda todo el analisis");
+        // y se olvida kWifiHoldS despues de la ultima vez
+        mem.update({}, {}, 40 * 3.3 + kWifiHoldS);
+        check(mem.known(40 * 3.3 + kWifiHoldS).empty(), "se olvida kWifiHoldS despues de verlo por ultima vez");
+    }
+    {
+        // lo que la memoria cree WiFi y luego resulta ser un piloto (uno recien llegado parece intermitente)
+        WifiMemory mem;
+        Wifi fake;
+        fake.ch = 153;
+        fake.mhz = 5765;
+        mem.update({fake}, {}, 0);
+        mem.update({}, {{5769, 0, false, "R4"}}, 3);
+        check(mem.known(3).empty(), "la memoria olvida un 'WiFi' que resulta ser un piloto");
+        // lo que se recuerda sin verse ahora sale marcado
+        mem.update({fake}, {}, 6);
+        mem.update({}, {}, 9);
+        const auto k = mem.known(9);
+        check(k.size() == 1 && !k[0].now, "lo recordado que no se ve ahora: now = false");
+    }
+    {
+        // el resto del bloque solo cuenta mientras no se sabe el ancho: con trafico, lo que usa se enciende solo
+        // (medido: un AP a 20 MHz con trafico deja su bloque callado)
+        auto idle = flat();
+        add_block(idle, 5765 - 8.3, 5765 + 8.3, 0.6f, 20, 0.003f);
+        auto busy = flat();
+        add_block(busy, 5765 - 8.3, 5765 + 8.3, 6, 20, 0.1f);
+        const Candidate r5{"R5", 5806, false};
+        const auto wi = find_wifi(idle), wb = find_wifi(busy);
+        check(wi.size() == 1 && !wi[0].traffic && wb.size() == 1 && wb[0].traffic, "trafico: por la media del canal");
+        const auto ri = rate(r5, idle, {}, wi), rb = rate(r5, busy, {}, wb);
+        std::printf("  R5 en el bloque del 153: callado %.1f dB, con trafico %.1f dB\n", ri.wifi_cost, rb.wifi_cost);
+        check(ri.wifi_block && ri.wifi_cost > 0 && rb.wifi_cost == 0, "con trafico y el bloque callado: el bloque no cuenta");
+    }
+    {
+        // bloques segun la region: en la UE no existen el 144 ni el 169-177
+        auto b132 = flat();
+        add_block(b132, 5660 - 8.3, 5660 + 8.3, 0.6f, 20, 0.003f);
+        auto b165 = flat();
+        add_block(b165, 5825 - 8.3, 5825 + 8.3, 0.6f, 20, 0.003f);
+        const Candidate r2{"R2", 5695, false}, r7{"R7", 5880, false};
+        const auto eu132 = find_wifi(b132, Region::Eu), us132 = find_wifi(b132, Region::Us);
+        const auto eu165 = find_wifi(b165, Region::Eu), us165 = find_wifi(b165, Region::Us);
+        std::printf("  bloque del 132: UE %.0f-%.0f, EE. UU. %.0f-%.0f; del 165: UE %.0f-%.0f, EE. UU. %.0f-%.0f\n",
+                    eu132[0].block_lo, eu132[0].block_hi, us132[0].block_lo, us132[0].block_hi, eu165[0].block_lo,
+                    eu165[0].block_hi, us165[0].block_lo, us165[0].block_hi);
+        check(eu132[0].block_hi == 5690 && us132[0].block_hi == 5730, "132 a 40 MHz en la UE, a 80 en EE. UU.");
+        check(rate(r2, b132, {}, eu132).wifi_cost < rate(r2, b132, {}, us132).wifi_cost,
+              "R2 cuesta menos por un AP en el 132 en la UE");
+        check(rate(r7, b165, {}, eu165).wifi_cost == 0 && rate(r7, b165, {}, us165).wifi_cost > 0,
+              "un AP en el 165: en la UE va solo y no toca R7");
+    }
+    {
+        // una red de 80 MHz es un grupo; dos bloques distintos, dos
+        std::vector<Wifi> w;
+        for (int ch : {100, 104, 108, 112, 132, 140}) {
+            Wifi x;
+            x.ch = ch;
+            x.mhz = 5000 + 5.0 * ch;
+            w.push_back(x);
+        }
+        for (auto &x : w) {
+            double lo = 5000 + 5.0 * x.ch - 10, hi = lo + 20;
+            if (x.ch <= 112) lo = 5490, hi = 5570;
+            if (x.ch == 132) lo = 5650, hi = 5690;
+            x.block_lo = lo;
+            x.block_hi = hi;
+        }
+        const auto g = group_wifi(w);
+        check(g.size() == 3 && g[0].first == 100 && g[0].last == 112 && g[1].first == 132 && g[2].first == 140,
+              "agrupa los canales de una misma red (100-112) y separa bloques distintos");
     }
     {
         // el peor caso de la ventana (todas las bandas, 8 + 8): se recalcula en el hilo de la GUI cada segundo

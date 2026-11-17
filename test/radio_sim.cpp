@@ -4,7 +4,10 @@
 // wsdr::Receiver, which plays a recording back as a live, tunable 8812BU (KP_SIM_FILE: .cs16, 40 MS/s, centre
 // 5770 MHz; test/digital_scan_test --write makes synthetic ones). Prints status_json() once a second (stderr).
 //   radio_sim [--scan | --survey LO HI | --watch MHZ | --test RATE_SEL SECONDS] [--digital] [--comb] [--rate 1|2]
-//             [--record S PREFIX] [--seconds S] [--frames] [-v]
+//             [--record S PREFIX] [--seconds S] [--frames] [--dump FILE] [--usb2] [-v]
+//   radio_live pasa el adaptador a USB 3 antes de abrirlo, como la app; --usb2: dejarlo como este
+//   --dump FILE: survey, al acabar escribe cada bin (mhz,mean_db,peak_db,duty) en FILE (CSV), para probar el
+//                recomendador sin adaptador
 //   ... --frames | ffplay -f rawvideo -pixel_format rgb0 -video_size 720x480 -framerate 60 -fflags nobuffer -i -
 #include <atomic>
 #include <chrono>
@@ -21,6 +24,9 @@
 #include "radio.h"
 #include "scan_plan.h"
 #include "channel_advisor.h"
+#ifdef KP_LIVE_ADAPTER
+#include "usb3_switch.h"
+#endif
 
 #ifndef RADIO_NS
 #define RADIO_NS fpv
@@ -32,10 +38,10 @@ int main(int argc, char **argv) {
   std::string mode = "scan";
   double mhz = 5769, secs = 60, run_s = 0;
   int rate = 1;
-  bool frames = false, digital = false, comb = false;
+  bool frames = false, digital = false, comb = false, usb2 = false;
   int watch_rate = 0;
   double rec_s = 0, survey_lo = 0, survey_hi = 0;
-  std::string rec_prefix;
+  std::string rec_prefix, dump;
   for (int i = 1; i < argc; i++) {
     const std::string k = argv[i];
     if (k == "--scan") mode = "scan";
@@ -48,13 +54,18 @@ int main(int argc, char **argv) {
     else if (k == "--record" && i + 2 < argc) { rec_s = std::atof(argv[++i]); rec_prefix = argv[++i]; }
     else if (k == "--comb") comb = true;
     else if (k == "--frames") frames = true;
+    else if (k == "--dump" && i + 1 < argc) dump = argv[++i];
+    else if (k == "--usb2") usb2 = true;
     else if (k == "-v") kp::set_log_debug(true);
     else {
       std::fprintf(stderr, "usage: radio_sim [--scan | --survey LO HI | --watch MHZ | --test RATE_SEL SECONDS] [--digital] [--comb] "
-                           "[--rate 1|2] [--record S PREFIX] [--seconds S] [--frames] [-v]\n");
+                           "[--rate 1|2] [--record S PREFIX] [--seconds S] [--frames] [--dump FILE] [--usb2] [-v]\n");
       return 2;
     }
   }
+#ifndef KP_LIVE_ADAPTER
+  (void)usb2;  // radio_sim: no hay adaptador que pasar a USB 3
+#endif
   std::signal(SIGINT, [](int) { g_stop = true; });
   std::signal(SIGTERM, [](int) { g_stop = true; });
   RADIO_NS::Radio radio([&](const kp::Frame &f) {
@@ -63,6 +74,15 @@ int main(int argc, char **argv) {
       std::fflush(stdout);
     }
   });
+#ifdef KP_LIVE_ADAPTER
+  // el RTL8812BU arranca en USB 2: como la app (src/radio_backend.cpp), pedirle USB 3 antes de abrirlo
+  if (!usb2) {
+    const auto sw = kpd::request_usb3_first_adapter();
+    std::fprintf(stderr, "usb3 switch: %s\n", sw.text.c_str());
+    bool ss = false;
+    if (sw.requested && !kpd::wait_adapter(10000, &ss)) std::fprintf(stderr, "usb3 switch: the adapter did not come back\n");
+  }
+#endif
   try {
     radio.open(-1);
   } catch (const std::exception &e) {
@@ -82,10 +102,24 @@ int main(int argc, char **argv) {
   }
   else radio.stream_test(rate, secs);
   const auto t0 = std::chrono::steady_clock::now();
+  std::string wifi_last;  // survey: redes WiFi vistas (advisor::find_wifi), se imprime cuando cambia
   while (!g_stop) {
     std::this_thread::sleep_for(std::chrono::seconds(1));
     const std::string st = radio.status_json();
     std::fprintf(stderr, "%s\n", st.c_str());
+    if (mode == "survey") {
+      int sw = 0;
+      std::vector<advisor::Bin> ab;
+      for (const auto &b : radio.survey_spectrum(&sw)) ab.push_back(advisor::Bin{b.mhz, b.mean_db, b.peak_db, b.duty});
+      std::string w;
+      for (const auto &x : advisor::find_wifi(ab)) w += " " + std::to_string(x.ch);
+      if (w != wifi_last) {
+        std::fprintf(stderr, "wifi @ %.0f s, sweep %d:%s\n",
+                     std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count(), sw,
+                     w.empty() ? " (none)" : w.c_str());
+        wifi_last = w;
+      }
+    }
     const auto el = std::chrono::steady_clock::now() - t0;
     if (mode == "test" && st.find("\"done\":true") != std::string::npos) break;
     if (mode == "test" && el > std::chrono::duration<double>(secs + 30)) break;
@@ -95,6 +129,14 @@ int main(int argc, char **argv) {
     int sweeps = 0;
     const auto bins = radio.survey_spectrum(&sweeps);
     std::fprintf(stderr, "survey: %d sweep(s), %zu bins\n", sweeps, bins.size());
+    if (!dump.empty()) {
+      if (FILE *f = std::fopen(dump.c_str(), "w")) {
+        std::fprintf(f, "mhz,mean_db,peak_db,duty\n");
+        for (const auto &b : bins) std::fprintf(f, "%.5f,%.3f,%.3f,%.5f\n", b.mhz, b.mean_db, b.peak_db, b.duty);
+        std::fclose(f);
+        std::fprintf(stderr, "survey: %zu bins -> %s\n", bins.size(), dump.c_str());
+      }
+    }
     for (double f = std::floor(survey_lo / 10) * 10; f < survey_hi; f += 10) {  // cada 10 MHz: media, pico, duty
       double m = -1e9, pk = -1e9, du = 0;
       int n = 0;
@@ -111,6 +153,24 @@ int main(int argc, char **argv) {
     // (advisor::mask_signal, lo que hace la ventana al marcarlo)
     std::vector<advisor::Bin> ab;
     for (const auto &b : bins) ab.push_back(advisor::Bin{b.mhz, b.mean_db, b.peak_db, b.duty});
+    // redes WiFi y lo que pesan en cada canal de Raceband (y la recomendacion para 4 analogicos, sin pilotos)
+    const auto wifi = advisor::find_wifi(ab);
+    for (const auto &w : wifi)
+      std::fprintf(stderr, "wifi ch %d (%.0f MHz): peak %.1f dB, duty %.3f, block %.0f-%.0f MHz\n", w.ch, w.mhz,
+                   w.peak_db, w.duty, w.block_lo, w.block_hi);
+    for (const auto &c : advisor::analog_channels("R")) {
+      const auto r = advisor::rate(c, ab, {}, wifi);
+      std::fprintf(stderr, "  %-3s %4.0f MHz: noise %4.1f dB, burst %3.0f %%, wifi %4.1f dB%s%s, cost %4.1f\n",
+                   c.name.c_str(), c.mhz, r.noise_db, r.burst * 100, r.wifi_cost,
+                   r.wifi >= 0 ? (" (ch " + std::to_string(wifi[r.wifi].ch) + ")").c_str() : "",
+                   r.wifi_block ? " block" : "", r.cost);
+    }
+    {
+      const auto a = advisor::advise(ab, {}, advisor::analog_channels("R"), {}, 4, 0);
+      std::string s;
+      for (const auto &p : a.picks) s += " " + p.r.ch.name;
+      std::fprintf(stderr, "advice, 4 analog on R (ignoring pilots):%s\n", s.c_str());
+    }
     const auto chans = advisor::analog_channels("ABEFR");
     for (const auto &p : radio.pilots()) {
       const advisor::Signal sig{p.mhz, p.bw_mhz, !p.digital.empty(), p.name};

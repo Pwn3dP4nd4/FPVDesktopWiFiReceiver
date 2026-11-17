@@ -13,6 +13,7 @@
 #include <QSignalBlocker>
 #include <QLabel>
 #include <QListWidget>
+#include <QLocale>
 #include <QPainter>
 #include <QPainterPath>
 #include <QPushButton>
@@ -33,6 +34,21 @@ QColor ratingColour(const advisor::Rating &r) {
     if (r.busy >= 0 || r.cost >= 8) return QColor(0xd9, 0x48, 0x3b);
     if (r.cost >= 3) return QColor(0xe0, 0xa0, 0x20);
     return QColor(0x3a, 0xa8, 0x5a);
+}
+
+// reglas WiFi por defecto: las de la UE en Europa (UE, EEE, Reino Unido, Suiza), las de EE. UU. fuera
+int defaultRegion() {
+    static const QLocale::Territory eu[] = {
+        QLocale::Spain, QLocale::Portugal, QLocale::France, QLocale::Germany, QLocale::Italy, QLocale::Netherlands,
+        QLocale::Belgium, QLocale::Luxembourg, QLocale::Austria, QLocale::Ireland, QLocale::Denmark, QLocale::Sweden,
+        QLocale::Finland, QLocale::Poland, QLocale::Czechia, QLocale::Slovakia, QLocale::Slovenia, QLocale::Hungary,
+        QLocale::Romania, QLocale::Bulgaria, QLocale::Greece, QLocale::Croatia, QLocale::Estonia, QLocale::Latvia,
+        QLocale::Lithuania, QLocale::Malta, QLocale::Cyprus, QLocale::Norway, QLocale::Iceland, QLocale::Liechtenstein,
+        QLocale::Switzerland, QLocale::UnitedKingdom};
+    const auto t = QLocale::system().territory();
+    for (auto e : eu)
+        if (e == t) return 0;
+    return 1;
 }
 
 // el mismo fichero que MainWindow::settings() (sin depender de la ventana principal: test/analyzer_shot.cpp)
@@ -159,6 +175,36 @@ void SpectrumView::paintEvent(QPaintEvent *) {
         p.setBrush(Qt::NoBrush);
     }
 
+    // redes WiFi (las que recuerda el analisis), en la fila bajo los pilotos: barra en los canales que se le han
+    // visto (seguidos del mismo bloque: una red en 40/80 MHz, una etiqueta) y discontinua por el resto de su bloque
+    // mientras no se sabe su ancho (sin trafico visto)
+    {
+        const QColor wc(0xc0, 0x60, 0x00);
+        const double y = top + fm.height() + 6;
+        const auto clip = [&](double mhz) { return X(std::clamp(mhz, lo_, hi_)); };
+        for (const auto &g : advisor::group_wifi(advice_.wifi)) {
+            bool unknownWidth = false;
+            double blo = g.lo, bhi = g.hi;
+            for (const auto &w : advice_.wifi)
+                if (w.ch >= g.first && w.ch <= g.last) {
+                    unknownWidth = unknownWidth || !w.traffic;
+                    blo = w.block_lo;
+                    bhi = w.block_hi;
+                }
+            if (unknownWidth && bhi >= lo_ && blo <= hi_) {
+                p.setPen(QPen(wc, 1, Qt::DashLine));
+                p.drawLine(QPointF(clip(blo), y), QPointF(clip(bhi), y));
+            }
+            if (g.hi < lo_ || g.lo > hi_) continue;
+            p.fillRect(QRectF(QPointF(clip(g.lo), y - 2), QPointF(clip(g.hi), y + 2)), wc);
+            p.setPen(wc);
+            const QString t = g.first == g.last ? QStringLiteral("WiFi %1").arg(g.first)
+                                                : QStringLiteral("WiFi %1\u2013%2").arg(g.first).arg(g.last);
+            const double cx = X((g.lo + g.hi) / 2);
+            p.drawText(QRectF(cx - 60, y + 3, 120, fm.height()), Qt::AlignHCenter | Qt::AlignTop, t);
+        }
+    }
+
     // lo que hay en el aire
     for (const auto &s : data_.pilots) {
         if (s.ageS >= 60 || s.freqMHz < lo_ || s.freqMHz > hi_) continue;
@@ -261,6 +307,19 @@ ChannelAnalyzer::ChannelAnalyzer(Backend *backend, QWidget *parent) : QDialog(pa
         recompute();
     });
     g->addWidget(narrow_, 2, 0, 1, 2);
+    regionLbl_ = new QLabel;
+    region_ = new QComboBox;
+    region_->addItem(QString(), 0);  // UE
+    region_->addItem(QString(), 1);  // EE. UU. y otros
+    region_->setCurrentIndex(qBound(0, settings().value("analyzer/region", defaultRegion()).toInt(), 1));
+    connect(region_, &QComboBox::currentIndexChanged, this, [this] {
+        settings().setValue("analyzer/region", region_->currentData().toInt());
+        wifiMem_.reset();  // los bloques cambian: se vuelve a aprender con el ultimo barrido
+        feedWifi();
+        recompute();
+    });
+    g->addWidget(regionLbl_, 3, 0);
+    g->addWidget(region_, 3, 1);
     memoryLbl_ = new QLabel;
     memory_ = new QComboBox;
     for (int n : {5, 10, 20, 40}) memory_->addItem(QString(), n);
@@ -338,6 +397,10 @@ ChannelAnalyzer::ChannelAnalyzer(Backend *backend, QWidget *parent) : QDialog(pa
                 p.drawLine(11, 0, 11, 12);
             } else if (kind == 3) {  // fondo/franja
                 p.fillRect(0, 0, 22, 12, c);
+            } else if (kind == 5) {  // red WiFi: su canal (barra) y el resto de su bloque (discontinua)
+                p.setPen(QPen(c, 1, Qt::DashLine));
+                p.drawLine(0, 6, 22, 6);
+                p.fillRect(7, 4, 8, 4, c);
             } else {  // marca de canal
                 p.fillRect(9, 1, 5, 10, c);
             }
@@ -369,6 +432,7 @@ ChannelAnalyzer::ChannelAnalyzer(Backend *backend, QWidget *parent) : QDialog(pa
         add(3, 3, swatch(4, QColor(0xd9, 0x48, 0x3b)));
         add(4, 3, swatch(3, recA));
         add(5, 3, swatch(3, recH));
+        add(5, 0, swatch(5, QColor(0xc0, 0x60, 0x00)));
         lg->setColumnMinimumWidth(2, 24);
         lg->setColumnStretch(5, 1);
         main->addWidget(box);
@@ -408,6 +472,11 @@ void ChannelAnalyzer::retranslate() {
     analogLbl_->setText(tr("Analog"));
     hdzLbl_->setText(QStringLiteral("HDZero"));
     narrow_->setText(tr("HDZero narrow mode"));
+    regionLbl_->setText(tr("WiFi rules"));
+    region_->setItemText(0, tr("Europe"));
+    region_->setItemText(1, tr("USA and others"));
+    region_->setToolTip(tr("Which 5 GHz WiFi channels exist where you fly, and how wide a network on each one can "
+                           "be (in Europe, channels 144 and 169-177 do not exist)."));
     memoryLbl_->setText(tr("Remember"));
     for (int i = 0; i < memory_->count(); i++)
         memory_->setItemText(i, tr("last %n sweep(s)", nullptr, memory_->itemData(i).toInt()));
@@ -429,7 +498,8 @@ void ChannelAnalyzer::retranslate() {
                             tr("Average level over the noise floor"), tr("Strongest recent burst"),
                             tr("Bursty interference (WiFi)"), tr("Pilot already on the air"),
                             tr("Clean"), tr("Some interference"), tr("Busy or noisy"),
-                            tr("Recommended analog channel"), tr("Recommended HDZero channel")};
+                            tr("Recommended analog channel"), tr("Recommended HDZero channel"),
+                            tr("WiFi seen (dashed: rest of its block while its width is unknown)")};
         for (int i = 0; i < legendText_.size() && i < t.size(); i++) legendText_[i]->setText(t[i]);
     }
     table_->setHeaderLabels({tr("System"), tr("Channel"), tr("MHz"), tr("Interference"), tr("Bursts"), tr("Notes")});
@@ -493,6 +563,9 @@ void ChannelAnalyzer::toggle() {
     range(lo, hi);
     last_ = SurveyData{};
     mine_.clear();  // "mio" vale para un analisis: otro dia, otro piloto puede estar en ese canal
+    wifiMem_.reset();
+    clock_.start();
+    surveyT_ = 0;
     updateAir();
     running_ = true;
     startBtn_->setText(tr("Stop"));
@@ -561,7 +634,9 @@ void ChannelAnalyzer::closeEvent(QCloseEvent *e) {
 void ChannelAnalyzer::onSurvey(const SurveyData &d) {
     if (!running_) return;
     last_ = d;
+    surveyT_ = clock_.isValid() ? clock_.elapsed() / 1000.0 : 0;
     updateAir();
+    feedWifi();
     double lo, hi;
     range(lo, hi);
     state_->setText(d.sweeps == 0 ? tr("Analysing %1-%2 MHz: first sweep...").arg(lo, 0, 'f', 0).arg(hi, 0, 'f', 0)
@@ -573,7 +648,7 @@ void ChannelAnalyzer::onSurvey(const SurveyData &d) {
     recompute();
 }
 
-QString ChannelAnalyzer::noteText(const advisor::Pick &p) const {
+QString ChannelAnalyzer::noteText(const advisor::Pick &p, const std::vector<advisor::Wifi> &wifi) const {
     QStringList n;
     if (p.r.busy >= 0 && p.r.busy < seenIdx_.size()) {
         const Pilot &s = last_.pilots[seenIdx_[p.r.busy]];
@@ -588,36 +663,73 @@ QString ChannelAnalyzer::noteText(const advisor::Pick &p) const {
         }
     }
     if (p.r.burst > 0.1f) n << tr("WiFi-like bursts nearby");
+    if (p.r.wifi >= 0 && p.r.wifi < static_cast<int>(wifi.size())) {
+        const advisor::Wifi &w = wifi[p.r.wifi];
+        // encima o solo rozando su borde: la parte del canal WiFi que pisa
+        const double half = advisor::width(p.r.ch) / 2;
+        const double on = std::min(p.r.ch.mhz + half, w.mhz + advisor::kWifiOccupied / 2) -
+                          std::max(p.r.ch.mhz - half, w.mhz - advisor::kWifiOccupied / 2);
+        if (p.r.wifi_block)
+            n << tr("in the block of WiFi %1 (up to %2 MHz): hit if that network uses its whole width")
+                     .arg(w.ch).arg(qRound(w.block_hi - w.block_lo));
+        else if (on < advisor::kWifiOccupied / 2) n << tr("its edge overlaps WiFi network %1").arg(w.ch);
+        else if (!w.now) n << tr("on WiFi network %1 (seen in the last minutes, not right now)").arg(w.ch);
+        else if (w.traffic) n << tr("on WiFi network %1 (in use)").arg(w.ch);
+        else n << tr("on WiFi network %1 (quiet now, not when it is used)").arg(w.ch);
+    }
     return n.join(QStringLiteral("; "));
+}
+
+void ChannelAnalyzer::prepare(std::vector<advisor::Bin> &bins, std::vector<advisor::Signal> &seen,
+                              std::vector<advisor::Signal> *all) {
+    bins.clear();
+    seen.clear();
+    for (const auto &x : last_.bins) bins.push_back(advisor::Bin{x.mhz, x.meanDb, x.peakDb, x.duty});
+    // pilotos vistos en el ultimo minuto que no son mios; seenIdx_ lleva el indice de busy a last_.pilots
+    seenIdx_.clear();
+    for (int i = 0; i < last_.pilots.size(); i++) {
+        const Pilot &p = last_.pilots[i];
+        if (p.ageS >= 60) continue;
+        const QString key = p.name.isEmpty() ? QString::number(p.freqMHz, 'f', 0) : p.name;
+        const advisor::Signal sig{p.freqMHz, p.bwMHz, p.isDigital(), p.name.toStdString()};
+        if (all) all->push_back(sig);
+        if (mine_.contains(key)) {
+            // mis pilotos: su propia senal (y sus bandas laterales) no es interferencia (advisor::mask_signal)
+            advisor::mask_signal(bins, sig);
+            continue;
+        }
+        seen.push_back(sig);
+        seenIdx_.push_back(i);
+    }
+}
+
+advisor::Region ChannelAnalyzer::region() const {
+    return region_ && region_->currentData().toInt() == 1 ? advisor::Region::Us : advisor::Region::Eu;
+}
+
+void ChannelAnalyzer::feedWifi() {
+    if (last_.bins.isEmpty()) return;
+    std::vector<advisor::Bin> bins;
+    std::vector<advisor::Signal> seen, all;
+    prepare(bins, seen, &all);
+    // lo que tapa cualquier piloto (tambien uno mio) no es un WiFi
+    wifiMem_.update(advisor::find_wifi(bins, region(), all), all, surveyT_);
 }
 
 void ChannelAnalyzer::recompute() {
     if (!view_) return;
     const std::string b = bands().toStdString();
     std::vector<advisor::Bin> bins;
-    for (const auto &x : last_.bins) bins.push_back(advisor::Bin{x.mhz, x.meanDb, x.peakDb, x.duty});
-    // pilotos vistos en el ultimo minuto que no son mios; seenIdx_ lleva el indice de busy a last_.pilots
     std::vector<advisor::Signal> seen;
-    seenIdx_.clear();
-    for (int i = 0; i < last_.pilots.size(); i++) {
-        const Pilot &p = last_.pilots[i];
-        const QString key = p.name.isEmpty() ? QString::number(p.freqMHz, 'f', 0) : p.name;
-        if (p.ageS >= 60 || mine_.contains(key)) continue;
-        seen.push_back(advisor::Signal{p.freqMHz, p.bwMHz, p.isDigital(), p.name.toStdString()});
-        seenIdx_.push_back(i);
-    }
-    // mis pilotos: su propia senal (y sus bandas laterales) no es interferencia (advisor::mask_signal)
-    for (const auto &p : last_.pilots) {
-        const QString key = p.name.isEmpty() ? QString::number(p.freqMHz, 'f', 0) : p.name;
-        if (p.ageS >= 60 || !mine_.contains(key)) continue;
-        advisor::mask_signal(bins, advisor::Signal{p.freqMHz, p.bwMHz, p.isDigital(), p.name.toStdString()});
-    }
+    prepare(bins, seen);
+    // las redes WiFi que recuerda este analisis (un AP callado se ve a ratos), no solo las del ultimo barrido
+    const std::vector<advisor::Wifi> wifi = wifiMem_.known(surveyT_);
     const bool haveData = !bins.empty();
     QElapsedTimer t;
     t.start();
     const advisor::Advice a = haveData ? advisor::advise(bins, seen, advisor::analog_channels(b),
                                                          advisor::hdzero_channels(b, narrow_->isChecked()),
-                                                         nAnalog_->value(), nHdz_->value())
+                                                         nAnalog_->value(), nHdz_->value(), &wifi)
                                        : advisor::Advice{};
     if (t.elapsed() > 100) KP_LOGW("analizador: recomendar ha tardado %lld ms", static_cast<long long>(t.elapsed()));
     double lo, hi;
@@ -640,7 +752,7 @@ void ChannelAnalyzer::recompute() {
         it->setText(2, QString::number(p.r.ch.mhz, 'f', 0));
         it->setText(3, QStringLiteral("%1 dB").arg(p.r.noise_db, 0, 'f', 1));
         it->setText(4, QStringLiteral("%1 %").arg(qRound(p.r.burst * 100)));
-        it->setText(5, noteText(p));
+        it->setText(5, noteText(p, a.wifi));
         it->setForeground(3, ratingColour(p.r));
     }
     for (int c = 0; c < 5; c++) table_->resizeColumnToContents(c);
@@ -653,6 +765,14 @@ void ChannelAnalyzer::recompute() {
     else if (a.worst_db >= 8) s += QStringLiteral(" <span style='color:#e0a020'>") +
                                    tr("Even the best channels have noticeable interference here.") +
                                    QStringLiteral("</span>");
+    if (!a.wifi.empty()) {
+        QStringList chs;
+        for (const auto &g : advisor::group_wifi(a.wifi))
+            chs << (g.first == g.last ? QString::number(g.first)
+                                      : QStringLiteral("%1\u2013%2").arg(g.first).arg(g.last));
+        s += QStringLiteral(" ") + tr("WiFi seen on channel(s) %1: it counts against the channels it covers, "
+                                      "even while quiet.").arg(chs.join(QStringLiteral(", ")));
+    }
     if (last_.sweeps < 3) s += QStringLiteral(" ") + tr("(still learning: let it run a few sweeps)");
     summary_->setText(s);
 }

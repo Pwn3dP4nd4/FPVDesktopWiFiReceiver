@@ -255,7 +255,13 @@ Por cada 156 kHz guarda la media, la ráfaga más fuerte (se apaga 1 dB por barr
 
 Cómo elige: cada canal se puntúa por la interferencia media dentro de su ancho (analógico 20 MHz, HDZero 27 o 17
 MHz) más la parte del tiempo que lo pisan señales intermitentes (WiFi); un canal donde ya hay un piloto queda
-descartado. Entre los elegidos exige una separación mínima (25 MHz entre analógicos; con HDZero, que no se toquen
+descartado. Además reconoce las **redes WiFi** (un canal de la rejilla WiFi que se enciende a ráfagas en casi
+todos sus ~17 MHz) aunque ahora estén calladas: un AP sin tráfico solo emite beacons y apenas pisa el canal, pero
+en cuanto alguien usa esa red se lo come. Como un AP callado se pilla a ratos, cada red vista se **recuerda 5
+minutos**. Cada red suma según su ráfaga más fuerte (hasta 6 dB) en los canales que pisa y, mientras no se le ha
+visto tráfico (no se sabe su ancho), la mitad en el resto de su bloque; con tráfico, lo que usa se enciende y se ve.
+Los bloques siguen las **Reglas WiFi** elegidas (Europa: sin los canales 144 ni 169–177). En la gráfica salen como
+*WiFi 149* o *WiFi 100–112*. En qué se basa: [docs/wiki/Analizador-de-canales.md](docs/wiki/Analizador-de-canales.md). Entre los elegidos exige una separación mínima (25 MHz entre analógicos; con HDZero, que no se toquen
 los bordes), penaliza quedar por debajo de la ideal (37, 40 y 37 MHz), evita la intermodulación de 3.er orden
 (2·f1 − f2 de dos analógicos sobre otro canal elegido, también HDZero) y,
 con la banda limpia, los separa todo lo posible (4 pilotos en Raceband: R1, R3, R6, R8). Si no caben con

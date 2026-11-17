@@ -57,8 +57,9 @@ void StubBackend::stop() {
     emit statusChanged(s);
 }
 
-// Analizador simulado: un WiFi a rafagas en 5650-5690 MHz (canales 132/136), un piloto analogico en R4, un HDZero
-// en R6 y algo de ruido. Las rafagas se van descubriendo barrido a barrido, como con el adaptador.
+// Analizador simulado: un WiFi a rafagas en 5650-5690 MHz (canales 132/136), un AP sin trafico en el canal WiFi
+// 165 (solo beacons: pico alto, casi nunca encendido), un piloto analogico en R4, un HDZero en R6 y algo de ruido.
+// Las rafagas se van descubriendo barrido a barrido, como con el adaptador.
 void StubBackend::startSurvey(double lo, double hi) {
     if (!survey_) {
         survey_ = new QTimer(this);
@@ -88,6 +89,10 @@ void StubBackend::surveyTick() {
             p.meanDb = float(3 + 2 * seen);
             p.peakDb = float(30 * seen);
             p.duty = 0.2f;
+        }
+        if (std::abs(f - 5825) < 8.3) {  // beacons del canal 165
+            p.peakDb = float(20 * seen);
+            p.duty = 0.003f;
         }
         if (std::abs(f - 5769) < 6) p.meanDb = p.peakDb = 22 - float(std::abs(f - 5769)) * 2, p.duty = 1;
         if (std::abs(f - 5845) < 13.5) p.meanDb = p.peakDb = 25, p.duty = 1;  // HDZero en R6
