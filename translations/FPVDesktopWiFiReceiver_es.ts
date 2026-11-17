@@ -24,12 +24,32 @@
         <translation>Analógico</translation>
     </message>
     <message>
+        <source>WiFi rules</source>
+        <translation>Reglas WiFi</translation>
+    </message>
+    <message>
+        <source>Europe</source>
+        <translation>Europa</translation>
+    </message>
+    <message>
+        <source>USA and others</source>
+        <translation>EE. UU. y otros</translation>
+    </message>
+    <message>
+        <source>Which 5 GHz WiFi channels exist where you fly, and how wide a network on each one can be (in Europe, channels 144 and 169-177 do not exist).</source>
+        <translation>Qué canales WiFi de 5 GHz existen donde vuelas y lo ancha que puede ser una red en cada uno (en Europa no existen los canales 144 ni 169-177).</translation>
+    </message>
+    <message>
         <source>Stop</source>
         <translation>Parar</translation>
     </message>
     <message>
         <source>Start analysis</source>
         <translation>Empezar el análisis</translation>
+    </message>
+    <message>
+        <source>WiFi seen (dashed: rest of its block while its width is unknown)</source>
+        <translation>WiFi visto (discontinua: resto de su bloque mientras no se sabe su ancho)</translation>
     </message>
     <message>
         <source>System</source>
@@ -46,6 +66,10 @@
     <message>
         <source>Interference</source>
         <translation>Interferencia</translation>
+    </message>
+    <message>
+        <source>WiFi seen on channel(s) %1: it counts against the channels it covers, even while quiet.</source>
+        <translation>WiFi visto en los canales %1: cuenta en contra de los canales que pisa, aunque esté callado.</translation>
     </message>
     <message>
         <source>Spectrum</source>
@@ -200,6 +224,26 @@
     <message>
         <source>WiFi-like bursts nearby</source>
         <translation>ráfagas tipo WiFi cerca</translation>
+    </message>
+    <message>
+        <source>on WiFi network %1 (quiet now, not when it is used)</source>
+        <translation>encima de la red WiFi %1 (ahora callada, no cuando se use)</translation>
+    </message>
+    <message>
+        <source>its edge overlaps WiFi network %1</source>
+        <translation>su borde roza la red WiFi %1</translation>
+    </message>
+    <message>
+        <source>in the block of WiFi %1 (up to %2 MHz): hit if that network uses its whole width</source>
+        <translation>en el bloque del WiFi %1 (hasta %2 MHz): lo pisa si esa red usa todo su ancho</translation>
+    </message>
+    <message>
+        <source>on WiFi network %1 (seen in the last minutes, not right now)</source>
+        <translation>encima de la red WiFi %1 (vista en los últimos minutos, ahora no)</translation>
+    </message>
+    <message>
+        <source>on WiFi network %1 (in use)</source>
+        <translation>encima de la red WiFi %1 (en uso)</translation>
     </message>
     <message>
         <source>Waiting for the first sweep...</source>

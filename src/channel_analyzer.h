@@ -1,5 +1,6 @@
 #pragma once
 #include <QDialog>
+#include <QElapsedTimer>
 #include <QVector>
 
 #include "backend.h"
@@ -64,12 +65,22 @@ private:
     void recompute();
     QString bands() const;
     void range(double &lo, double &hi) const;
-    QString noteText(const advisor::Pick &p) const;
+    QString noteText(const advisor::Pick &p, const std::vector<advisor::Wifi> &wifi) const;
+    // los bins para el recomendador (mis pilotos quitados) y los pilotos ajenos; all: tambien los mios
+    void prepare(std::vector<advisor::Bin> &bins, std::vector<advisor::Signal> &seen,
+                 std::vector<advisor::Signal> *all = nullptr);
+    advisor::Region region() const;
+    void feedWifi();  // last_ -> wifiMem_
 
     QVector<QCheckBox *> bandBoxes_;
     QSpinBox *nAnalog_ = nullptr, *nHdz_ = nullptr;
     QCheckBox *narrow_ = nullptr;
     QComboBox *memory_ = nullptr;
+    QComboBox *region_ = nullptr;  // reglas WiFi (UE / EE. UU.): hasta donde llega el bloque de cada canal
+    QLabel *regionLbl_ = nullptr;
+    advisor::WifiMemory wifiMem_;  // redes WiFi vistas en este analisis (un AP callado se ve a ratos)
+    QElapsedTimer clock_;          // desde que empezo el analisis
+    double surveyT_ = 0;           // s de clock_ en el ultimo barrido recibido
     QLabel *memoryLbl_ = nullptr;
     QListWidget *air_ = nullptr;  // pilotos en el aire; marcados = mios (su canal no cuenta como ocupado)
     QLabel *airTitle_ = nullptr;

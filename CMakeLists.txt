@@ -124,8 +124,10 @@ if(KP_WITH_RADIO)
   endif()
   # radio_live: lo mismo con el adaptador de verdad (p.ej. grabar IQ desde la consola)
   #   radio_live --watch 5658 --rate 1 --record 5 rec/hdzero --seconds 12
-  add_executable(radio_live EXCLUDE_FROM_ALL test/radio_sim.cpp src/scan_plan.cpp src/channel_advisor.cpp)
+  add_executable(radio_live EXCLUDE_FROM_ALL test/radio_sim.cpp src/scan_plan.cpp src/channel_advisor.cpp
+                 src/usb3_switch.cpp)
   target_include_directories(radio_live PRIVATE src)
+  target_compile_definitions(radio_live PRIVATE KP_LIVE_ADAPTER)  # pasa el adaptador a USB 3 antes de abrir
   target_link_libraries(radio_live PRIVATE fpv_radio Threads::Threads)
   target_compile_options(radio_live PRIVATE -O2 -Wall -Wextra)
   if(WIN32)

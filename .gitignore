@@ -4,3 +4,6 @@
 *.user
 .vscode/
 .idea/
+
+# Notas de investigacion (resumen de videos, capturas, pruebas con datos de la red de casa): solo en local
+/docs/research/

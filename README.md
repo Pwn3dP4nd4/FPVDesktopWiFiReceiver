@@ -250,6 +250,14 @@ over the floor, as a sliding average of the last sweeps (5, 10, 20 or 40: **Reme
 
 How it chooses: each channel is scored by the average interference within its width (analog 20 MHz, HDZero 27 or
 17 MHz) plus the share of time intermittent signals (WiFi) hit it; a channel where a pilot already is is ruled out.
+It also recognises **WiFi networks** (a channel of the WiFi grid that lights up in bursts across nearly all of its
+~17 MHz) even while they are quiet: an AP with no traffic only sends beacons and barely touches the channel, but
+as soon as someone uses that network it takes the channel over. Since a quiet AP is only caught now and then,
+every network seen is **remembered for 5 minutes**. Each network adds according to its strongest burst (up to
+6 dB) on the channels it covers and, while no traffic has been seen on it (its width is unknown), half that on the
+rest of its block; with traffic, whatever it uses lights up and shows. Blocks follow the chosen **WiFi rules**
+(Europe: no channels 144 or 169–177). The graph shows them as *WiFi 149* or *WiFi 100–112*. What it is based on:
+[docs/wiki/Channel-analyzer.md](docs/wiki/Channel-analyzer.md).
 Between the chosen ones it requires a minimum spacing (25 MHz between analog; with HDZero, edges must not touch),
 penalises going under the ideal (37, 40 and 37 MHz), avoids 3rd-order intermodulation (2·f1 − f2 of two analog pilots
 on another chosen channel, HDZero too) and, with a
