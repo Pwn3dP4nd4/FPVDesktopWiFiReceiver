@@ -27,8 +27,8 @@ en 5 minutos; en un puerto del controlador de la CPU, ninguno.
 Windows 10/11 x64: descarga el `.zip` de la última versión en
 [Releases](https://github.com/Pwn3dP4nd4/FPVDesktopWiFiReceiver/releases/latest), descomprímelo y abre
 `FPVDesktopWiFiReceiver.exe` con doble clic. La primera vez, instala el driver WinUSB del adaptador desde la app: *Archivo → Instalar driver del
-adaptador* (ver [Windows 10/11](#windows-1011), paso 3). En Linux hay un binario x64 en el mismo sitio (necesita Qt 6 y
-libusb del sistema), o compílalo como se explica abajo.
+adaptador* (ver [Windows 10/11](#windows-1011), paso 3). En Linux hay un binario x64 en el mismo sitio (necesita Qt 6,
+libusb y FFmpeg del sistema; FFmpeg es para grabar vídeo), o compílalo como se explica abajo.
 
 ## Cómo funciona la integración con kepyur (Android)
 

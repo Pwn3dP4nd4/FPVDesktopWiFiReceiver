@@ -29,8 +29,13 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential cmake ninja-build pkg-config xxd qt6-base-dev \
-            qt6-tools-dev qt6-l10n-tools libusb-1.0-0-dev binutils-mipsel-linux-gnu libgl1-mesa-dev
+            qt6-tools-dev qt6-l10n-tools libusb-1.0-0-dev binutils-mipsel-linux-gnu libgl1-mesa-dev \
+            libavformat-dev libavcodec-dev libavutil-dev
       - run: scripts/build.sh && scripts/package-linux.sh
+      - name: Comprobar grabacion de video (FFmpeg enlazado)
+        run: ldd build/release/FPVDesktopWiFiReceiver | grep -q libavcodec
+      - name: Tests (senales sinteticas, sin adaptador)
+        run: bash scripts/run-tests.sh
       - name: Comprobar instalacion (regla udev en /etc/udev/rules.d)
         run: |
           DESTDIR="$PWD/stage" cmake --install build/release
@@ -73,6 +78,8 @@ jobs:
           path: tools/mipsel-binutils
           key: mipsel-binutils-2.43.1-ucrt64-${{ hashFiles('scripts/get-mips-binutils.sh') }}
       - run: scripts/build.sh
+      - name: Tests (senales sinteticas, sin adaptador)
+        run: bash scripts/run-tests.sh
       - uses: actions/upload-artifact@v4
         with:
           name: FPVDesktopWiFiReceiver-windows-x64
@@ -97,9 +104,9 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           cat > notes.md <<'NOTES'
-          **English** — **Windows 10/11 x64:** unzip and double-click `FPVDesktopWiFiReceiver.exe`. The first time, install the adapter's WinUSB driver from the app (File > Install adapter driver; [README](https://github.com/${{ github.repository }}/blob/main/README.md#windows-1011), step 3). **Linux x64:** binary that needs the system's Qt 6 and libusb, plus the udev rule from the README.
+          **English** — **Windows 10/11 x64:** unzip and double-click `FPVDesktopWiFiReceiver.exe`. The first time, install the adapter's WinUSB driver from the app (File > Install adapter driver; [README](https://github.com/${{ github.repository }}/blob/main/README.md#windows-1011), step 3). **Linux x64:** binary that needs the system's Qt 6, libusb and FFmpeg (libavcodec/libavformat, for video recording), plus the udev rule from the README.
 
-          **Español** — **Windows 10/11 x64:** descomprime y abre `FPVDesktopWiFiReceiver.exe` con doble clic. La primera vez, instala el driver WinUSB del adaptador desde la app (Archivo > Instalar driver del adaptador; [README](https://github.com/${{ github.repository }}/blob/main/README.es.md#windows-1011), paso 3). **Linux x64:** binario que necesita Qt 6 y libusb del sistema, y la regla udev del README.
+          **Español** — **Windows 10/11 x64:** descomprime y abre `FPVDesktopWiFiReceiver.exe` con doble clic. La primera vez, instala el driver WinUSB del adaptador desde la app (Archivo > Instalar driver del adaptador; [README](https://github.com/${{ github.repository }}/blob/main/README.es.md#windows-1011), paso 3). **Linux x64:** binario que necesita Qt 6, libusb y FFmpeg (libavcodec/libavformat, para grabar vídeo) del sistema, y la regla udev del README.
           NOTES
           gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" \
             --title "FPVDesktopWiFiReceiver $GITHUB_REF_NAME" --notes-file notes.md \

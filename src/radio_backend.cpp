@@ -102,7 +102,7 @@ void RadioBackend::openDevice() {
     if (err.isEmpty()) poll();
 }
 
-void RadioBackend::adapterLost(const QString &mode, double watchMHz) {
+void RadioBackend::adapterLost(const QString &mode, double watchMHz, const QString &why) {
     KP_LOGW("adaptador perdido (%s %.0f MHz): esperando a que vuelva", qPrintable(mode), watchMHz);
     poll_->stop();
     radio_->close();
@@ -110,7 +110,14 @@ void RadioBackend::adapterLost(const QString &mode, double watchMHz) {
     resumeMode_ = mode;
     resumeMHz_ = watchMHz;
     emit statusChanged(RadioStatus{});
-    emit lost(tr("The adapter was disconnected. Plug it back in: it will reconnect by itself."));
+    // El analizador se da por parado al cerrarse el adaptador (ChannelAnalyzer::setAdapterOpen): pararlo tambien
+    // aqui. Si no, al reconectar seguiria barriendo sin ventana que lo muestre ni lista de pilotos (poll()).
+    if (!surveyPlan_.empty()) {
+        stopSurvey();
+        resumeMode_.clear();  // al volver, en reposo como tras parar el analizador
+    }
+    emit lost(why.isEmpty() ? tr("The adapter was disconnected. Plug it back in: it will reconnect by itself.") : why);
+    reconnect_->setInterval(why.isEmpty() ? 2000 : 5000);
     reconnect_->start();
 }
 
@@ -128,8 +135,7 @@ void RadioBackend::tryReconnect() {
     }
     reconnect_->setInterval(2000);
     emit opened(true, {});
-    if (!surveyPlan_.empty()) radio_->survey();
-    else if (resumeMode_ == QLatin1String("watch") && resumeMHz_ > 0) radio_->watch(resumeMHz_ * 1e6);
+    if (resumeMode_ == QLatin1String("watch") && resumeMHz_ > 0) radio_->watch(resumeMHz_ * 1e6);
     else if (resumeMode_ == QLatin1String("scan")) radio_->scan();
     emit message(tr("Adapter reconnected"));
     poll();
@@ -144,7 +150,11 @@ void RadioBackend::recover(const QString &mode, double watchMHz) {
         radio_->open(-1);
     } catch (const std::exception &e) {
         KP_LOGE("reopen failed: %s", e.what());
-        emit opened(false, QString::fromLocal8Bit(e.what()) + hint(false));
+        // Sin dialogo y sin rendirse: como un desenchufado, se sigue intentando solo (tryReconnect) con el motivo
+        // a la vista. Antes se quedaba cerrado hasta pulsar "Conectar adaptador".
+        adapterLost(mode, watchMHz,
+                    tr("Could not reopen the adapter; retrying.") + QStringLiteral("\n\n") +
+                        QString::fromLocal8Bit(e.what()) + hint(false));
         return;
     }
     if (!surveyPlan_.empty()) radio_->survey();

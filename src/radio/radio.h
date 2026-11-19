@@ -113,6 +113,7 @@ private:
   bool watch_fault(double hz);
   void measure_snr(const std::vector<cf> &iq, double fs);
   void record_bank(const Bank &b);
+  void abort_record(const char *why);
   void handle_scan(Bank &b);
   void handle_test(Bank &b);
   void scan_step_done();

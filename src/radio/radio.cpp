@@ -157,6 +157,7 @@ void Radio::close() {
   if (_dsp.joinable()) _dsp.join();
   _dqcv.notify_all();
   if (_decoder.joinable()) _decoder.join();
+  abort_record("closed");  // the DSP thread is gone: its recording state is ours now
   {
     std::lock_guard<std::mutex> l(_dqm);
     _dq.clear();
@@ -369,7 +370,9 @@ void Radio::dsp_loop() {
     const bool fresh = epoch != _epoch_seen;
     _epoch_seen = epoch;
     if (fresh) {
-      // a mode change: set the radio up for it (a new watch builds a new decoder)
+      // a mode change: set the radio up for it (a new watch builds a new decoder). A recording does not carry
+      // over: it would go on later, maybe on another channel, under the first one's centre_hz.
+      abort_record("mode change");
       _fe.reset();
       _fe_gen = ~0u;
       if (mode == Mode::Watch) {
@@ -472,6 +475,7 @@ bool Radio::watch_fault(double hz) {
   _watch_faults.clear();
   _fe.reset();
   _fe_gen = ~0u;
+  abort_record("fallback to 20 MS/s");  // the file's sample_rate would no longer hold
   tune(hz, 2);
   return true;
 }
@@ -577,7 +581,10 @@ void Radio::record_bank(const Bank &b) {
     buf[2 * i] = static_cast<int16_t>(static_cast<int>(_iq[i].real()) * 16);
     buf[2 * i + 1] = static_cast<int16_t>(static_cast<int>(_iq[i].imag()) * 16);
   }
-  std::fwrite(buf.data(), 4, ns, _rec);
+  if (std::fwrite(buf.data(), 4, ns, _rec) != ns) {
+    abort_record("write failed (disk full?)");
+    return;
+  }
   _rec_left -= ns;
   _rec_samples += ns;
   if (_rec_left == 0) {
@@ -594,6 +601,21 @@ void Radio::record_bank(const Bank &b) {
     }
     KP_LOGI("record: done, %llu samples -> %s.cs16", (unsigned long long)_rec_samples, _rec_prefix.c_str());
   }
+}
+
+// A debug recording cut short (mode change, fallback, close, write error): the .cs16 is closed as it is and gets
+// no .json, so the GUI reports it incomplete instead of taking it for a good one. A request not started yet is
+// dropped too: it would start on whatever is watched next. DSP thread (or with it stopped).
+void Radio::abort_record(const char *why) {
+  {
+    std::lock_guard<std::mutex> l(_m);
+    _rec_req_s = 0;
+  }
+  if (!_rec) return;
+  std::fclose(_rec);
+  _rec = nullptr;
+  KP_LOGW("record: %s.cs16 cut short (%s) after %llu samples, no .json", _rec_prefix.c_str(), why,
+          (unsigned long long)_rec_samples);
 }
 
 void Radio::decode_loop() {

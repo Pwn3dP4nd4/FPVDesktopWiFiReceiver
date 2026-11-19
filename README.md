@@ -26,8 +26,8 @@ Spanish). Measured on an AMD PC: on a chipset port shared with mouse, keyboard a
 Windows 10/11 x64: download the `.zip` of the latest version from
 [Releases](https://github.com/Pwn3dP4nd4/FPVDesktopWiFiReceiver/releases/latest), unzip it and double-click
 `FPVDesktopWiFiReceiver.exe`. The first time, install the adapter's WinUSB driver from the app: *File → Install adapter driver* (see
-[Windows 10/11](#windows-1011), step 3). The same page has an x64 Linux binary (it needs the system's Qt 6 and
-libusb), or build it as explained below.
+[Windows 10/11](#windows-1011), step 3). The same page has an x64 Linux binary (it needs the system's Qt 6,
+libusb and FFmpeg libraries; FFmpeg is for video recording), or build it as explained below.
 
 ## How the integration with kepyur (Android) works
 
