@@ -240,6 +240,39 @@ int main() {
         }
     }
     {
+        // dos senales que casan con R3 (su piloto en 5732 y otro en 5735): la mas cercana es su piloto, la otra un
+        // intruso
+        race::Monitor m;
+        m.start(kRace);
+        run(m, 20, [](int, auto &b, auto &now, auto &) {
+            four(b, now);
+            now.push_back(Signal{5735, 0, false, "", 12});
+        });
+        const auto &h = m.health()[1];
+        std::printf("  dos senales en R3: visto %d, SNR %.1f, intrusos %d\n", h.seen, h.snr_med, h.intruders);
+        check(h.seen == 20 && std::fabs(h.snr_med - 25) < 0.5f && h.intruders == 20,
+              "dos senales en un fijado: la mas cercana es su piloto, la otra intruso");
+    }
+    {
+        // un intruso intermitente en 5748: sale 2 barridos de cada 3 y en el ultimo no esta. Con todas las bandas,
+        // el canal nuevo guarda igual la separacion con el (se recuerdan las ajenas de los ultimos barridos)
+        race::Monitor m;
+        m.start(kRace);
+        const Signal intruder{5748, 0, false, "", 15};
+        run(m, 20, [&](int sw, auto &b, auto &now, auto &) {
+            four(b, now);
+            if (sw % 3 != 1) {
+                add_block(b, 5748 - 8, 5748 + 8, 22, 22, 1);
+                now.push_back(intruder);
+            }
+        });
+        const auto mv = m.suggest(analog_channels("ABEFR"), {});
+        std::printf("  intruso intermitente en 5748:\n");
+        show(mv, m);
+        check(mv && mv->from == 1 && fits(m, *mv, {intruder}),
+              "intruso intermitente (no esta en el ultimo barrido): tampoco pegado a el");
+    }
+    {
         // la misma energia encima de R3 sin que el barrido la detecte como senal: no es intruso, pero sigue
         // contando como interferencia de su canal (solo se quita la de las senales ajenas detectadas)
         race::Monitor m;

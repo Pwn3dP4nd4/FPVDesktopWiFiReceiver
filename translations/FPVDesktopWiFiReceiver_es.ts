@@ -238,6 +238,18 @@
         <translation>No hace falta cambiar nada: a ningún piloto le iría claramente mejor en otro canal libre.</translation>
     </message>
     <message>
+        <source>%1 has someone else transmitting on top of it, but no free channel compatible with the other pinned ones would be clearly better: unpin one or add bands.</source>
+        <translation>%1 tiene a otro emitiendo encima, pero ningún canal libre compatible con los demás fijados sería claramente mejor: desfija alguno o añade bandas.</translation>
+    </message>
+    <message>
+        <source>%1 has interference on its channel, but no free channel compatible with the other pinned ones would be clearly better: unpin one or add bands.</source>
+        <translation>%1 tiene interferencia en su canal, pero ningún canal libre compatible con los demás fijados sería claramente mejor: desfija alguno o añade bandas.</translation>
+    </message>
+    <message>
+        <source>%1 is on the air here: taken as yours (if it is not, unpin this channel)</source>
+        <translation>%1 está en el aire aquí: se da por tuyo (si no lo es, desfija este canal)</translation>
+    </message>
+    <message>
         <source>Spectrum</source>
         <translation>Espectro</translation>
     </message>

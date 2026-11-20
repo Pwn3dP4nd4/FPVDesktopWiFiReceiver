@@ -8,7 +8,9 @@
 // Lo que no se puede ver: la interferencia que cae justo debajo de la portadora de un piloto que esta emitiendo
 // (se quita con su senal). Se ve en los barridos en que ese piloto no esta, en las redes WiFi recordadas
 // (advisor::WifiMemory) y en lo que asoma fuera de su ancho. Una SNR baja con el canal limpio no se arregla
-// cambiando de canal (antena, potencia, distancia): ahi no se recomienda mover.
+// cambiando de canal (antena, potencia, distancia): ahi no se recomienda mover. Mientras el piloto de un fijado no
+// ha salido, una senal ajena del mismo sistema a menos de kMatchMhz de su canal se toma por el (con dos, la mas
+// cercana es la suya y la otra un intruso).
 //
 // Sin Qt: la ventana (src/channel_analyzer.cpp) le pasa cada barrido; test/race_monitor_test.cpp lo prueba con
 // espectros sinteticos.
@@ -28,6 +30,8 @@ constexpr float kLostCost = 20;      // su piloto no se ve (corte), entre la pri
 // Para recomendar mover: barridos minimos observados y mejora minima (dB) del canal nuevo sobre el actual
 constexpr int kMinSweeps = 10;
 constexpr float kMoveMinGainDb = 3;
+// suggest tiene en cuenta las senales ajenas vistas en estos ultimos barridos (una que sale a ratos tambien)
+constexpr int kForeignMemory = 10;
 
 struct ChannelHealth {
     advisor::Candidate ch;   // el canal fijado
@@ -78,7 +82,7 @@ class Monitor {
     // barridos; para cada uno, su mejor canal nuevo es el que elige advisor::advise con los demas fijados
     // (candidatos de su sistema, sin el suyo actual ni los que esten a menos de kMatchMhz de el ni a menos de
     // advisor::min_spacing de una senal ajena), con el ultimo espectro (todos los fijados quitados) y las senales
-    // ajenas del ultimo barrido como ocupadas. Se recomienda el primero cuya mejora sea al menos kMoveMinGainDb.
+    // ajenas de los ultimos kForeignMemory barridos como ocupadas. Se recomienda el primero cuya mejora sea al menos kMoveMinGainDb.
     std::optional<Move> suggest(const std::vector<advisor::Candidate> &analog,
                                 const std::vector<advisor::Candidate> &hdzero) const;
 
@@ -89,6 +93,11 @@ class Monitor {
     std::vector<double> cost_sum_;           // suma de channel_cost
     std::vector<advisor::Bin> last_bins_;    // ultimo espectro, con los fijados vistos quitados
     std::vector<advisor::Signal> foreign_;   // senales ajenas del ultimo barrido
+    struct Recent {
+        advisor::Signal s;
+        int sweep;  // ultimo barrido (sweeps_) en que se vio
+    };
+    std::vector<Recent> recent_;             // ajenas de los ultimos kForeignMemory barridos
     std::vector<advisor::Wifi> wifi_;        // redes del ultimo barrido
     int sweeps_ = 0;
 

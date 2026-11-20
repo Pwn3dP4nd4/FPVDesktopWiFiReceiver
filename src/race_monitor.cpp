@@ -48,6 +48,7 @@ void Monitor::start(const std::vector<advisor::Candidate> &pinned) {
     cost_sum_.assign(n, 0);
     last_bins_.clear();
     foreign_.clear();
+    recent_.clear();
     wifi_.clear();
     sweeps_ = 0;
 }
@@ -81,10 +82,12 @@ void Monitor::update(const std::vector<advisor::Bin> &bins, const std::vector<ad
             }
         }
         if (best < 0) continue;
-        own[s] = true;
         const int p = pilot[best];
         if (p < 0 || bd < std::fabs(now[p].mhz - health_[best].ch.mhz)) pilot[best] = static_cast<int>(s);
     }
+    // solo la de su piloto es propia: otra que tambien case con el mismo fijado es de alguien mas (un intruso)
+    for (size_t i = 0; i < n; i++)
+        if (pilot[i] >= 0) own[pilot[i]] = true;
 
     // Las senales de los pilotos propios no son interferencia de nadie (ni del suyo ni de los vecinos, por las
     // bandas laterales): se quitan todas del espectro. Lo que queda debajo de cada portadora no se ve, pero si lo
@@ -96,6 +99,21 @@ void Monitor::update(const std::vector<advisor::Bin> &bins, const std::vector<ad
     for (size_t s = 0; s < now.size(); s++)
         if (!own[s]) foreign_.push_back(now[s]);
     wifi_ = wifi;
+    // las ajenas de los ultimos kForeignMemory barridos (una que sale a ratos tambien cuenta para suggest)
+    for (const auto &f : foreign_) {
+        bool found = false;
+        for (auto &r : recent_)
+            if (r.s.digital == f.digital && std::fabs(r.s.mhz - f.mhz) < kMatchMhz) {
+                r.s = f;
+                r.sweep = sweeps_;
+                found = true;
+                break;
+            }
+        if (!found) recent_.push_back({f, sweeps_});
+    }
+    recent_.erase(std::remove_if(recent_.begin(), recent_.end(),
+                                 [&](const Recent &r) { return sweeps_ - r.sweep >= kForeignMemory; }),
+                  recent_.end());
 
     for (size_t i = 0; i < n; i++) {
         ChannelHealth &h = health_[i];
@@ -164,6 +182,8 @@ std::optional<Move> Monitor::suggest(const std::vector<advisor::Candidate> &anal
     const size_t half = (health_.size() + 1) / 2;
     if (order.size() > half) order.resize(half);
 
+    std::vector<advisor::Signal> foreign;  // las ajenas recordadas: ocupadas y a guardar separacion con ellas
+    for (const auto &r : recent_) foreign.push_back(r.s);
     for (int i : order) {
         const ChannelHealth &h = health_[i];
         if (h.sweeps < kMinSweeps) continue;
@@ -181,7 +201,7 @@ std::optional<Move> Monitor::suggest(const std::vector<advisor::Candidate> &anal
         std::vector<advisor::Candidate> cand;
         for (const auto &c : h.ch.hdzero ? hdzero : analog) {
             bool ok = c.hdzero == h.ch.hdzero && std::fabs(c.mhz - h.ch.mhz) >= kMatchMhz;
-            for (const auto &f : foreign_) {
+            for (const auto &f : foreign) {
                 const advisor::Candidate fc{f.name, f.mhz, f.digital, f.digital ? f.bw_mhz : 0};
                 ok = ok && std::fabs(f.mhz - c.mhz) >= advisor::min_spacing(fc, c);
             }
@@ -189,7 +209,7 @@ std::optional<Move> Monitor::suggest(const std::vector<advisor::Candidate> &anal
         }
         if (cand.empty()) continue;
         const std::vector<advisor::Candidate> none;
-        const auto adv = advisor::advise(last_bins_, foreign_, h.ch.hdzero ? none : cand, h.ch.hdzero ? cand : none,
+        const auto adv = advisor::advise(last_bins_, foreign, h.ch.hdzero ? none : cand, h.ch.hdzero ? cand : none,
                                          n_a, n_h, &wifi_, others);
         // el elegido por la busqueda (no fijado) de su sistema; se comprueba que no pisa a los demas fijados por si
         // no hubiera sitio (advise lo devuelve igual, con complete = false)

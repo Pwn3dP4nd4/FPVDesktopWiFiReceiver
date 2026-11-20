@@ -1062,6 +1062,15 @@ void ChannelAnalyzer::recompute() {
         it->setText(4, QStringLiteral("%1 dB").arg(p.r.noise_db, 0, 'f', 1));
         it->setText(5, QStringLiteral("%1 %").arg(qRound(p.r.burst * 100)));
         QString note = noteText(p, a.wifi);
+        if (p.pinned)
+            // se da por mio sin preguntar (los fijados se guardan: otro dia puede ser otro piloto): que se vea
+            for (const Pilot &pl : last_.pilots)
+                if (pl.ageS < 60 && onPinned({p.r.ch}, pl)) {
+                    if (!note.isEmpty()) note += QStringLiteral("; ");
+                    note += tr("%1 is on the air here: taken as yours (if it is not, unpin this channel)")
+                                .arg(pl.name.isEmpty() ? QString::number(pl.freqMHz, 'f', 0) : pl.shownName());
+                    break;
+                }
         if (!p.pinned)
             for (int k = 0; k < ticked.size(); k++)
                 if (!placed[k] && tickedHdz[k] == p.r.ch.hdzero &&
@@ -1288,9 +1297,18 @@ void ChannelAnalyzer::updateRace() {
         } else if (sw >= race::kMinSweeps && worst >= 0) {
             const race::ChannelHealth &h = hs[worst];
             const bool weak = h.snr_low < kLowSnrDb || h.lost > 0;
+            const QString who = QStringLiteral("<b>%1</b>").arg(chName(h.ch));
             if (weak && h.penalty < race::kMoveMinGainDb)
                 adv = tr("%1 has the weakest video on a clean channel: changing channel would not fix it. Check its "
-                         "antennas, VTX power and distance.").arg(QStringLiteral("<b>%1</b>").arg(chName(h.ch)));
+                         "antennas, VTX power and distance.").arg(who);
+            else if (h.penalty >= race::kMoveMinGainDb)
+                // su canal es el problema, pero no hay otro libre compatible con los demas fijados
+                adv = (h.sweeps > 0 && 5.0 * h.intruders > h.sweeps
+                           ? tr("%1 has someone else transmitting on top of it, but no free channel compatible with "
+                                "the other pinned ones would be clearly better: unpin one or add bands.")
+                           : tr("%1 has interference on its channel, but no free channel compatible with the other "
+                                "pinned ones would be clearly better: unpin one or add bands."))
+                          .arg(who);
             else
                 adv = tr("No change needed: no pilot would clearly do better on another free channel.");
         }

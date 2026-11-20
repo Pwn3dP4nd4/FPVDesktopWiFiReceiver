@@ -66,7 +66,8 @@ intensa, los bordes marcados y una chincheta; en el resumen, *Fijados* aparte de
 guardan y se conservan entre análisis y sesiones. **Quitar todos los fijados** los borra.
 
 Un piloto en el aire en un canal fijado (mismo sistema y a menos de 5 MHz) es siempre tuyo: no ocupa su propio canal
-ni cuenta como interferencia, y en la lista *En el aire* sale marcado y en gris, *(fijado)*. La casilla de esa lista
+ni cuenta como interferencia, y en la lista *En el aire* sale marcado y en gris, *(fijado)*. Como los fijados se conservan entre sesiones, la
+fila del fijado lo dice (*… está en el aire aquí: se da por tuyo*): si es de otro, desfíjalo. La casilla de esa lista
 es para tus otros pilotos, los que aún no están fijados: su canal no se toma como ocupado y la recomendación puede
 darles otro, o poner a alguien a su lado, como si también se fueran a mover. Si uno ya está en un canal
 recomendado, su fila dice *ya está aquí tu piloto …*; si no, el resumen avisa de que tiene que cambiar de canal. Si
@@ -97,6 +98,11 @@ Lo que no puede ver:
   su ancho.
 - **Una SNR baja o cortes con el canal limpio no se arreglan cambiando de canal**: son la antena, la potencia del
   VTX o la distancia. En ese caso no recomienda mover y lo dice.
+- **Otro en un canal fijado antes de que salga su piloto**: una señal del mismo sistema a menos de 5 MHz se toma
+  por su piloto. Con dos, la más cercana es su piloto y la otra un intruso.
+
+Para recomendar un cambio cuentan las señales ajenas vistas en los últimos 10 barridos (también una que va y
+viene), y si el peor canal tiene interferencia pero ningún canal libre compatible sería claramente mejor, lo dice.
 
 ## Ideas tomadas del vídeo de Ryan Quellet
 

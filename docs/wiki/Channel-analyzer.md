@@ -66,7 +66,8 @@ and 2 pinned, it looks for 2. On the graph they have a stronger band with marked
 *Pinned* is listed apart from *Suggested for the rest*. They are saved and kept between analyses and sessions. **Unpin all** clears them.
 
 A pilot on the air on a pinned channel (same system, within 5 MHz) is always yours: it does not take its own channel
-or count as interference, and in the *On the air* list it shows ticked and greyed out, *(pinned)*. The tick in that
+or count as interference, and in the *On the air* list it shows ticked and greyed out, *(pinned)*. Since pinned channels are kept between
+sessions, the pinned row says so (*… is on the air here: taken as yours*): if it is someone else, unpin it. The tick in that
 list is for your other pilots, the ones not pinned yet: their channel is not taken and the advice may give them
 another one, or put someone else next to them, as if they were going to move too. If one of them is already on a
 recommended channel, its row says *your pilot … is already here*; if not, the summary says it must change channel.
@@ -97,6 +98,11 @@ What it cannot see:
   sticks out beyond its width.
 - **Low SNR or dropouts on a clean channel are not fixed by changing channel**: that is the antenna, the VTX power
   or the distance. In that case it does not suggest a move and says so.
+- **Someone else on a pinned channel before its pilot takes off**: a signal of the same system within 5 MHz is
+  taken for its pilot. With two, the closest is its pilot and the other an intruder.
+
+Other people's signals seen in the last 10 sweeps count when suggesting a move (one that comes and goes too), and
+if the worst channel has interference but no compatible free channel would be clearly better, it says so.
 
 ## Ideas taken from Ryan Quellet's video
 
