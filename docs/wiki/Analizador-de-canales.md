@@ -83,10 +83,11 @@ fijado:
 - la **interferencia** de su canal, con la señal de su propio piloto quitada (ruido, ráfagas, Wi-Fi recordado);
 - una **calidad** estimada del vídeo (la peor SNR menos lo que quitan el canal y los cortes). El peor se resalta.
 
-Durante los primeros 10 barridos está aprendiendo. Después, si a uno
-de los pilotos con peor vídeo le iría claramente mejor (al menos 3 dB) en otro canal libre compatible con los demás
-fijados, lo recomienda («Pasa al piloto de R3 a R2: unos +X dB», con la causa: otro emitiendo encima, o
-interferencia o Wi-Fi en su canal). **Aplicar** cambia ese fijado (dile al piloto que cambie de canal) y vuelve a
+Durante los primeros 10 barridos está aprendiendo. Después, si a uno de los pilotos con peor vídeo le iría
+claramente mejor (al menos 3 dB) en otro canal libre compatible con los demás fijados y a una separación segura de
+las señales ajenas, lo recomienda («Pasa al piloto de R3 a R2: unos +X dB», con la causa: otro emitiendo encima, o
+interferencia o Wi-Fi en su canal). Un intruso cuenta una vez: como intruso, no también como interferencia del
+canal. **Aplicar** cambia ese fijado (dile al piloto que cambie de canal) y vuelve a
 empezar solo su seguimiento; los demás conservan lo apuntado. Cambiar los fijados a mano reinicia el seguimiento.
 
 Lo que no puede ver:

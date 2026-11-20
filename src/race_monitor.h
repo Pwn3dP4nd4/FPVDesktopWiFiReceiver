@@ -38,7 +38,8 @@ struct ChannelHealth {
     float snr_med = 0;       // SNR de su piloto (dB): mediana de los barridos en que se vio
     float snr_low = 0;       // percentil 10 (los peores momentos); 0 si no se ha visto nunca
     int intruders = 0;       // barridos con una senal ajena (no casa con ningun fijado) solapando su canal
-    float channel_cost = 0;  // media por barrido de advisor::rate(canal, bins con los fijados quitados, {}, wifi).cost
+    float channel_cost = 0;  // media por barrido de advisor::rate(canal, bins, {}, wifi).cost, con las senales de
+                             // los fijados y las ajenas que lo pisan quitadas (esas ya cuentan en intruders)
     float penalty = 0;       // lo atribuible al canal: channel_cost + kIntruderCost * intruders / sweeps
     float quality = 0;       // estimacion del video (dB, mas es mejor):
                              //   snr_low - penalty - kLostCost * lost / (barridos entre la primera y la ultima vez)
@@ -74,10 +75,10 @@ class Monitor {
     int worst() const;
     // Recomendar mover a uno de los de peor video: entre los vistos alguna vez, se mira, de peor a mejor quality,
     // la mitad peor de los fijados (redondeando hacia arriba), y de ellos los que lleven al menos kMinSweeps
-    // barridos; para cada uno, su mejor canal nuevo es el que elige
-    // advisor::advise con los demas fijados (candidatos de su sistema, sin el suyo actual ni los que esten a menos
-    // de kMatchMhz de el), con el ultimo espectro (todos los fijados quitados) y las senales ajenas del ultimo
-    // barrido como ocupadas. Se recomienda el primero cuya mejora sea al menos kMoveMinGainDb.
+    // barridos; para cada uno, su mejor canal nuevo es el que elige advisor::advise con los demas fijados
+    // (candidatos de su sistema, sin el suyo actual ni los que esten a menos de kMatchMhz de el ni a menos de
+    // advisor::min_spacing de una senal ajena), con el ultimo espectro (todos los fijados quitados) y las senales
+    // ajenas del ultimo barrido como ocupadas. Se recomienda el primero cuya mejora sea al menos kMoveMinGainDb.
     std::optional<Move> suggest(const std::vector<advisor::Candidate> &analog,
                                 const std::vector<advisor::Candidate> &hdzero) const;
 

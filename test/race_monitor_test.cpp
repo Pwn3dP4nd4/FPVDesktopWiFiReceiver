@@ -71,15 +71,16 @@ int index_of(const race::Monitor &m, const std::string &name, bool hdzero = fals
         if (m.health()[i].ch.name == name && m.health()[i].ch.hdzero == hdzero) return static_cast<int>(i);
     return -1;
 }
-// el canal nuevo no pisa a los demas fijados (separacion minima) ni a estas senales ajenas
+// el canal nuevo guarda la separacion minima con los demas fijados y con estas senales ajenas (lo que tiene una
+// ajena pegada a su canal no se ve si cae bajo la portadora de un fijado)
 bool fits(const race::Monitor &m, const race::Move &mv, const std::vector<Signal> &foreign) {
     for (size_t i = 0; i < m.health().size(); i++) {
         if (static_cast<int>(i) == mv.from) continue;
         if (std::fabs(m.health()[i].ch.mhz - mv.to.mhz) < min_spacing(m.health()[i].ch, mv.to)) return false;
     }
     for (const auto &s : foreign) {
-        const double w = s.digital && s.bw_mhz > 0 ? s.bw_mhz : kAnalogBw;
-        if (std::fabs(s.mhz - mv.to.mhz) < (w + width(mv.to)) / 2) return false;
+        const Candidate f{"", s.mhz, s.digital, s.digital ? s.bw_mhz : 0};
+        if (std::fabs(s.mhz - mv.to.mhz) < min_spacing(f, mv.to)) return false;
     }
     return true;
 }
@@ -210,12 +211,23 @@ int main() {
             if (static_cast<int>(i) != r3) others = others && m.health()[i].intruders == 0;
         check(others, "a los demas no les cuenta como intruso");
         check(m.worst() == r3, "el del intruso es el de peor video");
+        // el intruso cuenta una vez: en intruders, no tambien su energia en la interferencia del canal
+        const auto &h3 = m.health()[r3];
+        const float intr = race::kIntruderCost * 16 / 20;
+        check(h3.channel_cost < 2 && std::fabs(h3.penalty - (h3.channel_cost + intr)) < 0.1f,
+              "la energia del intruso no se suma tambien a la interferencia del canal");
         const auto mv = m.suggest(raceband(), {});
         show(mv, m);
         check(mv && mv->from == r3 && mv->cause == race::Cause::Intruder, "recomienda mover a R3, por el intruso");
         check(mv && mv->to.name != "R3" && !mv->to.hdzero && fits(m, *mv, {intruder}),
               "a un canal analogico libre, separado de los demas fijados y del intruso");
         check(mv && mv->gain_db >= race::kMoveMinGainDb, "con una mejora de al menos kMoveMinGainDb");
+        check(mv && mv->gain_db <= intr + 0.5f, "y la mejora no pasa de lo que quita el intruso (no cuenta doble)");
+        // con todas las bandas hay canales pegados al suyo (A8 5725, B2 5752...): ninguno a menos de la separacion
+        // minima del intruso, aunque bajo la portadora de R3 el espectro se vea limpio
+        const auto all = m.suggest(analog_channels("ABEFR"), {});
+        show(all, m);
+        check(all && all->from == r3 && fits(m, *all, {intruder}), "con todas las bandas, tampoco pegado al intruso");
         // se cambia: lo suyo vuelve a empezar, lo de los demas sigue
         if (mv) {
             m.moved(mv->from, mv->to);
@@ -226,6 +238,18 @@ int main() {
         } else {
             check(false, "moved(): el movido empieza de cero, los demas conservan lo suyo");
         }
+    }
+    {
+        // la misma energia encima de R3 sin que el barrido la detecte como senal: no es intruso, pero sigue
+        // contando como interferencia de su canal (solo se quita la de las senales ajenas detectadas)
+        race::Monitor m;
+        m.start(kRace);
+        run(m, 20, [](int, auto &b, auto &now, auto &) {
+            four(b, now);
+            add_block(b, 5748 - 8, 5748 + 8, 22, 22, 1);
+        });
+        const auto &h = m.health()[1];
+        check(h.intruders == 0 && h.channel_cost > 3, "energia ajena sin senal detectada: cuenta como interferencia");
     }
     {
         // una red WiFi con trafico encima de R2 (canal 140, 5700): la interferencia la da la red recordada (debajo

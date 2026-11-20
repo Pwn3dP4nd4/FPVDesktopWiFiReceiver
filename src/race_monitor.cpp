@@ -91,7 +91,7 @@ void Monitor::update(const std::vector<advisor::Bin> &bins, const std::vector<ad
     // que asoma fuera de su ancho, las redes recordadas y el canal entero en los barridos en que su piloto no esta.
     last_bins_ = bins;
     for (size_t s = 0; s < now.size(); s++)
-        if (own[s]) advisor::mask_signal(last_bins_, now[s]);
+        if (own[s]) advisor::mask_signal(last_bins_, now[s], now);  // el nivel de alrededor, sin otras senales
     foreign_.clear();
     for (size_t s = 0; s < now.size(); s++)
         if (!own[s]) foreign_.push_back(now[s]);
@@ -106,13 +106,21 @@ void Monitor::update(const std::vector<advisor::Bin> &bins, const std::vector<ad
             if (first_[i] < 0) first_[i] = sw;
             last_[i] = sw;
         }
+        // las senales ajenas que pisan su canal cuentan en intruders; su energia se quita aqui para no contarlas
+        // otra vez en la interferencia del canal (lo que asoma de las que solo estan cerca si cuenta)
+        const std::vector<advisor::Bin> *cb = &last_bins_;
+        std::vector<advisor::Bin> masked;
         for (const auto &f : foreign_)
             if (overlaps(f, h.ch)) {
-                h.intruders++;
-                break;
+                if (cb == &last_bins_) {
+                    h.intruders++;
+                    masked = last_bins_;
+                    cb = &masked;
+                }
+                advisor::mask_signal(masked, f, now);
             }
         // sin vecinos (seen vacio): lo que se mide es el canal, no si esta ocupado (los ajenos van en intruders)
-        cost_sum_[i] += advisor::rate(h.ch, last_bins_, {}, wifi).cost;
+        cost_sum_[i] += advisor::rate(h.ch, *cb, {}, wifi).cost;
 
         auto v = snr_[i];
         std::sort(v.begin(), v.end());
@@ -167,10 +175,18 @@ std::optional<Move> Monitor::suggest(const std::vector<advisor::Candidate> &anal
             (health_[j].ch.hdzero ? n_h : n_a)++;
         }
         (h.ch.hdzero ? n_h : n_a)++;  // el que se busca
-        // candidatos de su sistema, sin el canal en que ya esta (ni otro casi en la misma frecuencia: otra banda)
+        // candidatos de su sistema, sin el canal en que ya esta (ni otro casi en la misma frecuencia: otra banda) ni
+        // los que esten a menos de la separacion minima de una senal ajena: lo que esta tiene pegado a su canal no se
+        // ve si cae bajo la portadora de un fijado (se quita con su senal), asi que se le pide lo mismo que a un fijado
         std::vector<advisor::Candidate> cand;
-        for (const auto &c : h.ch.hdzero ? hdzero : analog)
-            if (c.hdzero == h.ch.hdzero && std::fabs(c.mhz - h.ch.mhz) >= kMatchMhz) cand.push_back(c);
+        for (const auto &c : h.ch.hdzero ? hdzero : analog) {
+            bool ok = c.hdzero == h.ch.hdzero && std::fabs(c.mhz - h.ch.mhz) >= kMatchMhz;
+            for (const auto &f : foreign_) {
+                const advisor::Candidate fc{f.name, f.mhz, f.digital, f.digital ? f.bw_mhz : 0};
+                ok = ok && std::fabs(f.mhz - c.mhz) >= advisor::min_spacing(fc, c);
+            }
+            if (ok) cand.push_back(c);
+        }
         if (cand.empty()) continue;
         const std::vector<advisor::Candidate> none;
         const auto adv = advisor::advise(last_bins_, foreign_, h.ch.hdzero ? none : cand, h.ch.hdzero ? cand : none,

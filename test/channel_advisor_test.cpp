@@ -182,6 +182,20 @@ int main() {
         add_block(c, 5764, 5774, 30, 31, 1);
         mask_signal(c, Signal{5731.5, 0, false, "R3"});
         check(rate(r4, c, {}).noise_db > 20, "un piloto ajeno al lado no se quita");
+        // con un piloto ajeno pegado (5748, se solapan): sin decirle que esta ahi, el nivel de alrededor sale de su
+        // senal y R3 queda tapado a ese nivel; diciendoselo (others), R3 queda al nivel del ruido
+        auto d = flat();
+        add_block(d, 5724, 5740, 25, 25, 1);
+        add_block(d, 5740, 5756, 22, 22, 1);
+        const Signal mine{5732, 0, false, "R3"}, near{5748, 0, false, ""};
+        auto e = d;
+        mask_signal(d, mine);
+        mask_signal(e, mine, {mine, near});
+        std::printf("  mi VTX en R3 con otro pegado en 5748: R3 %.1f dB sin others, %.1f dB con others\n",
+                    rate(r3, d, {}).noise_db, rate(r3, e, {}).noise_db);
+        check(rate(r3, e, {}).noise_db < 6, "el nivel de alrededor no sale de las otras senales (others)");
+        mask_signal(e, near, {mine, near});
+        check(rate(r3, e, {}).noise_db < 1.5, "y quitada tambien la ajena, R3 queda limpio");
     }
     {
         // un AP sin trafico en el canal WiFi 153 (5765 MHz): solo beacons, pico 20 dB y encendido el 0.3 % del

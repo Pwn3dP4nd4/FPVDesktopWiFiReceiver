@@ -951,15 +951,21 @@ void ChannelAnalyzer::prepare(std::vector<advisor::Bin> &bins, std::vector<advis
     // estan en un canal fijado tambien son mios (son los del reparto): si no, su propio canal saldria ocupado
     seenIdx_.clear();
     const std::vector<advisor::Candidate> pins = pinnedCandidates();
+    const auto signal = [](const Pilot &p) {
+        return advisor::Signal{p.freqMHz, p.bwMHz, p.isDigital(), p.name.toStdString(), float(p.snrDb)};
+    };
+    std::vector<advisor::Signal> recent;  // todos: el nivel con que se tapa a uno mio no sale de un vecino
+    for (const Pilot &p : last_.pilots)
+        if (p.ageS < 60) recent.push_back(signal(p));
+    if (all) *all = recent;
     for (int i = 0; i < last_.pilots.size(); i++) {
         const Pilot &p = last_.pilots[i];
         if (p.ageS >= 60) continue;
         const QString key = p.name.isEmpty() ? QString::number(p.freqMHz, 'f', 0) : p.name;
-        const advisor::Signal sig{p.freqMHz, p.bwMHz, p.isDigital(), p.name.toStdString(), float(p.snrDb)};
-        if (all) all->push_back(sig);
+        const advisor::Signal sig = signal(p);
         if (mine_.contains(key) || onPinned(pins, p)) {
             // mis pilotos: su propia senal (y sus bandas laterales) no es interferencia (advisor::mask_signal)
-            advisor::mask_signal(bins, sig);
+            advisor::mask_signal(bins, sig, recent);
             continue;
         }
         seen.push_back(sig);

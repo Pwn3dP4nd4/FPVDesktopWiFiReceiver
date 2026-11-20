@@ -83,10 +83,11 @@ starts: the analyzer keeps sweeping and, sweep by sweep, records for each pinned
 - an estimated video **quality** (the worst SNR minus what the channel and the dropouts take away). The worst one
   is highlighted.
 
-For the first 10 sweeps it is learning. After that, if one of the pilots with the worst
-video would clearly do better (at least 3 dB) on another free channel compatible with the other pinned ones, it
-says so ("Move the pilot on R3 to R2: about +X dB", with the cause: someone else transmitting on top of it, or
-interference or WiFi on its channel). **Apply** changes that pinned channel (tell the pilot to switch) and restarts
+For the first 10 sweeps it is learning. After that, if one of the pilots with the worst video would clearly do
+better (at least 3 dB) on another free channel compatible with the other pinned ones and at a safe spacing from
+other people's signals, it says so ("Move the pilot on R3 to R2: about +X dB", with the cause: someone else transmitting on top of it, or
+interference or WiFi on its channel). An intruder counts once: as intruder, not also as interference on the
+channel. **Apply** changes that pinned channel (tell the pilot to switch) and restarts
 only its tracking; the others keep their history. Changing the pinned channels by hand restarts the tracking.
 
 What it cannot see:

@@ -194,13 +194,19 @@ double ideal_spacing(const Candidate &a, const Candidate &b) {
     return 37;                            // Raceband
 }
 
-void mask_signal(std::vector<Bin> &bins, const Signal &s) {
+void mask_signal(std::vector<Bin> &bins, const Signal &s, const std::vector<Signal> &others) {
     const double half = sig_width(s) / 2;
-    std::vector<float> ring;
+    std::vector<float> ring, all;
     for (const auto &b : bins) {
         const double d = std::fabs(b.mhz - s.mhz);
-        if (d > half + kMaskSkirt && d <= half + kMaskSkirt + kMaskRing) ring.push_back(b.mean_db);
+        if (d <= half + kMaskSkirt || d > half + kMaskSkirt + kMaskRing) continue;
+        all.push_back(b.mean_db);
+        bool covered = false;
+        for (const auto &o : others)
+            covered = covered || std::fabs(b.mhz - o.mhz) <= sig_width(o) / 2 + kMaskSkirt;
+        if (!covered) ring.push_back(b.mean_db);
     }
+    if (ring.empty()) ring = std::move(all);
     float level = 0;
     if (!ring.empty()) {
         std::nth_element(ring.begin(), ring.begin() + ring.size() / 2, ring.end());
