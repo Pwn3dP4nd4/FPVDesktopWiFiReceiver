@@ -25,8 +25,8 @@ Each candidate channel gets a score, and the lowest total wins:
 1. **Average interference** within its width (analog 20 MHz, HDZero 27 MHz or 17 in narrow mode).
 2. **Bursts**: the share of time something intermittent hits it (WiFi and the like). The average alone hides them.
 3. **WiFi networks seen**, even while they are quiet (see below).
-4. A channel where **a pilot is already flying** is ruled out. Your own VTXs can be ticked in *On the air* so
-   they do not count.
+4. A channel where **a pilot is already flying** is ruled out. A pilot on a pinned channel is yours already (see
+   below); any other of your own VTXs can be ticked in *On the air* so it does not count.
 
 Between the chosen channels it requires a minimum spacing, penalises going under the ideal one, avoids 3rd-order
 intermodulation between analog pilots and, on a clean band, spreads them as far apart as possible.
@@ -55,6 +55,47 @@ becomes unusable. That is why the analyzer does not only look at how busy each c
 
 In the graph they show as **WiFi 149** (or **WiFi 100–112** for an 80 MHz network), with their block dashed while
 their width is unknown.
+
+## Pinned channels and race tracking
+
+**Pinning channels.** Once you have given channels to some pilots, pin them: tick the **Pin** box on their row of
+the recommendation table, or right-click a channel mark on the graph to pin any other one (also one that is not
+recommended). Pinned channels are always part of the recommendation, even if busy, noisy or outside the chosen
+bands, and the search only picks the missing ones, keeping spacing and intermodulation with them: with 4 pilots
+and 2 pinned, it looks for 2. On the graph they have a stronger band with marked edges and a pin; in the summary,
+*Pinned* is listed apart from *Suggested for the rest*. They are saved and kept between analyses and sessions. **Unpin all** clears them.
+
+A pilot on the air on a pinned channel (same system, within 5 MHz) is always yours: it does not take its own channel
+or count as interference, and in the *On the air* list it shows ticked and greyed out, *(pinned)*. The tick in that
+list is for your other pilots, the ones not pinned yet: their channel is not taken and the advice may give them
+another one, or put someone else next to them, as if they were going to move too. If one of them is already on a
+recommended channel, its row says *your pilot … is already here*; if not, the summary says it must change channel.
+If it is going to stay where it is, pin its channel instead. The tick lasts one analysis.
+
+**Race tracking** (*Race* tab). With pinned channels and the analysis running, tick **Race tracking** when the race
+starts: the analyzer keeps sweeping and, sweep by sweep, records for each pinned channel:
+
+- the **SNR** of its pilot (median and the worst moments, 10th percentile);
+- **dropouts**: sweeps in which its pilot is missing, between the first and the last time it was seen (take-off
+  and landing do not count);
+- **intruders**: the share of sweeps in which someone else's signal (matching no pinned channel) overlaps it;
+- the **interference** on its channel, with its own pilot's signal removed (noise, bursts, remembered WiFi);
+- an estimated video **quality** (the worst SNR minus what the channel and the dropouts take away). The worst one
+  is highlighted.
+
+For the first 10 sweeps it is learning. After that, if one of the pilots with the worst
+video would clearly do better (at least 3 dB) on another free channel compatible with the other pinned ones, it
+says so ("Move the pilot on R3 to R2: about +X dB", with the cause: someone else transmitting on top of it, or
+interference or WiFi on its channel). **Apply** changes that pinned channel (tell the pilot to switch) and restarts
+only its tracking; the others keep their history. Changing the pinned channels by hand restarts the tracking.
+
+What it cannot see:
+
+- **Interference right under the carrier of a pilot that is transmitting**: it is removed together with its
+  signal. It shows in the sweeps where that pilot is missing, in the remembered WiFi networks and in whatever
+  sticks out beyond its width.
+- **Low SNR or dropouts on a clean channel are not fixed by changing channel**: that is the antenna, the VTX power
+  or the distance. In that case it does not suggest a move and says so.
 
 ## Ideas taken from Ryan Quellet's video
 

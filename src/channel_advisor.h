@@ -26,6 +26,7 @@ struct Signal {  // un piloto visto en el aire
     double bw_mhz = 0;  // ancho ocupado; analogico: 0 (se toma kAnalogBw)
     bool digital = false;
     std::string name;   // "R4", "" si no coincide con ninguno
+    float snr_db = 0;   // SNR de su senal (Pilot::snrDb); lo usa el seguimiento de carrera (src/race_monitor.h)
 };
 
 struct Candidate {
@@ -126,6 +127,7 @@ enum class Note {
 struct Pick {
     Rating r;
     std::vector<Note> notes;
+    bool pinned = false;  // canal fijado por el usuario (advise, pinned): no lo ha elegido la busqueda
 };
 
 struct Advice {
@@ -151,9 +153,15 @@ Rating rate(const Candidate &c, const std::vector<Bin> &bins, const std::vector<
 
 // wifi: las redes a tener en cuenta (la ventana pasa las que recuerda, WifiMemory); nullptr = las de este espectro
 // (find_wifi, reglas de la UE)
+// pinned: canales fijados por el usuario (ya repartidos a unos pilotos). Entran siempre en la recomendacion
+// (Pick::pinned), aunque esten ocupados, sucios o fuera de las bandas elegidas, y la busqueda solo elige los que
+// faltan, respetando con ellos las separaciones y la intermodulacion. n_analog y n_hdzero son el total, fijados
+// incluidos (con 4 pilotos y 2 fijados busca 2); si hay mas fijados de un sistema que su total, salen todos los
+// fijados y ninguno mas de ese sistema. Un fijado se reconoce entre los candidatos por nombre y sistema (no sale
+// dos veces). Dos fijados por debajo de la separacion minima: salen los dos y complete = false.
 Advice advise(const std::vector<Bin> &bins, const std::vector<Signal> &seen, const std::vector<Candidate> &analog,
               const std::vector<Candidate> &hdzero, int n_analog, int n_hdzero,
-              const std::vector<Wifi> *wifi = nullptr);
+              const std::vector<Wifi> *wifi = nullptr, const std::vector<Candidate> &pinned = {});
 
 // Candidatos de las bandas elegidas (letras de kp::fpv_channels(): "ABEFRL"). HDZero: R1-R8, E1, F1, F2, F4,
 // L1-L8 (los mismos que src/kp_ext/digital_scan.cpp), con el nombre del canal analogico de esa frecuencia.
