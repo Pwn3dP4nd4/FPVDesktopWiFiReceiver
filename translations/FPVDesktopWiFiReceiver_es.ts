@@ -769,8 +769,24 @@ Lo grabado hasta entonces se ha guardado en %2</translation>
         <translation>digital %1 MHz</translation>
     </message>
     <message>
+        <source>%1 MHz is between several standard channels (%2): from the frequency alone it is not possible to tell which one. Right-click to say which one is yours.</source>
+        <translation>%1 MHz está entre varios canales estándar (%2): solo con la frecuencia no se puede saber cuál es. Clic derecho para decir cuál es el tuyo.</translation>
+    </message>
+    <message>
+        <source>Channel %1, as you chose (it could also be %2). Right-click to change it.</source>
+        <translation>Canal %1, como elegiste (también podría ser %2). Clic derecho para cambiarlo.</translation>
+    </message>
+    <message>
         <source>Digital signal, %1 MHz wide: its video cannot be shown (this program decodes analog video only). In developer mode you can record its raw signal (Record IQ).</source>
         <translation>Señal digital de %1 MHz de ancho: su vídeo no se puede mostrar (este programa solo decodifica vídeo analógico). En el modo desarrollador puedes grabar su señal sin procesar (Grabar IQ).</translation>
+    </message>
+    <message>
+        <source>Which channel is it? (%1 MHz)</source>
+        <translation>¿Qué canal es? (%1 MHz)</translation>
+    </message>
+    <message>
+        <source>%1 will be shown as %2 from now on</source>
+        <translation>%1 se mostrará como %2 a partir de ahora</translation>
     </message>
     <message>
         <source>Scanning %1/%2</source>

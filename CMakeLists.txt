@@ -156,6 +156,7 @@ add_executable(FPVDesktopWiFiReceiver
   src/scan_plan.cpp src/scan_plan.h
   src/scan_channels_dialog.cpp src/scan_channels_dialog.h
   src/channel_analyzer.cpp src/channel_analyzer.h src/channel_advisor.cpp src/channel_advisor.h
+  src/channel_names.cpp src/channel_names.h
   src/i18n.cpp src/i18n.h
   src/video_recorder.cpp src/video_recorder.h src/video_encoder.h
   assets/icons.qrc
@@ -230,7 +231,8 @@ endif()
 
 # Captura del analizador con el backend de demo: QT_QPA_PLATFORM=offscreen analyzer_shot salida.png [N M [s]]
 add_executable(analyzer_shot test/analyzer_shot.cpp src/channel_analyzer.cpp src/channel_analyzer.h
-               src/channel_advisor.cpp src/stub_backend.cpp src/stub_backend.h src/backend.h src/video_widget.cpp)
+               src/channel_advisor.cpp src/channel_names.cpp src/stub_backend.cpp src/stub_backend.h src/backend.h
+               src/video_widget.cpp)
 target_include_directories(analyzer_shot PRIVATE src)
 target_link_libraries(analyzer_shot PRIVATE Qt6::Widgets kepyur_dsp)
 

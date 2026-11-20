@@ -113,9 +113,11 @@ private:
   bool watch_fault(double hz);
   void measure_snr(const std::vector<cf> &iq, double fs);
   void record_bank(const Bank &b);
+  void abort_record(const char *why);
   void handle_scan(Bank &b);
   void handle_test(Bank &b);
   void scan_step_done();
+  void add_cut_steps(const std::vector<float> &psd_db);
   void unpack(const Bank &b, std::vector<cf> &out);
 
   FrameSink _frames;
@@ -191,6 +193,9 @@ private:
   double _cap_centre = 0;
   std::vector<Hump> _humps;  // this step's candidates (from the first kPsdSpan of the capture)  // hardware centre of the capture (humps are measured from it)
   double _resume_hz = 0;
+  std::vector<double> _cut_steps;  // extra steps this scan added for signals cut by a step's edge (add_cut_steps)
+  std::vector<std::pair<double, double>> _whole_spans;  // Hz: humps seen whole in this scan (they need no extra step)
+  int64_t _scan_start_ms = 0;      // when this scan began: a pilot seen before it is not "still there"
   std::vector<double> _scan_plan_override;     // set_scan_plan() (under _m)
   std::unique_ptr<kpx::DigitalScan> _digital;  // digital signals in this scan, or null
   bool _digital_on = false;                    // set_digital_scan() (under _m)

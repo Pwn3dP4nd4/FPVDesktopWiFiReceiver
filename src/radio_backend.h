@@ -43,7 +43,8 @@ private:
     QString openRadio();  // cambio a USB 3 + apertura; "" si fue bien, si no el error con la ayuda
     void poll();
     void recover(const QString &mode, double watchMHz);
-    void adapterLost(const QString &mode, double watchMHz);
+    // Cierra y espera a que vuelva (tryReconnect); why: el texto para la GUI (vacio = desenchufado)
+    void adapterLost(const QString &mode, double watchMHz, const QString &why = {});
     void tryReconnect();
     void onFrame(const kp::Frame &f);  // hilo decodificador de fpv::Radio
     std::unique_ptr<fpv::Radio> radio_;

@@ -66,6 +66,9 @@ private:
     QString digitalKind(const Pilot &p) const;  // "HDZero", "HDZero estrecho", "digital 18 MHz"
     const Pilot *digitalPilotAt(double mhz) const;
     void watchChannelFromCombo();
+    // Clic derecho en un piloto que puede ser varios canales estandar: elegir cual (src/channel_names.h)
+    void choosePilotChannel(double mhz, const QPoint &globalPos);
+    QString channelTag(double mhz) const;  // para nombres de fichero: "R4", o "R5-A4-F4" si no se sabe cual
     void chooseScanChannels();
     void updateScanButton();
     void showAbout();

@@ -27,8 +27,8 @@ en 5 minutos; en un puerto del controlador de la CPU, ninguno.
 Windows 10/11 x64: descarga el `.zip` de la última versión en
 [Releases](https://github.com/Pwn3dP4nd4/FPVDesktopWiFiReceiver/releases/latest), descomprímelo y abre
 `FPVDesktopWiFiReceiver.exe` con doble clic. La primera vez, instala el driver WinUSB del adaptador desde la app: *Archivo → Instalar driver del
-adaptador* (ver [Windows 10/11](#windows-1011), paso 3). En Linux hay un binario x64 en el mismo sitio (necesita Qt 6 y
-libusb del sistema), o compílalo como se explica abajo.
+adaptador* (ver [Windows 10/11](#windows-1011), paso 3). En Linux hay un binario x64 en el mismo sitio (necesita Qt 6,
+libusb y FFmpeg del sistema; FFmpeg es para grabar vídeo), o compílalo como se explica abajo.
 
 ## Cómo funciona la integración con kepyur (Android)
 
@@ -192,6 +192,10 @@ español, inglés en otro caso).
   (⚙) de al lado elige qué canales escanear: el barrido completo son 29 pasos de 20 MHz (~26 s en Windows) y una
   sola banda unos 4 (~3 s). La selección se recuerda.
   Clic en un piloto para verlo, o elige un canal fijo en el desplegable.
+  Varias bandas tienen canales casi en la misma frecuencia (R5 5806 / A4 5805 / B5 5809, R7 = F8...) y la medida se
+  desvía 1-3 MHz, así que la frecuencia sola no dice cuál es: si hay varios a ±4 MHz salen todos (*R5/A4/B5*).
+  **Clic derecho** en el piloto para decir cuál es el tuyo; se recuerda (también en el OSD, los nombres de fichero
+  y el analizador). Elegir un canal en el desplegable cuenta igual.
   Con **Opciones → Modo experimental (HDZero)** activado, las **señales digitales** también salen en la lista, en cursiva: *HDZero* (27 MHz), *HDZero estrecho* (17 MHz,
   modo 540p60) u otra señal digital con su ancho (DJI, Walksnail...). Su vídeo no se puede ver (ver
   [HDZero](#hdzero-experimental)); sirve para saber qué canales están ocupados y para grabar su señal.
