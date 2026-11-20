@@ -240,6 +240,12 @@ MainWindow::MainWindow(Backend *backend, QWidget *parent) : QMainWindow(parent),
 MainWindow::~MainWindow() { snapPool_.waitForDone(); }  // por si se destruye sin closeEvent()
 
 void MainWindow::buildMenus() {
+#if defined(Q_OS_LINUX)
+    // Barra de menu siempre dentro de la ventana: con el menu global de KDE (Garuda, KDE neon...) Qt la exporta
+    // al panel superior y en la ventana no aparece (Archivo, Ver, Herramientas -> Analizador...). Con Qt 6.12 +
+    // plasma-integration Qt::AA_DontUseNativeMenuBar no basta; esto si. KP_GLOBAL_MENU=1 deja el menu global.
+    if (qEnvironmentVariableIntValue("KP_GLOBAL_MENU") != 1) menuBar()->setNativeMenuBar(false);
+#endif
     fileMenu_ = menuBar()->addMenu(QString());
     // Los atajos S / R van en setupShortcuts() (funcionan tambien en pantalla completa); aqui solo se muestran
     snapAct_ = fileMenu_->addAction(QString(), this, &MainWindow::takeSnapshot);
