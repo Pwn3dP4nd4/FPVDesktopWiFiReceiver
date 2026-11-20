@@ -111,6 +111,10 @@ sudo cp packaging/linux/60-kepyur.rules /etc/udev/rules.d/ && sudo udevadm contr
 
 El driver del kernel `rtw88_8822bu` se desconecta solo al abrir el adaptador.
 
+La barra de menú (*Archivo*, *Ver*, *Herramientas → Analizador de canales*...) se dibuja siempre dentro de la
+ventana, también en escritorios con menú global en el panel superior (el *Menú global* de KDE Plasma, como en
+Garuda): ahí Qt la llevaría al panel y la ventana se quedaría sin menú. `KP_GLOBAL_MENU=1` deja el menú global.
+
 La grabación de vídeo (MP4) usa el FFmpeg de la distribución (`libavformat-dev libavcodec-dev`, lo instala
 `--deps`): H.264 con libx264 o libopenh264, o MPEG-4 si la distribución no trae codificador H.264. Sin FFmpeg
 compila igual, con el botón *Grabar vídeo* desactivado. En Windows usa Media Foundation, que viene con Windows:

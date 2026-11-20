@@ -110,6 +110,10 @@ sudo cp packaging/linux/60-kepyur.rules /etc/udev/rules.d/ && sudo udevadm contr
 
 The kernel driver `rtw88_8822bu` is detached automatically when the adapter is opened.
 
+The menu bar (*File*, *View*, *Tools → Channel analyzer*...) is always drawn inside the window, also on desktops
+with a global menu on the top panel (KDE Plasma's *Global Menu*, as on Garuda): there Qt would otherwise move it to
+the panel and the window would show no menu. `KP_GLOBAL_MENU=1` keeps the global menu.
+
 Video recording (MP4) uses the distribution's FFmpeg (`libavformat-dev libavcodec-dev`, installed by `--deps`):
 H.264 with libx264 or libopenh264, or MPEG-4 if the distribution has no H.264 encoder. Without FFmpeg it still
 builds, with the *Record video* button disabled. On Windows it uses Media Foundation, part of Windows: nothing to
