@@ -1,4 +1,5 @@
 #include "channel_analyzer.h"
+#include "channel_names.h"
 #include "log.h"
 
 #include <QCheckBox>
@@ -210,7 +211,8 @@ void SpectrumView::paintEvent(QPaintEvent *) {
         if (s.ageS >= 60 || s.freqMHz < lo_ || s.freqMHz > hi_) continue;
         const QString key = s.name.isEmpty() ? QString::number(s.freqMHz, 'f', 0) : s.name;
         const bool mine = mine_.contains(key);
-        const QString t = key + (s.isDigital() ? QStringLiteral(" HDZ") : QString()) +
+        const QString shown = s.name.isEmpty() ? key : s.shownName();  // "R5/A4" mientras no se elija
+        const QString t = shown + (s.isDigital() ? QStringLiteral(" HDZ") : QString()) +
                           (mine ? QStringLiteral(" \u2713") : QString());
         const QColor c = mine ? QColor(0x3a, 0xa8, 0x5a) : QColor(0xd9, 0x48, 0x3b);  // tuyo: verde
         p.setPen(QPen(c, 1.5, Qt::DashLine));
@@ -601,7 +603,7 @@ void ChannelAnalyzer::updateAir() {
         const QString key = p.name.isEmpty() ? QString::number(p.freqMHz, 'f', 0) : p.name;
         if (keys.contains(key)) continue;
         keys << key;
-        texts << QStringLiteral("%1  %2 MHz%3").arg(key).arg(p.freqMHz, 0, 'f', 0)
+        texts << QStringLiteral("%1  %2 MHz%3").arg(p.name.isEmpty() ? key : p.shownName()).arg(p.freqMHz, 0, 'f', 0)
                      .arg(p.isDigital() ? QStringLiteral("  HDZero") : QString());
     }
     const QSignalBlocker b(air_);
@@ -634,6 +636,8 @@ void ChannelAnalyzer::closeEvent(QCloseEvent *e) {
 void ChannelAnalyzer::onSurvey(const SurveyData &d) {
     if (!running_) return;
     last_ = d;
+    // el mismo nombre que en la ventana principal (y la clave de "mio" no salta entre R5 y A4 de un barrido a otro)
+    for (Pilot &p : last_.pilots) chnames::apply(p);
     surveyT_ = clock_.isValid() ? clock_.elapsed() / 1000.0 : 0;
     updateAir();
     feedWifi();
@@ -652,7 +656,7 @@ QString ChannelAnalyzer::noteText(const advisor::Pick &p, const std::vector<advi
     QStringList n;
     if (p.r.busy >= 0 && p.r.busy < seenIdx_.size()) {
         const Pilot &s = last_.pilots[seenIdx_[p.r.busy]];
-        n << tr("already in use (%1)").arg(s.name.isEmpty() ? QString::number(s.freqMHz, 'f', 0) : s.name);
+        n << tr("already in use (%1)").arg(s.name.isEmpty() ? QString::number(s.freqMHz, 'f', 0) : s.shownName());
     }
     for (auto k : p.notes) {
         switch (k) {

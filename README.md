@@ -189,6 +189,10 @@ language (Spanish on a Spanish Windows/Linux, English otherwise).
   (⚙) next to it chooses which channels to scan: the full sweep is 29 steps of 20 MHz (~26 s on Windows) and
   one band alone is about 4 (~3 s). The choice is remembered.
   Click a pilot to watch it, or pick a fixed channel in the drop-down.
+  Several bands have channels almost on the same frequency (R5 5806 / A4 5805 / B5 5809, R7 = F8...) and the
+  measurement is off by 1-3 MHz, so the frequency alone can't tell which one it is: when several are within ±4 MHz
+  all of them are shown (*R5/A4/B5*). **Right-click** the pilot to say which one is yours; it is remembered (also in
+  the OSD, file names and the analyzer). Picking a channel in the drop-down counts too.
   With **Options → Experimental mode (HDZero)** on, **digital signals** are listed too, in italics: *HDZero* (27 MHz), *HDZero narrow* (17 MHz, 540p60 mode) or
   another digital signal with its width (DJI, Walksnail...). Their video can't be shown (see
   [HDZero](#hdzero-experimental)); they tell you which channels are taken and can be recorded.

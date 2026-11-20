@@ -22,6 +22,7 @@
 #include <QJsonObject>
 #include <QLabel>
 #include <QListWidget>
+#include <QMenu>
 #include <QMenuBar>
 #include <QMessageBox>
 #include <QPushButton>
@@ -36,6 +37,7 @@
 #include <shellapi.h>
 #endif
 
+#include "channel_names.h"
 #include "i18n.h"
 #include "scan_channels_dialog.h"
 #include "spectrum.h"  // kp::fpv_channels(): la tabla de canales de kepyur
@@ -202,6 +204,12 @@ MainWindow::MainWindow(Backend *backend, QWidget *parent) : QMainWindow(parent),
     });
     connect(list_, &QListWidget::itemClicked, this, [this](QListWidgetItem *it) {
         emit requestWatch(it->data(Qt::UserRole).toDouble());
+    });
+    // Clic derecho en un piloto entre varios canales estandar: decir cual es (src/channel_names.h)
+    list_->setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(list_, &QListWidget::customContextMenuRequested, this, [this](const QPoint &pos) {
+        if (QListWidgetItem *it = list_->itemAt(pos)) choosePilotChannel(it->data(Qt::UserRole).toDouble(),
+                                                                            list_->viewport()->mapToGlobal(pos));
     });
     connect(channels_, &QComboBox::activated, this, [this] { watchChannelFromCombo(); });
     connect(rate_, &QComboBox::activated, this, [this] {
@@ -579,8 +587,7 @@ void MainWindow::chooseMediaDir(const char *key, bool videos) {
 
 QString MainWindow::mediaFileName(const QString &dir, const QString &ext) const {
     QString base = dir + QStringLiteral("/fpv-") + QDateTime::currentDateTime().toString(QStringLiteral("yyyyMMdd-HHmmss"));
-    if (const auto *ch = watching_ > 0 ? kp::nearest_channel(watching_) : nullptr)
-        base += QLatin1Char('-') + QString::fromLatin1(ch->name);
+    if (const QString ch = channelTag(watching_); !ch.isEmpty()) base += QLatin1Char('-') + ch;
     QString f = base + ext;
     for (int i = 2; QFileInfo::exists(f); ++i) f = QStringLiteral("%1-%2%3").arg(base).arg(i).arg(ext);
     return f;
@@ -759,7 +766,20 @@ void MainWindow::setRate(int rateSel) { rate_->setCurrentIndex(rateSel == 1 ? 0 
 
 void MainWindow::watchChannelFromCombo() {
     const double mhz = channels_->currentData().toDouble();
-    if (mhz > 0) emit requestWatch(mhz);
+    if (mhz <= 0) return;
+    // Elegir un canal a mano dice cual es el tuyo: entre los que se confunden con el (R7 = F8...) sale ese
+    const int i = channels_->currentIndex() - 1;  // la 0 es "Canal manual..."
+    if (i >= 0 && i < int(kp::fpv_channels().size())) {
+        chnames::choose(QString::fromLatin1(kp::fpv_channels()[size_t(i)].name));
+        onPilots(QVector<Pilot>(pilots_));
+    }
+    emit requestWatch(mhz);
+}
+
+QString MainWindow::channelTag(double mhz) const {
+    // para nombres de fichero: el canal, o todos los posibles si no se sabe cual ("R5-A4-F4")
+    const chnames::Resolved r = chnames::resolve(mhz);
+    return r.ambiguous() ? r.alternatives.join(QLatin1Char('-')) : r.name;
 }
 
 void MainWindow::onOpened(bool ok, const QString &err) {
@@ -841,7 +861,7 @@ void MainWindow::startRecording() {
     recPilot_ = digitalWatch_ ? digitalPilot_ : Pilot{};
     if (!digitalWatch_) {
         recPilot_.freqMHz = lastStatus_.watchMHz;
-        if (const auto *ch = kp::nearest_channel(lastStatus_.watchMHz)) recPilot_.name = QString::fromLatin1(ch->name);
+        recPilot_.name = channelTag(lastStatus_.watchMHz);
     }
     QString tag = recPilot_.name.isEmpty() ? QStringLiteral("%1").arg(recPilot_.freqMHz, 0, 'f', 0) : recPilot_.name;
     if (recPilot_.isDigital()) tag += QLatin1Char('-') + recPilot_.digital;
@@ -960,9 +980,10 @@ const Pilot *MainWindow::digitalPilotAt(double mhz) const {
 
 void MainWindow::onPilots(const QVector<Pilot> &pilots) {
     pilots_ = pilots;
+    for (Pilot &p : pilots_) chnames::apply(p);  // canales que se confunden: todos, o el que eligio el usuario
     const double sel = list_->currentItem() ? list_->currentItem()->data(Qt::UserRole).toDouble() : 0;
     list_->clear();
-    for (const Pilot &p : pilots) {
+    for (const Pilot &p : pilots_) {
         if (p.isDigital() && !expMode_) continue;  // de un escaneo con el modo experimental activo
         QString text = p.label();
         if (p.isDigital()) {
@@ -972,6 +993,14 @@ void MainWindow::onPilots(const QVector<Pilot> &pilots) {
         }
         auto *it = new QListWidgetItem(QStringLiteral("%1   %2 dB").arg(text).arg(p.snrDb, 0, 'f', 1));
         it->setData(Qt::UserRole, p.freqMHz);
+        if (p.ambiguous())
+            it->setToolTip(tr("%1 MHz is between several standard channels (%2): from the frequency alone it is not "
+                              "possible to tell which one. Right-click to say which one is yours.")
+                               .arg(p.freqMHz, 0, 'f', 1)
+                               .arg(p.altNames.join(QStringLiteral(", "))));
+        else if (p.nameChosen)
+            it->setToolTip(tr("Channel %1, as you chose (it could also be %2). Right-click to change it.")
+                               .arg(p.name, p.altNames.mid(1).join(QStringLiteral(", "))));
         if (p.isDigital()) {
             QFont f = it->font();
             f.setItalic(true);
@@ -983,6 +1012,28 @@ void MainWindow::onPilots(const QVector<Pilot> &pilots) {
         list_->addItem(it);
         if (qAbs(p.freqMHz - sel) < 1) list_->setCurrentItem(it);
     }
+}
+
+void MainWindow::choosePilotChannel(double mhz, const QPoint &at) {
+    const Pilot *p = nullptr;
+    for (const Pilot &x : pilots_)
+        if (qAbs(x.freqMHz - mhz) < 0.05) p = &x;
+    if (!p || p->altNames.size() < 2) return;  // un solo canal posible: nada que elegir
+    QMenu menu(this);
+    menu.addSection(tr("Which channel is it? (%1 MHz)").arg(mhz, 0, 'f', 1));
+    for (const QString &n : p->altNames) {
+        QAction *a = menu.addAction(QStringLiteral("%1   %2 MHz").arg(n).arg(chnames::channelMHz(n), 0, 'f', 0));
+        a->setCheckable(true);
+        a->setChecked(p->nameChosen && n == p->name);
+        a->setData(n);
+    }
+    QAction *a = menu.exec(at);
+    if (!a) return;
+    const QString was = p->altNames.join(QLatin1Char('/')), now = a->data().toString();
+    chnames::choose(now);
+    onPilots(QVector<Pilot>(pilots_));  // con el nombre elegido (lista, OSD, ficheros); p ya no vale
+    onStatus(lastStatus_);
+    statusBar()->showMessage(tr("%1 will be shown as %2 from now on").arg(was, now), 6000);
 }
 
 void MainWindow::onStatus(const RadioStatus &s) {
@@ -1010,8 +1061,8 @@ void MainWindow::onStatus(const RadioStatus &s) {
     if (s.mode == QLatin1String("scan")) {
         osd = tr("Scanning %1/%2").arg(s.scanStep + 1).arg(qMax(1, s.scanSteps));
     } else if (s.mode == QLatin1String("watch")) {
-        const auto *ch = kp::nearest_channel(s.watchMHz);
-        osd = QStringLiteral("%1%2 MHz").arg(ch ? QString::fromLatin1(ch->name) + "  " : QString())
+        const QString ch = chnames::resolve(s.watchMHz).label();  // "R5/A4/F4" mientras no se elija
+        osd = QStringLiteral("%1%2 MHz").arg(ch.isEmpty() ? QString() : ch + QStringLiteral("  "))
                   .arg(s.watchMHz, 0, 'f', 0);
         if (s.snrDb >= 0) osd += QStringLiteral("  SNR %1 dB").arg(s.snrDb, 0, 'f', 0);
         if (digitalWatch_)

@@ -192,6 +192,10 @@ español, inglés en otro caso).
   (⚙) de al lado elige qué canales escanear: el barrido completo son 29 pasos de 20 MHz (~26 s en Windows) y una
   sola banda unos 4 (~3 s). La selección se recuerda.
   Clic en un piloto para verlo, o elige un canal fijo en el desplegable.
+  Varias bandas tienen canales casi en la misma frecuencia (R5 5806 / A4 5805 / B5 5809, R7 = F8...) y la medida se
+  desvía 1-3 MHz, así que la frecuencia sola no dice cuál es: si hay varios a ±4 MHz salen todos (*R5/A4/B5*).
+  **Clic derecho** en el piloto para decir cuál es el tuyo; se recuerda (también en el OSD, los nombres de fichero
+  y el analizador). Elegir un canal en el desplegable cuenta igual.
   Con **Opciones → Modo experimental (HDZero)** activado, las **señales digitales** también salen en la lista, en cursiva: *HDZero* (27 MHz), *HDZero estrecho* (17 MHz,
   modo 540p60) u otra señal digital con su ancho (DJI, Walksnail...). Su vídeo no se puede ver (ver
   [HDZero](#hdzero-experimental)); sirve para saber qué canales están ocupados y para grabar su señal.
