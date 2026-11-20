@@ -4,7 +4,8 @@
 // wsdr::Receiver, which plays a recording back as a live, tunable 8812BU (KP_SIM_FILE: .cs16, 40 MS/s, centre
 // 5770 MHz; test/digital_scan_test --write makes synthetic ones). Prints status_json() once a second (stderr).
 //   radio_sim [--scan | --survey LO HI | --watch MHZ | --test RATE_SEL SECONDS] [--digital] [--comb] [--rate 1|2]
-//             [--record S PREFIX] [--seconds S] [--frames] [--dump FILE] [--usb2] [-v]
+//             [--record S PREFIX] [--seconds S] [--frames] [--dump FILE] [--plan MHZ,MHZ...] [--usb2] [-v]
+//   --plan: escanear solo esos centros de paso (MHz), p. ej. para dejar una senal entre dos pasos
 //   radio_live pasa el adaptador a USB 3 antes de abrirlo, como la app; --usb2: dejarlo como este
 //   --dump FILE: survey, al acabar escribe cada bin (mhz,mean_db,peak_db,duty) en FILE (CSV), para probar el
 //                recomendador sin adaptador
@@ -42,6 +43,7 @@ int main(int argc, char **argv) {
   int watch_rate = 0;
   double rec_s = 0, survey_lo = 0, survey_hi = 0;
   std::string rec_prefix, dump;
+  std::vector<double> plan;  // --plan: centros de paso del escaneo (Hz); vacio = el plan completo
   for (int i = 1; i < argc; i++) {
     const std::string k = argv[i];
     if (k == "--scan") mode = "scan";
@@ -56,10 +58,20 @@ int main(int argc, char **argv) {
     else if (k == "--frames") frames = true;
     else if (k == "--dump" && i + 1 < argc) dump = argv[++i];
     else if (k == "--usb2") usb2 = true;
+    else if (k == "--plan" && i + 1 < argc) {
+      for (const char *p = argv[++i]; *p;) {
+        char *end = nullptr;
+        const double v = std::strtod(p, &end);
+        if (end == p) break;
+        plan.push_back(v * 1e6);
+        p = *end == ',' ? end + 1 : end;
+      }
+    }
     else if (k == "-v") kp::set_log_debug(true);
     else {
       std::fprintf(stderr, "usage: radio_sim [--scan | --survey LO HI | --watch MHZ | --test RATE_SEL SECONDS] [--digital] [--comb] "
-                           "[--rate 1|2] [--record S PREFIX] [--seconds S] [--frames] [--dump FILE] [--usb2] [-v]\n");
+                           "[--rate 1|2] [--record S PREFIX] [--seconds S] [--frames] [--dump FILE] [--plan MHZ,MHZ...] "
+                           "[--usb2] [-v]\n");
       return 2;
     }
   }
@@ -95,7 +107,10 @@ int main(int argc, char **argv) {
   if (mode == "survey") {
     radio.set_scan_plan(survey_plan_for(survey_lo, survey_hi));  // el mismo plan que la app
     radio.survey();
-  } else if (mode == "scan") radio.scan();
+  } else if (mode == "scan") {
+    if (!plan.empty()) radio.set_scan_plan(plan);
+    radio.scan();
+  }
   else if (mode == "watch") {
     radio.watch(mhz * 1e6);
     if (rec_s > 0) radio.record(rec_s, rec_prefix);

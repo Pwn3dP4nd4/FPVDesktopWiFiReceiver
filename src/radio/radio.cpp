@@ -71,6 +71,11 @@ constexpr double kSurveySidebandMhz = 15;
 // survey: a hump already checked for video is not checked again (streaming, ~100 ms) for this many sweeps
 constexpr int kSurveyRecheckSweeps = 5;
 constexpr int64_t kFallbackWindowMs = 5000;
+// scan: a signal cut by a step's edge gets a step of its own (see add_cut_steps), centred so that this much on
+// each side of where it was seen fits (find_humps takes humps up to 24 MHz wide)
+constexpr double kCutReach = 12e6;
+constexpr float kCutMinSnrDb = 10;  // weaker cut signals are left alone (a wide WiFi's skirts, noise)
+constexpr size_t kMaxCutSteps = 8;  // per scan: a band full of WiFi does not double the scan time
 
 // Raise this thread's priority (the USB stream thread must never miss a chip deadline; the DSP thread
 // must keep up). Best effort: logs what the OS allowed.
@@ -406,6 +411,9 @@ void Radio::dsp_loop() {
         _step = 0;
         _cap.clear();
         _settle = -1;
+        _cut_steps.clear();
+        _whole_spans.clear();
+        _scan_start_ms = now_ms();
         {
           std::lock_guard<std::mutex> l(_m);
           if (!_digital_on && !_survey) _digital.reset();  // the survey always lists digital signals
@@ -704,6 +712,11 @@ void Radio::handle_scan(Bank &b) {
       survey = _survey;
       floor_hint = _grid.reference(_cap_centre);
     }
+    if (!survey) {  // the survey keeps its fixed steps: they tile its spectrum
+      for (const auto &h : _humps)  // whole here: an edge of it cut in another step needs no step of its own
+        _whole_spans.emplace_back(_cap_centre + h.offset_hz - h.width_hz / 2, _cap_centre + h.offset_hz + h.width_hz / 2);
+      add_cut_steps(psd_db);
+    }
     if (survey && !_survey_cont) {  // (a step taken again to check a candidate is already counted)
       double gain;
       {
@@ -773,6 +786,33 @@ void Radio::handle_scan(Bank &b) {
     }
   }
   scan_step_done();
+}
+
+// find_humps lists only humps whole inside the step's +-kEdge. With steps kStep apart that is sure only up to
+// 2 x kEdge - kStep = 13 MHz wide, and a VTX close by is 14-17 MHz wide: measured, F4 at 5800 MHz (5792-5809)
+// was cut by the edge of both the 5790 and the 5810 MHz steps in 3 scans of 4 and never listed. A signal cut by
+// one edge of this step gets a step of its own right after this one, centred kCutReach inside the end of it that
+// is seen here. Not one cut by both edges: wider than the step, not a VTX (a WiFi block).
+void Radio::add_cut_steps(const std::vector<float> &psd_db) {
+  for (const auto &r : kpx::find_wide_regions(psd_db, kFs, kEdge)) {
+    if (r.clip_lo == r.clip_hi || r.snr_db < kCutMinSnrDb) continue;
+    const double f0 = _cap_centre + r.f0_hz, f1 = _cap_centre + r.f1_hz;  // the part seen in this step
+    // the other half of a signal that already has its step (seen cut at the other edge of the step before), or
+    // the edge of one already seen whole in another step (measured: R3 whole in the 5730 MHz step, its top cut
+    // by the 5750 one's low edge)
+    bool done = false;
+    for (double c : _cut_steps) done = done || (f0 > c - kEdge && f1 < c + kEdge);
+    for (const auto &[w0, w1] : _whole_spans) done = done || std::min(f1, w1) - std::max(f0, w0) > 0.5 * (f1 - f0);
+    if (done || _cut_steps.size() >= kMaxCutSteps) continue;
+    const double c = r.clip_hi ? f0 + kCutReach : f1 - kCutReach;
+    _cut_steps.push_back(c);
+    {
+      std::lock_guard<std::mutex> l(_m);  // status_json() reads its size
+      _plan.insert(_plan.begin() + static_cast<std::ptrdiff_t>(_step) + 1, c);
+    }
+    KP_LOGI("scan: %.1f MHz step, signal %.1f..%.1f MHz cut by the %s edge (%.1f dB): extra step at %.1f MHz",
+            _cap_centre / 1e6, f0 / 1e6, f1 / 1e6, r.clip_hi ? "high" : "low", r.snr_db, c / 1e6);
+  }
 }
 
 void Radio::scan_step_done() {
@@ -870,13 +910,15 @@ void Radio::scan_step_done() {
       _pilots.erase(std::remove_if(_pilots.begin(), _pilots.end(), [&](const Pilot &p) { return p.seen_ms < keep; }),
                     _pilots.end());
     } else if (done) {
-      // after a scan: the pilot watched before, if still there, else the strongest seen in this scan
-      const int64_t scan_start = now_ms() - 60000;
+      // after a scan: the pilot watched before, if still there, else the strongest seen in this scan. Only pilots
+      // seen in this scan: _pilots keeps older ones, and a VTX moved to another channel left one behind that the
+      // scan went back to (measured: F4 seen at 00:36, the VTX moved to R3, the 00:40 scan found R3 and watched F4)
       for (const auto &p : _pilots)
-        if (_resume_hz > 0 && std::fabs(p.mhz * 1e6 - _resume_hz) < 4e6) next_watch = p.mhz * 1e6;
+        if (_resume_hz > 0 && p.seen_ms >= _scan_start_ms && std::fabs(p.mhz * 1e6 - _resume_hz) < 4e6)
+          next_watch = p.mhz * 1e6;
       if (next_watch == 0)
         for (const auto &p : _pilots)
-          if (p.seen_ms >= scan_start && p.digital.empty()) {  // a digital one shows no picture
+          if (p.seen_ms >= _scan_start_ms && p.digital.empty()) {  // a digital one shows no picture
             next_watch = p.mhz * 1e6;
             break;
           }
