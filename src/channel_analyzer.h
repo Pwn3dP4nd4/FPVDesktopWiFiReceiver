@@ -17,6 +17,7 @@ class QLabel;
 class QPushButton;
 class QSpinBox;
 class QTabWidget;
+class QToolButton;
 class QTreeWidget;
 
 // Grafica del analizador: espectro medio y picos (dB sobre el suelo), zonas con rafagas, los canales candidatos
@@ -62,6 +63,8 @@ public:
     void setPinnedForTest(const QStringList &pins);
     void setRaceForTest(bool on);
     void applyForTest() { applyMoves(moves_); }  // pulsar Aplicar (todas las recomendaciones)
+    void setExcludedForTest(const QStringList &names);  // canales sin analizar ("R2")
+    void openChannelMenuForTest(int band) { showChannelMenu(band, bandBtns_[band]); }
     // marcar como mios en "En el aire" (clave: el nombre del piloto o sus MHz); se aplica a lo que ya se ve
     void setMineForTest(const QStringList &keys);
     // pulsar "Empezar al salir los pilotos" con este numero de pilotos (<= 0: todos los fijados)
@@ -87,6 +90,15 @@ private:
     void onSurvey(const SurveyData &d);
     void recompute();
     QString bands() const;
+    // Candidatos de las bandas marcadas sin los canales quitados (excluded_): lo que se analiza y se recomienda
+    std::vector<advisor::Candidate> analogCands() const;
+    std::vector<advisor::Candidate> hdzCands() const;
+    bool haveChannels() const;  // queda algun canal que analizar
+    // canales de una banda: desplegable con una casilla por canal
+    void showChannelMenu(int band, QToolButton *anchor);
+    void setExcluded(const QStringList &names, bool excluded);  // y vuelve a barrer si cambia la zona
+    void updateBandTexts();  // "R  Raceband (6/8)"
+    void bandsChanged();     // guarda, rehace la zona a barrer y recalcula
     void range(double &lo, double &hi) const;
     QString noteText(const advisor::Pick &p, const std::vector<advisor::Wifi> &wifi) const;
     // los bins para el recomendador (mis pilotos quitados) y los pilotos ajenos; all: tambien los mios
@@ -168,6 +180,8 @@ private:
     QTreeWidget *raceTable_ = nullptr;
 
     QVector<QCheckBox *> bandBoxes_;
+    QVector<QToolButton *> bandBtns_;
+    QStringList excluded_;  // canales de las bandas marcadas que no se analizan ("R2"; "analyzer/excluded")
     QSpinBox *nAnalog_ = nullptr, *nHdz_ = nullptr;
     QCheckBox *narrow_ = nullptr;
     QComboBox *memory_ = nullptr;

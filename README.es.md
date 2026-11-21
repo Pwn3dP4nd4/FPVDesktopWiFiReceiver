@@ -244,7 +244,8 @@ Opciones de línea de comandos (opcionales, para pruebas): `--demo` sin hardware
 **Herramientas → Analizador de canales** recomienda qué canales usar cuando varios pilotos vuelan a la vez:
 
 1. Elige las **bandas** a analizar (A, B, E, F, R, L) y cuántos pilotos **analógicos** y **HDZero** van a volar
-   (y si los HDZero van en modo estrecho, unos 17 MHz).
+   (y si los HDZero van en modo estrecho, unos 17 MHz). El ▾ junto a cada banda deja fuera canales sueltos
+   (*R  Raceband (6/8)*): no se recomiendan, y quitar los de los extremos acorta el barrido.
 2. **Empezar el análisis**: el adaptador barre esas bandas sin parar (no se ve vídeo mientras tanto). Todo lo que
    esté en el aire se toma como ocupado, salvo los pilotos en un canal fijado (paso 4): apaga tus otros VTX o
    márcalos en la lista **En el aire** (solo para ese análisis): su señal y sus bandas laterales no cuentan como

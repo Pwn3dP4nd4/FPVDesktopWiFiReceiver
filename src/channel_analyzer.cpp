@@ -1,5 +1,6 @@
 #include "channel_analyzer.h"
 #include "channel_names.h"
+#include "spectrum.h"  // kp::fpv_channels()
 #include "log.h"
 
 #include <QApplication>
@@ -12,6 +13,7 @@
 #include <QEvent>
 #include <QFile>
 #include <QFontMetrics>
+#include <QFrame>
 #include <QFileDialog>
 #include <QGridLayout>
 #include <QGroupBox>
@@ -32,6 +34,7 @@
 #include <QSpinBox>
 #include <QTabWidget>
 #include <QTimer>
+#include <QToolButton>
 #include <QTreeWidget>
 #include <QVBoxLayout>
 
@@ -428,22 +431,23 @@ ChannelAnalyzer::ChannelAnalyzer(Backend *backend, QWidget *parent) : QDialog(pa
     bandsTitle_->setStyleSheet(QStringLiteral("font-weight:bold;"));
     side->addWidget(bandsTitle_);
     const QString saved = settings().value("analyzer/bands", QStringLiteral("ABEFR")).toString();
+    excluded_ = settings().value("analyzer/excluded").toStringList();
     for (const char *b = kBands; *b; b++) {
+        auto *row = new QHBoxLayout;
         auto *c = new QCheckBox;
         c->setChecked(saved.contains(QLatin1Char(*b)));
-        connect(c, &QCheckBox::toggled, this, [this] {
-            settings().setValue("analyzer/bands", bands());
-            startBtn_->setEnabled(open_ && !bands().isEmpty());
-            if (running_) {  // otra zona que barrer: se empieza de nuevo
-                double lo, hi;
-                range(lo, hi);
-                if (!bands().isEmpty()) emit requestStart(lo, hi);
-                else stop();
-            }
-            recompute();
-        });
+        connect(c, &QCheckBox::toggled, this, &ChannelAnalyzer::bandsChanged);
+        // al lado, el desplegable para quitar canales sueltos de la banda
+        auto *btn = new QToolButton;
+        btn->setArrowType(Qt::DownArrow);
+        btn->setAutoRaise(true);
+        const int band = bandBoxes_.size();
+        connect(btn, &QToolButton::clicked, this, [this, band, btn] { showChannelMenu(band, btn); });
         bandBoxes_.push_back(c);
-        side->addWidget(c);
+        bandBtns_.push_back(btn);
+        row->addWidget(c, 1);
+        row->addWidget(btn);
+        side->addLayout(row);
     }
     side->addSpacing(8);
     pilotsTitle_ = new QLabel;
@@ -800,9 +804,7 @@ ChannelAnalyzer::ChannelAnalyzer(Backend *backend, QWidget *parent) : QDialog(pa
 void ChannelAnalyzer::retranslate() {
     setWindowTitle(tr("Channel analyzer"));
     bandsTitle_->setText(tr("Bands to analyse"));
-    static const char *titles[] = {"A  Boscam A", "B  Boscam B", "E  Boscam E", "F  Fatshark", "R  Raceband", nullptr};
-    for (int i = 0; i < bandBoxes_.size(); i++)
-        bandBoxes_[i]->setText(titles[i] ? QString::fromLatin1(titles[i]) : tr("L  Low band"));
+    updateBandTexts();
     pilotsTitle_->setText(tr("Pilots flying together"));
     analogLbl_->setText(tr("Analog"));
     hdzLbl_->setText(QStringLiteral("HDZero"));
@@ -904,7 +906,7 @@ void ChannelAnalyzer::changeEvent(QEvent *e) {
 void ChannelAnalyzer::setAdapterOpen(bool open) {
     if (open == open_) return;
     open_ = open;
-    startBtn_->setEnabled(open_ && !bands().isEmpty());
+    startBtn_->setEnabled(open_ && haveChannels());
     if (!open_ && running_) {
         running_ = false;
         startBtn_->setText(tr("Start analysis"));
@@ -949,11 +951,129 @@ QString ChannelAnalyzer::bands() const {
     return s;
 }
 
+std::vector<advisor::Candidate> ChannelAnalyzer::analogCands() const {
+    std::vector<advisor::Candidate> out;
+    for (auto &c : advisor::analog_channels(bands().toStdString()))
+        if (!excluded_.contains(QString::fromStdString(c.name))) out.push_back(c);
+    return out;
+}
+
+std::vector<advisor::Candidate> ChannelAnalyzer::hdzCands() const {
+    std::vector<advisor::Candidate> out;
+    for (auto &c : advisor::hdzero_channels(bands().toStdString(), narrow_->isChecked()))
+        if (!excluded_.contains(QString::fromStdString(c.name))) out.push_back(c);
+    return out;
+}
+
+bool ChannelAnalyzer::haveChannels() const { return !analogCands().empty() || !hdzCands().empty(); }
+
+void ChannelAnalyzer::bandsChanged() {
+    settings().setValue("analyzer/bands", bands());
+    settings().setValue("analyzer/excluded", excluded_);
+    updateBandTexts();
+    startBtn_->setEnabled(open_ && haveChannels());
+    if (running_) {  // otra zona que barrer: se empieza de nuevo
+        double lo, hi;
+        range(lo, hi);
+        if (haveChannels()) emit requestStart(lo, hi);
+        else stop();
+    }
+    recompute();
+    updateRace();
+}
+
+void ChannelAnalyzer::setExcluded(const QStringList &names, bool excluded) {
+    double lo0, hi0, lo1, hi1;
+    range(lo0, hi0);
+    const QStringList list = names;  // puede ser excluded_ misma
+    for (const QString &n : list) {
+        excluded_.removeAll(n);
+        if (excluded) excluded_ << n;
+    }
+    range(lo1, hi1);
+    if (lo0 != lo1 || hi0 != hi1) {
+        bandsChanged();
+        return;
+    }
+    // la misma zona: no hace falta volver a barrer, solo cambian los candidatos
+    settings().setValue("analyzer/excluded", excluded_);
+    updateBandTexts();
+    startBtn_->setEnabled(open_ && haveChannels());
+    recompute();
+    updateRace();
+}
+
+void ChannelAnalyzer::setExcludedForTest(const QStringList &names) {
+    setExcluded(excluded_, false);
+    setExcluded(names, true);
+}
+
+void ChannelAnalyzer::updateBandTexts() {
+    static const char *titles[] = {"A  Boscam A", "B  Boscam B", "E  Boscam E", "F  Fatshark", "R  Raceband", nullptr};
+    for (int i = 0; i < bandBoxes_.size(); i++) {
+        QString t = titles[i] ? QString::fromLatin1(titles[i]) : tr("L  Low band");
+        int total = 0, on = 0;
+        for (const auto &c : kp::fpv_channels())
+            if (c.name[0] == kBands[i]) {
+                total++;
+                if (!excluded_.contains(QLatin1String(c.name))) on++;
+            }
+        if (on < total) t += QStringLiteral("  (%1/%2)").arg(on).arg(total);
+        bandBoxes_[i]->setText(t);
+        bandBtns_[i]->setEnabled(bandBoxes_[i]->isChecked());
+        bandBtns_[i]->setToolTip(on < total ? tr("Channels of this band to analyse: %1 of %2").arg(on).arg(total)
+                                            : tr("Choose which channels of this band to analyse"));
+    }
+}
+
+void ChannelAnalyzer::showChannelMenu(int band, QToolButton *anchor) {
+    // ventana emergente (no un QMenu, que se cierra a cada clic): una casilla por canal, Todos y Ninguno
+    auto *pop = new QFrame(this, Qt::Popup);
+    pop->setAttribute(Qt::WA_DeleteOnClose);
+    pop->setFrameShape(QFrame::StyledPanel);
+    auto *v = new QVBoxLayout(pop);
+    v->setContentsMargins(8, 6, 8, 6);
+    auto *grid = new QGridLayout;
+    QStringList names;
+    QVector<QCheckBox *> boxes;
+    for (const auto &c : kp::fpv_channels()) {
+        if (c.name[0] != kBands[band]) continue;
+        const QString name = QString::fromLatin1(c.name);
+        auto *cb = new QCheckBox(QStringLiteral("%1  %2 MHz").arg(name).arg(c.mhz, 0, 'f', 0));
+        cb->setChecked(!excluded_.contains(name));
+        connect(cb, &QCheckBox::toggled, this, [this, name](bool on) { setExcluded({name}, !on); });
+        grid->addWidget(cb, boxes.size() % 4, boxes.size() / 4);  // dos columnas de cuatro
+        names << name;
+        boxes << cb;
+    }
+    v->addLayout(grid);
+    auto *r = new QHBoxLayout;
+    auto *all = new QPushButton(tr("All"));
+    auto *none = new QPushButton(tr("None"));
+    const auto setAll = [this, names, boxes](bool on) {
+        for (QCheckBox *cb : boxes) {
+            const QSignalBlocker b(cb);
+            cb->setChecked(on);
+        }
+        setExcluded(names, !on);
+    };
+    connect(all, &QPushButton::clicked, this, [setAll] { setAll(true); });
+    connect(none, &QPushButton::clicked, this, [setAll] { setAll(false); });
+    r->addWidget(all);
+    r->addWidget(none);
+    v->addLayout(r);
+    pop->adjustSize();
+    pop->move(anchor->mapToGlobal(QPoint(anchor->width() - pop->width(), anchor->height())));
+    pop->show();
+}
+
 void ChannelAnalyzer::range(double &lo, double &hi) const {
     lo = 1e9;
     hi = 0;
-    const std::string b = bands().toStdString();
-    for (const auto &c : advisor::analog_channels(b)) {
+    // los canales que se analizan: quitar los de un extremo acorta el barrido
+    std::vector<advisor::Candidate> cs = analogCands();
+    for (const auto &c : hdzCands()) cs.push_back(c);
+    for (const auto &c : cs) {
         lo = std::min(lo, c.mhz);
         hi = std::max(hi, c.mhz);
     }
@@ -1170,7 +1290,6 @@ void ChannelAnalyzer::feedWifi() {
 
 void ChannelAnalyzer::recompute() {
     if (!view_) return;
-    const std::string b = bands().toStdString();
     std::vector<advisor::Bin> bins;
     std::vector<advisor::Signal> seen;
     prepare(bins, seen);
@@ -1179,8 +1298,7 @@ void ChannelAnalyzer::recompute() {
     const bool haveData = !bins.empty();
     QElapsedTimer t;
     t.start();
-    advisor::Advice a = haveData ? advisor::advise(bins, seen, advisor::analog_channels(b),
-                                                   advisor::hdzero_channels(b, narrow_->isChecked()),
+    advisor::Advice a = haveData ? advisor::advise(bins, seen, analogCands(), hdzCands(),
                                                    nAnalog_->value(), nHdz_->value(), &wifi, pinnedCandidates())
                                  : advisor::Advice{};
     // sin barridos todavia (recien abierta): los fijados se ven igual, en la grafica y en la tabla, sin medir
@@ -1505,7 +1623,7 @@ void ChannelAnalyzer::updateRaceControls() {
     raceBox_->setEnabled(running_ && !pinned_.isEmpty());
     unpinBtn_->setEnabled(!pinned_.isEmpty());
     // armar: con fijados y sin carrera en marcha; si el analisis no esta en marcha, lo arranca (hace falta adaptador)
-    armBtn_->setEnabled(armed_ || (!raceOn_ && !pinned_.isEmpty() && (running_ || (open_ && !bands().isEmpty()))));
+    armBtn_->setEnabled(armed_ || (!raceOn_ && !pinned_.isEmpty() && (running_ || (open_ && haveChannels()))));
     if (armBtn_->isChecked() != armed_) {
         const QSignalBlocker b(armBtn_);
         armBtn_->setChecked(armed_);
@@ -1537,7 +1655,7 @@ std::vector<advisor::Signal> ChannelAnalyzer::raceSignals() const {
 void ChannelAnalyzer::setArmed(bool on) {
     on = on && !pinned_.isEmpty() && !raceOn_;
     if (on && !running_) {
-        if (open_ && !bands().isEmpty()) toggle();  // arranca el analisis: sin barridos no se ve a nadie
+        if (open_ && haveChannels()) toggle();  // arranca el analisis: sin barridos no se ve a nadie
         on = running_;
     }
     if (on != armed_) {
@@ -1710,9 +1828,7 @@ void ChannelAnalyzer::updateRace() {
     const std::vector<race::Move> prev = moves_;
     moves_.clear();
     if (raceOn_) {
-        const std::string b = bands().toStdString();
-        for (const auto &m : race_.suggest_all(advisor::analog_channels(b),
-                                               advisor::hdzero_channels(b, narrow_->isChecked()), prev))
+        for (const auto &m : race_.suggest_all(analogCands(), hdzCands(), prev))
             if (m.from >= 0 && m.from < n && m.from < pinned_.size()) moves_.push_back(m);
     }
     const auto moveOf = [&](int i) -> const race::Move * {

@@ -220,6 +220,22 @@
         <translation>Se ha desconectado el adaptador</translation>
     </message>
     <message>
+        <source>Channels of this band to analyse: %1 of %2</source>
+        <translation>Canales de esta banda a analizar: %1 de %2</translation>
+    </message>
+    <message>
+        <source>Choose which channels of this band to analyse</source>
+        <translation>Elige qué canales de esta banda analizar</translation>
+    </message>
+    <message>
+        <source>All</source>
+        <translation>Todos</translation>
+    </message>
+    <message>
+        <source>None</source>
+        <translation>Ninguno</translation>
+    </message>
+    <message>
         <source>The analysis was stopped</source>
         <translation>Se ha parado el análisis</translation>
     </message>
