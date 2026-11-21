@@ -156,10 +156,14 @@ void SpectrumView::paintEvent(QPaintEvent *) {
     const auto X = [&](double mhz) { return left + (mhz - lo_) / (hi_ - lo_) * (right - left); };
     const auto Y = [&](double db) { return plotBottom - std::clamp(db, 0.0, dbMax) / dbMax * (plotBottom - top); };
 
-    // rejilla y ejes
-    p.setPen(QPen(pal.color(QPalette::Mid), 1, Qt::DotLine));
+    // rejilla y ejes: la rejilla, el color del texto muy tenue; los textos, el del texto (QPalette::Mid es casi negro
+    // en tema oscuro: ni la rejilla ni los dB se veian)
+    QColor grid = pal.color(QPalette::Text);
+    grid.setAlpha(70);
     for (int db = 10; db <= 40; db += 10) {
+        p.setPen(QPen(grid, 1, Qt::DotLine));
         p.drawLine(QPointF(left, Y(db)), QPointF(right, Y(db)));
+        p.setPen(pal.color(QPalette::Text));
         p.drawText(QRectF(0, Y(db) - fm.height() / 2.0, left - 4, fm.height()), Qt::AlignRight | Qt::AlignVCenter,
                    QStringLiteral("%1 dB").arg(db));
     }
