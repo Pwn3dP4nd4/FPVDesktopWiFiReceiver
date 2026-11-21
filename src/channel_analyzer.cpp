@@ -11,6 +11,7 @@
 #include <QDir>
 #include <QEvent>
 #include <QFile>
+#include <QFontMetrics>
 #include <QFileDialog>
 #include <QGridLayout>
 #include <QGroupBox>
@@ -71,7 +72,11 @@ public:
     void setAllText(const QString &t) {  // y vuelve a escribir el valor mostrado (cambio de idioma)
         allText = t;
         lineEdit()->setText(textFromValue(value()));
+        updateGeometry();  // el ancho depende del texto (idioma)
     }
+    // QSpinBox calcula su ancho con los numeros: se le suma lo que "todos" sea mas ancho que el mas largo
+    QSize sizeHint() const override { return widen(QSpinBox::sizeHint()); }
+    QSize minimumSizeHint() const override { return widen(QSpinBox::minimumSizeHint()); }
 
 protected:
     QString textFromValue(int v) const override {
@@ -79,6 +84,13 @@ protected:
     }
     int valueFromText(const QString &t) const override {
         return t.compare(allText, Qt::CaseInsensitive) == 0 ? maximum() : QSpinBox::valueFromText(t);
+    }
+    QSize widen(QSize s) const {
+        const QFontMetrics fm(font());
+        const int extra = fm.horizontalAdvance(allText + QLatin1Char(' ')) -
+                          fm.horizontalAdvance(QString::number(std::max(std::abs(minimum()), std::abs(maximum()))));
+        if (extra > 0) s.rwidth() += extra;
+        return s;
     }
     QValidator::State validate(QString &t, int &pos) const override {
         if (!allText.isEmpty() && allText.startsWith(t, Qt::CaseInsensitive))
