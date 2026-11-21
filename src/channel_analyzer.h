@@ -114,6 +114,9 @@ private:
     race::Monitor race_;
     bool raceOn_ = false;
     std::vector<race::Move> moves_;  // las recomendaciones mostradas (columna Recomendacion, boton Apply)
+    // lo ultimo escrito en el log (recomendacion y estado de cada canal en carrera): solo se escribe al cambiar
+    QString adviceLogKey_;
+    QStringList raceLogKeys_;
     QTabWidget *tabs_ = nullptr;
     QLabel *pinHint_ = nullptr;
     QPushButton *unpinBtn_ = nullptr;
