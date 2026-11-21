@@ -33,7 +33,15 @@
 
 namespace {
 const char kBands[] = "ABEFRL";
-constexpr double kMargin = 15;  // MHz analizados a cada lado de los canales elegidos (HDZero: 13.5)
+// MHz analizados a cada lado de los canales elegidos. 15 bastaba para su propio ancho (HDZero: 13.5), pero una senal
+// digital que empieza justo debajo del canal mas bajo (un DJI pegado a R1, medido) salia siempre cortada por el
+// borde del primer paso y no se reconocia nunca (src/kp_ext/digital_scan.cpp une un corte solo con el paso vecino):
+// con 35 hay un paso mas a cada lado que la ve entera
+constexpr double kMargin = 35;
+// Seguimiento de carrera: un piloto visto hace menos de esto sigue en el aire. El barrido del espectro va cada ~3 s
+// pero los pilotos solo se vuelven a medir cada ~14 s (medido): con "solo los de este barrido" su propia portadora
+// contaba como interferencia de su canal (30-40 dB) y como corte en 3 de cada 4 barridos
+constexpr int kRaceHoldS = 30;
 
 // el piloto esta en uno de estos canales fijados (mismo sistema, a menos de kMatchMhz): es de los mios
 bool onPinned(const std::vector<advisor::Candidate> &pins, const Pilot &p) {
@@ -934,15 +942,16 @@ void ChannelAnalyzer::onSurvey(const SurveyData &d) {
                                         .arg((d.sweeps - 1) % memory_->currentData().toInt() + 1)
                                         .arg(memory_->currentData().toInt()).arg(d.sweeps));
     if (raceOn_) {
-        // el espectro tal cual (el monitor quita los fijados) y lo que se ve en este barrido, con su SNR
+        // el espectro tal cual (el monitor quita los fijados) y lo que esta en el aire (visto hace menos de
+        // kRaceHoldS), con su SNR
         std::vector<advisor::Bin> bins;
         bins.reserve(last_.bins.size());
         for (const auto &x : last_.bins) bins.push_back(advisor::Bin{x.mhz, x.meanDb, x.peakDb, x.duty});
         std::vector<advisor::Signal> now;
         for (const Pilot &p : last_.pilots)
-            if (p.ageS == 0)
+            if (p.ageS < kRaceHoldS)
                 now.push_back(advisor::Signal{p.freqMHz, p.bwMHz, p.isDigital(), p.name.toStdString(),
-                                              float(p.snrDb)});
+                                              float(p.snrDb), p.ageS == 0});
         race_.update(bins, now, wifiMem_.known(surveyT_));
     }
     recompute();
@@ -1173,7 +1182,15 @@ void ChannelAnalyzer::recompute() {
         for (const auto &p : a.picks) {
             const QString name = QString::fromStdString(p.r.ch.name) + (p.r.ch.hdzero ? QStringLiteral(" HDZero") : QString());
             const QString note = noteText(p, a.wifi);
-            key << name + (p.pinned ? QStringLiteral("*") : QString()) + QLatin1Char('|') + note;
+            // la clave, con lo que se recomienda y no con su texto: el de una red WiFi cambia casi en cada barrido
+            // ("ahora callada" / "vista hace poco" / "en uso") sin que cambie nada de lo recomendado
+            QString k = name + (p.pinned ? QStringLiteral("*") : QString());
+            for (auto n : p.notes) k += QLatin1Char('n') + QString::number(static_cast<int>(n));
+            if (p.r.busy >= 0) k += QStringLiteral("b");
+            if (p.r.burst > 0.1f) k += QStringLiteral("r");
+            if (p.r.wifi >= 0 && p.r.wifi < static_cast<int>(a.wifi.size()))
+                k += QStringLiteral("w%1%2").arg(a.wifi[p.r.wifi].ch).arg(p.r.wifi_block ? "B" : "");
+            key << k;
             line << QStringLiteral("%1 %2 MHz%3: %4 dB, rafagas %5 %%6")
                         .arg(name)
                         .arg(p.r.ch.mhz, 0, 'f', 0)
@@ -1396,10 +1413,12 @@ void ChannelAnalyzer::updateRace() {
                 col = green;
             }
         }
-        // al log: el canal y su recomendacion, solo cuando cambia (el +dB de un movimiento no cuenta, su destino si)
+        // al log: el canal y su recomendacion, solo cuando cambia de tipo (OK, mover, sin canal mejor, video flojo)
+        // y su causa; el destino de un movimiento va en la linea, pero no cuenta: puede ir cambiando entre canales
+        // casi iguales sin que cambie lo que hay que hacer
         const race::Move *mv = moveOf(i);
         const QString logKey = chName(h.ch) + QLatin1Char('|') +
-                               (mv ? QStringLiteral("-> ") + QString::fromStdString(mv->to.name) : rec);
+                               (mv ? QStringLiteral("move%1").arg(static_cast<int>(mv->cause)) : rec);
         logKeys << logKey;
         if (raceOn_ && sw >= race::kMinSweeps && !rec.isEmpty() &&
             (i >= raceLogKeys_.size() || raceLogKeys_[i] != logKey)) {

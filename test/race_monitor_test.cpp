@@ -495,6 +495,67 @@ int main() {
               "recomienda mover el HDZero a otro canal HDZero libre");
     }
     {
+        // como en una carrera real: el espectro va cada ~3 s pero los pilotos solo se miden cada ~14 s. Entre medias
+        // siguen en el aire (fresh = false, con la SNR vieja o 0): su portadora no es interferencia ni un corte
+        race::Monitor m;
+        m.start(kRace);
+        run(m, 20, [](int sw, auto &b, auto &now, auto &) {
+            four(b, now, 25);
+            for (auto &s : now) {
+                s.fresh = sw % 5 == 0;
+                if (!s.fresh) s.snr_db = 0;
+            }
+        });
+        bool ok = true;
+        for (const auto &h : m.health())
+            ok = ok && h.seen == 20 && h.lost == 0 && h.channel_cost < 2 && h.snr_low >= 24;
+        check(ok, "pilotos medidos 1 de cada 5 barridos: sin cortes, sin interferencia, SNR de las medidas");
+        check(!m.suggest(raceband(), {}), "pilotos medidos 1 de cada 5 barridos: no recomienda mover a nadie");
+    }
+    {
+        // un DJI (digital, 18 MHz) justo debajo de R1 sin pisarlo: su borde a 3 MHz del de R1 (5648). Medido en una
+        // carrera real: lo que derramaba dentro de R1 quedaba tapado con la senal del propio piloto de R1 y no
+        // contaba para nada
+        const auto dji = [](double mhz) {
+            Signal s;
+            s.mhz = mhz;
+            s.bw_mhz = 18;
+            s.digital = true;
+            s.snr_db = 15;
+            return s;
+        };
+        race::Monitor m;
+        m.start(kRace);
+        run(m, 20, [&](int, auto &b, auto &now, auto &) {
+            four(b, now);
+            add_block(b, 5627, 5645, 15, 15, 1);
+            now.push_back(dji(5636));
+        });
+        const int r1 = index_of(m, "R1");
+        check(r1 >= 0 && m.health()[r1].intruders == 20, "DJI a 3 MHz del borde de R1: cuenta como intruso de R1");
+        bool others = true;
+        for (size_t i = 0; i < m.health().size(); i++)
+            if (static_cast<int>(i) != r1) others = others && m.health()[i].intruders == 0;
+        check(others, "DJI junto a R1: a los demas no les cuenta");
+
+        race::Monitor far;
+        far.start(kRace);
+        run(far, 20, [&](int, auto &b, auto &now, auto &) {
+            four(b, now);
+            add_block(b, 5617, 5635, 15, 15, 1);
+            now.push_back(dji(5626));
+        });
+        check(far.health()[index_of(far, "R1")].intruders == 0, "DJI a 13 MHz del borde de R1: no es intruso");
+
+        race::Monitor an;
+        an.start(kRace);
+        run(an, 20, [&](int, auto &b, auto &now, auto &) {
+            four(b, now);
+            fly(b, now, 5625, 15);  // analogico a 3 MHz del borde: solo cuenta si lo pisa (como antes)
+        });
+        check(an.health()[index_of(an, "R1")].intruders == 0, "analogico a 3 MHz del borde de R1: no es intruso");
+    }
+    {
         // 8 fijados (toda Raceband) con todas las bandas como alternativa: update y suggest caben en el segundo
         // que hay entre barridos (hilo de la GUI)
         race::Monitor m;

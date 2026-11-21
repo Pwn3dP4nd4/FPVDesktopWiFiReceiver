@@ -28,9 +28,11 @@ bool matches(const advisor::Signal &s, const advisor::Candidate &c) {
     return s.digital == c.hdzero && std::fabs(s.mhz - c.mhz) < kMatchMhz;
 }
 
-// Una senal ajena pisa el canal si sus anchos se solapan (el gap < 0 de advisor::rate)
+// Una senal ajena pisa el canal si sus anchos se solapan (el gap < 0 de advisor::rate); una digital junto a un canal
+// analogico, tambien si queda a menos de kDigitalGuardMhz de su borde
 bool overlaps(const advisor::Signal &s, const advisor::Candidate &c) {
-    return std::fabs(s.mhz - c.mhz) - (sig_width(s) + advisor::width(c)) / 2 < 0;
+    const double gap = std::fabs(s.mhz - c.mhz) - (sig_width(s) + advisor::width(c)) / 2;
+    return gap < (s.digital && !c.hdzero ? kDigitalGuardMhz : 0);
 }
 }  // namespace
 
@@ -136,7 +138,9 @@ void Monitor::update(const std::vector<advisor::Bin> &bins, const std::vector<ad
         const int sw = h.sweeps++;  // indice local: desde start() o desde que se movio
         if (pilot[i] >= 0) {
             h.seen++;
-            snr_[i].push_back(now[pilot[i]].snr_db);
+            // la SNR, solo de una medida de este barrido: la de un piloto que sigue en el aire sin medirse de nuevo
+            // es la de antes (o 0, segun el backend) y contaria otra vez
+            if (now[pilot[i]].fresh) snr_[i].push_back(now[pilot[i]].snr_db);
             if (first_[i] < 0) first_[i] = sw;
             last_[i] = sw;
         }
