@@ -89,7 +89,11 @@ claramente mejor (al menos 3 dB) en otro canal libre compatible con los demás f
 las señales ajenas, lo recomienda («Pasa al piloto de R3 a R2: unos +X dB», con la causa: otro emitiendo encima, o
 interferencia o Wi-Fi en su canal). Un intruso cuenta una vez: como intruso, no también como interferencia del
 canal. **Aplicar** cambia ese fijado (dile al piloto que cambie de canal) y vuelve a
-empezar solo su seguimiento; los demás conservan lo apuntado. Cambiar los fijados a mano reinicia el seguimiento.
+empezar solo su seguimiento; los demás conservan lo apuntado. Hasta que el piloto aterriza y cambia, su señal en el
+canal viejo sigue siendo suya (*cambiando de canal* en *En el aire*), no la de otro. Una recomendación que se está
+mostrando se mantiene mientras siga valiendo, salvo que otro canal sea al menos 3 dB mejor: no salta entre dos
+canales parecidos de un barrido a otro. Cambiar los fijados a mano reinicia el seguimiento; cambiar el modo
+estrecho de HDZero solo reinicia los HDZero.
 
 Lo que no puede ver:
 

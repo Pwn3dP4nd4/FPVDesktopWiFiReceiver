@@ -196,6 +196,22 @@ int main() {
         check(rate(r3, e, {}).noise_db < 6, "el nivel de alrededor no sale de las otras senales (others)");
         mask_signal(e, near, {mine, near});
         check(rate(r3, e, {}).noise_db < 1.5, "y quitada tambien la ajena, R3 queda limpio");
+        // quitando solo la mia, lo que esta en su faldon pero mas cerca del centro de la ajena (5744-5748) es de la
+        // ajena: se queda (si no, un canal pegado a ella pareceria limpio)
+        auto g = flat();
+        add_block(g, 5724, 5740, 25, 25, 1);
+        add_block(g, 5740, 5756, 22, 22, 1);
+        mask_signal(g, mine, {mine, near});
+        double lin = 0;
+        int n = 0;
+        for (const auto &x : g)
+            if (x.mhz >= 5744 && x.mhz <= 5748) {
+                lin += std::pow(10.0, x.mean_db / 10.0);
+                n++;
+            }
+        const double side = n ? 10 * std::log10(lin / n) : 0;
+        std::printf("  faldon de mi R3 junto a la ajena (5744-5748): %.1f dB\n", side);
+        check(side > 20, "el faldon de la mia no borra el borde de una ajena pegada");
     }
     {
         // un AP sin trafico en el canal WiFi 153 (5765 MHz): solo beacons, pico 20 dB y encendido el 0.3 % del
@@ -429,6 +445,14 @@ int main() {
         std::printf("  F4 fijado, bandas R: %s\n", list(a).c_str());
         check(find(a, "F4") && find(a, "F4")->pinned && !find(a, "R5") && a.picks.size() == 4 && spaced(a),
               "un fijado fuera de las bandas elegidas tambien cuenta");
+    }
+    {
+        // con fijados fuera de las bandas elegidas, el total puede pasar de los candidatos de esas bandas: solo L
+        // (8 canales) y R1 y R8 fijados, 9 pilotos: los 2 fijados y 7 de L
+        const auto a = advise(flat(), {}, analog("L"), {}, 9, 0, nullptr, {kR1, kR8});
+        std::printf("  9 pilotos, bandas L, R1 y R8 fijados: %s\n", list(a).c_str());
+        check(a.picks.size() == 9 && pinned(a) == 2 && a.complete && spaced(a),
+              "fijados fuera de las bandas: busca los que faltan del total pedido (no menos)");
     }
     {
         // dos fijados demasiado juntos (R3 5732 y F1 5740): salen los dos, y se avisa de que no cabe

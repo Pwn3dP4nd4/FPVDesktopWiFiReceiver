@@ -273,6 +273,82 @@ int main() {
               "intruso intermitente (no esta en el ultimo barrido): tampoco pegado a el");
     }
     {
+        // tras mover a R3: su piloto sigue unos barridos en 5732 hasta que aterriza y cambia. Esa senal es la suya
+        // (el canal que deja, leaving()), no una ajena: ni intruso de nadie ni su piloto en el canal nuevo
+        race::Monitor m;
+        m.start(kRace);
+        const Signal intruder{5748, 0, false, "", 15};
+        bool landed = false;
+        double to_mhz = 0;
+        const Scene scene = [&](int, auto &b, auto &now, auto &) {
+            fly(b, now, 5658, 25);
+            fly(b, now, landed ? to_mhz : 5732, 25);
+            fly(b, now, 5843, 25);
+            fly(b, now, 5917, 25);
+            add_block(b, 5748 - 8, 5748 + 8, 22, 22, 1);
+            now.push_back(intruder);
+        };
+        run(m, 12, scene);
+        const auto mv = m.suggest(raceband(), {});
+        check(mv && mv->from == 1, "tras mover: hay recomendacion para R3");
+        if (mv) {
+            m.moved(mv->from, mv->to);
+            to_mhz = mv->to.mhz;
+            run(m, 5, scene);  // aun en 5732
+            const auto &h = m.health()[1];
+            bool none = true;
+            for (size_t i = 0; i < m.health().size(); i++)
+                if (i != 1) none = none && m.health()[i].intruders == 0;
+            std::printf("  tras mover R3 a %s: dejando %zu canal(es), visto %d en el nuevo\n", mv->to.name.c_str(),
+                        m.leaving().size(), h.seen);
+            check(m.leaving().size() == 1 && m.leaving()[0].name == "R3" && h.seen == 0 && none,
+                  "el canal que deja: su senal es suya (no intruso), no la de su canal nuevo");
+            landed = true;
+            run(m, 4, scene);  // ya en el nuevo
+            check(m.leaving().empty() && m.health()[1].seen == 4,
+                  "cuando ya no se le ve en el canal viejo, se olvida; en el nuevo se le ve");
+        } else {
+            check(false, "el canal que deja: su senal es suya (no intruso), no la de su canal nuevo");
+            check(false, "cuando ya no se le ve en el canal viejo, se olvida; en el nuevo se le ve");
+        }
+    }
+    {
+        // la sugerencia no cambia de un barrido a otro por poco: R2 y R5 casi empatan (ruido de 3 dB que va de uno
+        // a otro cada barrido). Sin la anterior cambia; pasandole la anterior (prev), se queda
+        race::Monitor m;
+        m.start(kRace);
+        const Signal intruder{5748, 0, false, "", 15};
+        int sweep = 0;
+        const Scene scene = [&](int, auto &b, auto &now, auto &) {
+            four(b, now);
+            add_block(b, 5748 - 8, 5748 + 8, 22, 22, 1);
+            now.push_back(intruder);
+            add_block(b, 5880 - 10, 5880 + 10, 8, 9, 1);  // R7 sucio: fuera
+            if (sweep++ % 2) add_block(b, 5695 - 10, 5695 + 10, 3, 4, 1);
+            else add_block(b, 5806 - 10, 5806 + 10, 3, 4, 1);
+        };
+        run(m, 12, scene);
+        std::vector<std::string> bare, kept;
+        std::optional<race::Move> prev;
+        for (int k = 0; k < 6; k++) {
+            run(m, 1, scene);
+            const auto a = m.suggest(raceband(), {});
+            const auto b = m.suggest(raceband(), {}, prev ? &*prev : nullptr);
+            bare.push_back(a ? a->to.name : "-");
+            kept.push_back(b ? b->to.name : "-");
+            if (b) prev = b;
+        }
+        std::string sa, sb;
+        for (const auto &x : bare) sa += x + " ";
+        for (const auto &x : kept) sb += x + " ";
+        std::printf("  casi empate R2/R5: sin prev %s| con prev %s\n", sa.c_str(), sb.c_str());
+        bool flips = false, same = kept[0] != "-";
+        for (size_t k = 1; k < bare.size(); k++) flips = flips || bare[k] != bare[k - 1];
+        for (const auto &x : kept) same = same && x == kept[0];
+        check(flips, "(sin prev, la sugerencia cambia entre R2 y R5)");
+        check(same, "con la anterior, la sugerencia se mantiene");
+    }
+    {
         // la misma energia encima de R3 sin que el barrido la detecte como senal: no es intruso, pero sigue
         // contando como interferencia de su canal (solo se quita la de las senales ajenas detectadas)
         race::Monitor m;

@@ -214,7 +214,15 @@ void mask_signal(std::vector<Bin> &bins, const Signal &s, const std::vector<Sign
     }
     for (auto &b : bins) {
         const double d = std::fabs(b.mhz - s.mhz);
-        if (d <= half || (d <= half + kMaskSkirt && b.mean_db > level + 3)) b = Bin{b.mhz, level, level, 0};
+        if (d > half + kMaskSkirt) continue;
+        if (d > half) {
+            // faldon: solo lo que sobresale, y no lo que esta mas cerca del centro de otra senal (es de esa)
+            if (b.mean_db <= level + 3) continue;
+            bool theirs = false;
+            for (const auto &o : others) theirs = theirs || std::fabs(b.mhz - o.mhz) < d;
+            if (theirs) continue;
+        }
+        b = Bin{b.mhz, level, level, 0};
     }
 }
 
@@ -394,15 +402,13 @@ Advice advise(const std::vector<Bin> &bins, const std::vector<Signal> &seen, con
     out.wifi = wifi ? *wifi : find_wifi(bins, Region::Eu, seen);
     for (const auto &c : analog) out.analog.push_back(rate(c, bins, seen, out.wifi));
     for (const auto &c : hdzero) out.hdzero.push_back(rate(c, bins, seen, out.wifi));
-    n_analog = std::clamp(n_analog, 0, static_cast<int>(analog.size()));
-    n_hdzero = std::clamp(n_hdzero, 0, static_cast<int>(hdzero.size()));
     std::vector<Rating> all = out.analog;
     all.insert(all.end(), out.hdzero.begin(), out.hdzero.end());
     // los fijados: el candidato del mismo nombre y sistema si lo hay (no sale dos veces); si no (fuera de las bandas
     // elegidas), se puntua aparte y se anade al final de all, donde la busqueda no lo ve como libre porque ya esta
     // en todas las elecciones
     std::vector<int> fixed;
-    int fixed_a = 0, fixed_h = 0;
+    int fixed_a = 0, fixed_h = 0, extra_a = 0, extra_h = 0;  // extra: fijados que no estan entre los candidatos
     for (const auto &c : pinned) {
         int idx = -1;
         for (int i = 0; i < static_cast<int>(all.size()); i++)
@@ -410,12 +416,16 @@ Advice advise(const std::vector<Bin> &bins, const std::vector<Signal> &seen, con
         if (idx < 0) {
             all.push_back(rate(c, bins, seen, out.wifi));
             idx = static_cast<int>(all.size()) - 1;
+            (c.hdzero ? extra_h : extra_a)++;
         }
         if (std::find(fixed.begin(), fixed.end(), idx) != fixed.end()) continue;  // fijado repetido
         fixed.push_back(idx);
         (c.hdzero ? fixed_h : fixed_a)++;
     }
-    // el total de cada sistema incluye sus fijados; con mas fijados que pilotos, solo los fijados
+    // no mas de los que hay (candidatos y fijados de fuera de ellos); el total de cada sistema incluye sus fijados;
+    // con mas fijados que pilotos, solo los fijados
+    n_analog = std::clamp(n_analog, 0, static_cast<int>(analog.size()) + extra_a);
+    n_hdzero = std::clamp(n_hdzero, 0, static_cast<int>(hdzero.size()) + extra_h);
     n_analog = std::max(n_analog, fixed_a);
     n_hdzero = std::max(n_hdzero, fixed_h);
     if (n_analog + n_hdzero == 0) {

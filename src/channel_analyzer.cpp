@@ -420,10 +420,14 @@ ChannelAnalyzer::ChannelAnalyzer(Backend *backend, QWidget *parent) : QDialog(pa
     narrow_->setChecked(settings().value("analyzer/narrow", false).toBool());
     connect(narrow_, &QCheckBox::toggled, this, [this](bool on) {
         settings().setValue("analyzer/narrow", on);
-        // los HDZero fijados cambian de ancho: el seguimiento tiene que usar el mismo que la recomendacion
+        // los HDZero fijados cambian de ancho: el seguimiento tiene que usar el mismo que la recomendacion. Solo
+        // vuelven a empezar ellos; lo de los analogicos sigue
         if (raceOn_) {
             move_.reset();
-            race_.start(pinnedCandidates());
+            const auto pins = pinnedCandidates();
+            const auto &hs = race_.health();
+            for (int i = 0; i < static_cast<int>(pins.size()) && i < static_cast<int>(hs.size()); i++)
+                if (pins[i].hdzero) race_.moved(i, pins[i]);
         }
         recompute();
         updateRace();
@@ -846,9 +850,12 @@ void ChannelAnalyzer::updateAir() {
         if (keys.contains(key)) continue;
         keys << key;
         onPin << pinnedMine(p);
+        const bool leaving = onPin.back() && !onPinned(pinnedCandidates(), p);  // movido, aun en el canal viejo
         texts << QStringLiteral("%1  %2 MHz%3%4").arg(p.name.isEmpty() ? key : p.shownName()).arg(p.freqMHz, 0, 'f', 0)
                      .arg(p.isDigital() ? QStringLiteral("  HDZero") : QString(),
-                          onPin.back() ? QStringLiteral("  (") + tr("pinned") + QLatin1Char(')') : QString());
+                          onPin.back() ? QStringLiteral("  (") + (leaving ? tr("changing channel") : tr("pinned")) +
+                                             QLatin1Char(')')
+                                       : QString());
     }
     const QSignalBlocker b(air_);
     // fuera los que ya no estan (y el "(ninguno)")
@@ -954,7 +961,10 @@ void ChannelAnalyzer::prepare(std::vector<advisor::Bin> &bins, std::vector<advis
     // pilotos vistos en el ultimo minuto que no son mios; seenIdx_ lleva el indice de busy a last_.pilots. Los que
     // estan en un canal fijado tambien son mios (son los del reparto): si no, su propio canal saldria ocupado
     seenIdx_.clear();
-    const std::vector<advisor::Candidate> pins = pinnedCandidates();
+    // y el que se ha movido (Aplicar) mientras sigue en su canal viejo: hasta que cambie, es suyo
+    std::vector<advisor::Candidate> pins = pinnedCandidates();
+    if (raceOn_)
+        for (const auto &c : race_.leaving()) pins.push_back(c);
     const auto signal = [](const Pilot &p) {
         return advisor::Signal{p.freqMHz, p.bwMHz, p.isDigital(), p.name.toStdString(), float(p.snrDb)};
     };
@@ -1206,7 +1216,10 @@ void ChannelAnalyzer::togglePin(const QString &name, bool hdzero) {
     setPins(pins);
 }
 
-bool ChannelAnalyzer::pinnedMine(const Pilot &p) const { return onPinned(pinnedCandidates(), p); }
+bool ChannelAnalyzer::pinnedMine(const Pilot &p) const {
+    // el canal que deja uno movido solo mientras se sigue la carrera (si no, nadie lo olvida: update no corre)
+    return onPinned(pinnedCandidates(), p) || (raceOn_ && onPinned(race_.leaving(), p));
+}
 
 // ---- seguimiento de carrera ---------------------------------------------------------------------------------
 
@@ -1281,10 +1294,13 @@ void ChannelAnalyzer::updateRace() {
 
     // recomendacion: mover a un piloto, o por que no se arregla cambiando de canal
     QString adv;
+    // la que se esta mostrando: se mantiene mientras siga valiendo (no cambia de canal por poco entre barridos)
+    const std::optional<race::Move> prev = move_;
     move_.reset();
     if (raceOn_) {
         const std::string b = bands().toStdString();
-        move_ = race_.suggest(advisor::analog_channels(b), advisor::hdzero_channels(b, narrow_->isChecked()));
+        move_ = race_.suggest(advisor::analog_channels(b), advisor::hdzero_channels(b, narrow_->isChecked()),
+                              prev ? &*prev : nullptr);
         if (move_ && (move_->from < 0 || move_->from >= n || move_->from >= pinned_.size())) move_.reset();
         if (move_) {
             const advisor::Candidate &from = hs[move_->from].ch;

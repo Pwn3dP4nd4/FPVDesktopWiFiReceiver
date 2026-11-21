@@ -60,6 +60,7 @@ public:
     // canales fijados ("R3", "hdz:R3"; se guardan como los del usuario) y activar el seguimiento de carrera
     void setPinnedForTest(const QStringList &pins);
     void setRaceForTest(bool on);
+    void applyForTest() { applyMove(); }  // pulsar Aplicar (si hay recomendacion)
     // marcar como mios en "En el aire" (clave: el nombre del piloto o sus MHz); se aplica a lo que ya se ve
     void setMineForTest(const QStringList &keys);
 

@@ -143,7 +143,8 @@ struct Advice {
 // que se quita su ancho y, hasta kMaskSkirt MHz mas alla, lo que este 3 dB por encima del nivel de alrededor
 // (mediana de un anillo despues de eso). Lo quitado queda a ese nivel, sin rafagas. others: las senales que se ven
 // (puede estar la misma s); lo que cae en el ancho mas kMaskSkirt de alguna no entra en el anillo, para que una
-// senal pegada no ponga el nivel (si no queda nada del anillo, se usa entero).
+// senal pegada no ponga el nivel (si no queda nada del anillo, se usa entero), y del faldon no se quita lo que esta
+// mas cerca del centro de otra que del de s (es de la otra).
 constexpr double kMaskSkirt = 6, kMaskRing = 5;
 void mask_signal(std::vector<Bin> &bins, const Signal &s, const std::vector<Signal> &others = {});
 

@@ -89,7 +89,11 @@ better (at least 3 dB) on another free channel compatible with the other pinned 
 other people's signals, it says so ("Move the pilot on R3 to R2: about +X dB", with the cause: someone else transmitting on top of it, or
 interference or WiFi on its channel). An intruder counts once: as intruder, not also as interference on the
 channel. **Apply** changes that pinned channel (tell the pilot to switch) and restarts
-only its tracking; the others keep their history. Changing the pinned channels by hand restarts the tracking.
+only its tracking; the others keep their history. Until the pilot lands and switches, its signal on the old channel
+is still its own (*changing channel* in *On the air*), not someone else's. A suggestion that is showing stays while
+it is still valid, unless another channel is at least 3 dB better: it does not jump between two similar channels
+from one sweep to the next. Changing the pinned channels by hand restarts the tracking; toggling HDZero narrow
+mode only restarts the HDZero ones.
 
 What it cannot see:
 

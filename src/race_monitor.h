@@ -32,6 +32,9 @@ constexpr int kMinSweeps = 10;
 constexpr float kMoveMinGainDb = 3;
 // suggest tiene en cuenta las senales ajenas vistas en estos ultimos barridos (una que sale a ratos tambien)
 constexpr int kForeignMemory = 10;
+// El canal que deja un piloto movido (moved): su senal ahi sigue siendo suya (no ajena) hasta que no se la ve en
+// kLeaveSweeps barridos seguidos (ya ha cambiado) o, como mucho, kLeaveMaxSweeps barridos
+constexpr int kLeaveSweeps = 3, kLeaveMaxSweeps = 120;
 
 struct ChannelHealth {
     advisor::Candidate ch;   // el canal fijado
@@ -70,8 +73,11 @@ class Monitor {
     // (WifiMemory::known)
     void update(const std::vector<advisor::Bin> &bins, const std::vector<advisor::Signal> &now,
                 const std::vector<advisor::Wifi> &wifi);
-    // El piloto de health()[i] se ha cambiado al canal c: lo suyo vuelve a empezar, lo de los demas sigue
+    // El piloto de health()[i] se ha cambiado al canal c: lo suyo vuelve a empezar, lo de los demas sigue. Hasta
+    // que aterrice y cambie, su senal en el canal viejo es suya (leaving()), no la de un intruso
     void moved(int i, const advisor::Candidate &c);
+    // Canales que acaba de dejar un piloto movido y en los que aun se le ve (o se le vio hace menos de kLeaveSweeps)
+    const std::vector<advisor::Candidate> &leaving() const { return leaving_ch_; }
 
     const std::vector<ChannelHealth> &health() const { return health_; }
     int sweeps() const { return sweeps_; }
@@ -82,9 +88,12 @@ class Monitor {
     // barridos; para cada uno, su mejor canal nuevo es el que elige advisor::advise con los demas fijados
     // (candidatos de su sistema, sin el suyo actual ni los que esten a menos de kMatchMhz de el ni a menos de
     // advisor::min_spacing de una senal ajena), con el ultimo espectro (todos los fijados quitados) y las senales
-    // ajenas de los ultimos kForeignMemory barridos como ocupadas. Se recomienda el primero cuya mejora sea al menos kMoveMinGainDb.
+    // ajenas de los ultimos kForeignMemory barridos como ocupadas. Se recomienda el primero cuya mejora sea al menos
+    // kMoveMinGainDb. prev: la recomendacion anterior (la que se esta mostrando); si sigue valiendo (mismo piloto
+    // entre los peores, su canal nuevo sigue libre y compatible, mejora de al menos kMoveMinGainDb) se mantiene,
+    // salvo que otro canal mejore al menos kMoveMinGainDb mas: no cambia de un barrido a otro por poco.
     std::optional<Move> suggest(const std::vector<advisor::Candidate> &analog,
-                                const std::vector<advisor::Candidate> &hdzero) const;
+                                const std::vector<advisor::Candidate> &hdzero, const Move *prev = nullptr) const;
 
    private:  // (se puede cambiar libremente: la interfaz es lo de arriba)
     std::vector<ChannelHealth> health_;
@@ -99,6 +108,12 @@ class Monitor {
     };
     std::vector<Recent> recent_;             // ajenas de los ultimos kForeignMemory barridos
     std::vector<advisor::Wifi> wifi_;        // redes del ultimo barrido
+    struct Leaving {
+        advisor::Candidate ch;
+        int since, seen;  // barrido (sweeps_) en que se dejo y ultimo en que se vio su senal ahi
+    };
+    std::vector<Leaving> leaving_;
+    std::vector<advisor::Candidate> leaving_ch_;  // los canales de leaving_ (leaving())
     int sweeps_ = 0;
 
     void reset(size_t i);  // borra lo apuntado del fijado i (conserva su canal)

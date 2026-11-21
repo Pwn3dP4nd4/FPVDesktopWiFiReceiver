@@ -152,6 +152,10 @@
         <translation>fijado</translation>
     </message>
     <message>
+        <source>changing channel</source>
+        <translation>cambiando de canal</translation>
+    </message>
+    <message>
         <source>Pinned: %1.</source>
         <translation>Fijados: %1.</translation>
     </message>

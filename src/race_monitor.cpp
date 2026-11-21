@@ -49,6 +49,8 @@ void Monitor::start(const std::vector<advisor::Candidate> &pinned) {
     last_bins_.clear();
     foreign_.clear();
     recent_.clear();
+    leaving_.clear();
+    leaving_ch_.clear();
     wifi_.clear();
     sweeps_ = 0;
 }
@@ -88,6 +90,20 @@ void Monitor::update(const std::vector<advisor::Bin> &bins, const std::vector<ad
     // solo la de su piloto es propia: otra que tambien case con el mismo fijado es de alguien mas (un intruso)
     for (size_t i = 0; i < n; i++)
         if (pilot[i] >= 0) own[pilot[i]] = true;
+    // un piloto movido que aun esta en su canal viejo: tambien es propio (ni intruso ni ajeno)
+    for (auto &l : leaving_)
+        for (size_t s = 0; s < now.size(); s++)
+            if (!own[s] && matches(now[s], l.ch)) {
+                own[s] = true;
+                l.seen = sweeps_;
+            }
+    leaving_.erase(std::remove_if(leaving_.begin(), leaving_.end(),
+                                  [&](const Leaving &l) {
+                                      return sweeps_ - l.seen >= kLeaveSweeps || sweeps_ - l.since >= kLeaveMaxSweeps;
+                                  }),
+                   leaving_.end());
+    leaving_ch_.clear();
+    for (const auto &l : leaving_) leaving_ch_.push_back(l.ch);
 
     // Las senales de los pilotos propios no son interferencia de nadie (ni del suyo ni de los vecinos, por las
     // bandas laterales): se quitan todas del espectro. Lo que queda debajo de cada portadora no se ve, pero si lo
@@ -157,8 +173,12 @@ void Monitor::update(const std::vector<advisor::Bin> &bins, const std::vector<ad
 
 void Monitor::moved(int i, const advisor::Candidate &c) {
     if (i < 0 || i >= static_cast<int>(health_.size())) return;
+    const advisor::Candidate old = health_[i].ch;
     reset(static_cast<size_t>(i));
     health_[i].ch = c;
+    if (old.hdzero == c.hdzero && std::fabs(old.mhz - c.mhz) < kMatchMhz) return;  // el mismo canal (otro ancho)
+    leaving_.push_back({old, sweeps_, sweeps_});
+    leaving_ch_.push_back(old);
 }
 
 int Monitor::worst() const {
@@ -171,7 +191,7 @@ int Monitor::worst() const {
 }
 
 std::optional<Move> Monitor::suggest(const std::vector<advisor::Candidate> &analog,
-                                     const std::vector<advisor::Candidate> &hdzero) const {
+                                     const std::vector<advisor::Candidate> &hdzero, const Move *prev) const {
     // Solo los de peor video: mover a un piloto en plena carrera tiene un coste (aterrizar, cambiar el VTX), asi que
     // no se busca el reparto optimo sino arreglar a los que lo estan pasando peor
     std::vector<int> order;
@@ -181,6 +201,11 @@ std::optional<Move> Monitor::suggest(const std::vector<advisor::Candidate> &anal
                      [&](int a, int b) { return health_[a].quality < health_[b].quality; });
     const size_t half = (health_.size() + 1) / 2;
     if (order.size() > half) order.resize(half);
+    // el de la recomendacion anterior, primero (si sigue entre los peores): que no salte de piloto por poco
+    if (prev) {
+        const auto it = std::find(order.begin(), order.end(), prev->from);
+        if (it != order.end()) std::rotate(order.begin(), it, it + 1);
+    }
 
     std::vector<advisor::Signal> foreign;  // las ajenas recordadas: ocupadas y a guardar separacion con ellas
     for (const auto &r : recent_) foreign.push_back(r.s);
@@ -220,14 +245,33 @@ std::optional<Move> Monitor::suggest(const std::vector<advisor::Candidate> &anal
             for (const auto &o : others) ok = ok && std::fabs(o.mhz - pk.r.ch.mhz) >= advisor::min_spacing(o, pk.r.ch);
             if (ok && (!best || pk.r.cost < best->r.cost)) best = &pk;
         }
-        if (!best) continue;
         // lo que se gana: lo atribuible a su canal actual (interferencia e intrusos) contra el coste del nuevo. La
         // SNR baja y los cortes no entran: con el canal limpio no se arreglan cambiando de canal
-        const float gain = h.penalty - best->r.cost;
+        advisor::Candidate to;
+        float gain = -1;
+        if (best) {
+            to = best->r.ch;
+            gain = h.penalty - best->r.cost;
+        }
+        // la anterior se mantiene si sigue valiendo y la nueva no es claramente mejor
+        if (prev && prev->from == i) {
+            const advisor::Candidate *pc = nullptr;
+            for (const auto &c : cand)
+                if (c.name == prev->to.name && c.hdzero == prev->to.hdzero) pc = &c;
+            bool ok = pc != nullptr;
+            for (const auto &o : others) ok = ok && pc && std::fabs(o.mhz - pc->mhz) >= advisor::min_spacing(o, *pc);
+            if (ok) {
+                const float pg = h.penalty - advisor::rate(*pc, last_bins_, foreign, wifi_).cost;
+                if (pg >= kMoveMinGainDb && gain < pg + kMoveMinGainDb) {
+                    to = *pc;
+                    gain = pg;
+                }
+            }
+        }
         if (gain < kMoveMinGainDb) continue;
         Move mv;
         mv.from = i;
-        mv.to = best->r.ch;
+        mv.to = to;
         mv.gain_db = gain;
         mv.cause = static_cast<float>(h.intruders) / static_cast<float>(h.sweeps) > 0.2f ? Cause::Intruder
                                                                                            : Cause::Interference;
