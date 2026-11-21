@@ -240,7 +240,8 @@ connect on startup · `--lang en|es|system` interface language (saved) · `--ver
 
 1. Choose the **bands** to analyse (A, B, E, F, R, L) and how many **analog** and **HDZero** pilots will fly (and
    whether the HDZero ones use narrow mode, about 17 MHz). The ▾ next to each band leaves out single channels
-   (*R  Raceband (6/8)*): they are not recommended, and dropping the ones at either end shortens the sweep.
+   (*R  Raceband (6/8)*): they are not recommended, and dropping the ones at either end shortens the sweep. Leaving out all of them
+   unticks the band.
 2. **Start analysis**: the adapter sweeps those bands continuously (no video meanwhile). Anything on the air is
    treated as taken, except pilots on a pinned channel (step 4): switch your other VTXs off or tick them in the
    **On the air** list (for that analysis only): their signal and sidebands do not count as interference.

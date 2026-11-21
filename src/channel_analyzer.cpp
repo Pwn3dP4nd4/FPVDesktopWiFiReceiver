@@ -990,8 +990,25 @@ void ChannelAnalyzer::setExcluded(const QStringList &names, bool excluded) {
         excluded_.removeAll(n);
         if (excluded) excluded_ << n;
     }
+    // una banda sin ningun canal queda desmarcada, con sus canales de vuelta: al marcarla otra vez, entera
+    bool bandOff = false;
+    for (int i = 0; i < bandBoxes_.size(); i++) {
+        if (!bandBoxes_[i]->isChecked()) continue;
+        QStringList chans;
+        bool any = false;
+        for (const auto &c : kp::fpv_channels())
+            if (c.name[0] == kBands[i]) {
+                chans << QString::fromLatin1(c.name);
+                any = any || !excluded_.contains(chans.back());
+            }
+        if (any) continue;
+        const QSignalBlocker b(bandBoxes_[i]);
+        bandBoxes_[i]->setChecked(false);
+        for (const QString &n : chans) excluded_.removeAll(n);
+        bandOff = true;
+    }
     range(lo1, hi1);
-    if (lo0 != lo1 || hi0 != hi1) {
+    if (bandOff || lo0 != lo1 || hi0 != hi1) {
         bandsChanged();
         return;
     }
@@ -1041,7 +1058,10 @@ void ChannelAnalyzer::showChannelMenu(int band, QToolButton *anchor) {
         const QString name = QString::fromLatin1(c.name);
         auto *cb = new QCheckBox(QStringLiteral("%1  %2 MHz").arg(name).arg(c.mhz, 0, 'f', 0));
         cb->setChecked(!excluded_.contains(name));
-        connect(cb, &QCheckBox::toggled, this, [this, name](bool on) { setExcluded({name}, !on); });
+        connect(cb, &QCheckBox::toggled, this, [this, name, band, pop](bool on) {
+            setExcluded({name}, !on);
+            if (!bandBoxes_[band]->isChecked()) pop->close();  // ha quitado el ultimo: la banda se ha desmarcado
+        });
         grid->addWidget(cb, boxes.size() % 4, boxes.size() / 4);  // dos columnas de cuatro
         names << name;
         boxes << cb;
@@ -1050,12 +1070,13 @@ void ChannelAnalyzer::showChannelMenu(int band, QToolButton *anchor) {
     auto *r = new QHBoxLayout;
     auto *all = new QPushButton(tr("All"));
     auto *none = new QPushButton(tr("None"));
-    const auto setAll = [this, names, boxes](bool on) {
+    const auto setAll = [this, names, boxes, band, pop](bool on) {
         for (QCheckBox *cb : boxes) {
             const QSignalBlocker b(cb);
             cb->setChecked(on);
         }
         setExcluded(names, !on);
+        if (!bandBoxes_[band]->isChecked()) pop->close();
     };
     connect(all, &QPushButton::clicked, this, [setAll] { setAll(true); });
     connect(none, &QPushButton::clicked, this, [setAll] { setAll(false); });
