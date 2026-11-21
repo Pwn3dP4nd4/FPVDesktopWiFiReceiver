@@ -257,7 +257,9 @@ Opciones de línea de comandos (opcionales, para pruebas): `--demo` sin hardware
 4. **Fija** los canales que ya has dado a los pilotos (casilla en la tabla, o clic derecho sobre una marca de
    canal): se conservan entre análisis y la recomendación solo elige los demás. En carrera, el **Seguimiento de
    carrera** (pestaña *Carrera*) vigila cada canal fijado (SNR, cortes, intrusos, interferencia) y, canal a canal,
-   dice si mover a su piloto y a dónde (*R3 → F3*) cuando otro canal libre sería claramente mejor
+   dice si mover a su piloto y a dónde (*R3 → F3*) cuando otro canal libre sería claramente mejor. Puede empezar
+   solo cuando despegan los pilotos (*Empezar al salir los pilotos*) y guarda un *Historial* de sus avisos para
+   repasarlo o guardarlo en CSV al acabar
    ([detalles](docs/wiki/Analizador-de-canales.md#canales-fijados-y-seguimiento-de-carrera)).
 
 Cómo mide: con ganancia fija, así todos los pasos del barrido están en la misma escala (si un VTX cercano satura

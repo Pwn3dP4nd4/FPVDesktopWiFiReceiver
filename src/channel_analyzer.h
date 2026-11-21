@@ -1,4 +1,5 @@
 #pragma once
+#include <QDateTime>
 #include <QDialog>
 #include <QElapsedTimer>
 #include <QVector>
@@ -63,6 +64,9 @@ public:
     void applyForTest() { applyMoves(moves_); }  // pulsar Aplicar (todas las recomendaciones)
     // marcar como mios en "En el aire" (clave: el nombre del piloto o sus MHz); se aplica a lo que ya se ve
     void setMineForTest(const QStringList &keys);
+    // pulsar "Empezar al salir los pilotos" con este numero de pilotos (<= 0: todos los fijados)
+    void armForTest(int pilots);
+    void showHistoryForTest();  // pestana Historial
 
 signals:
     void requestStart(double loMHz, double hiMHz);
@@ -104,11 +108,47 @@ private:
     void togglePin(const QString &name, bool hdzero);
     void savePins() const;
     bool pinnedMine(const Pilot &p) const;  // un piloto en un canal fijado cuenta como mio (no hace falta marcarlo)
-    void setRace(bool on);
+    // why: por que empieza o para (para el historial); vacio = a mano con la casilla
+    void setRace(bool on, const QString &why = QString());
     void updateRaceControls();
     void updateRace();  // panel de carrera
     void applyMoves(const std::vector<race::Move> &moves);  // fija los canales nuevos (Aplicar)
     bool canApplyAlone(const race::Move &m) const;  // compatible con los fijados de ahora (sin las demas)
+    // lo que esta en el aire para el seguimiento (visto hace menos de kRaceHoldS), con su SNR
+    std::vector<advisor::Signal> raceSignals() const;
+
+    // ---- auto-inicio: armado, espera a que salgan armCount_ pilotos en sus canales fijados y empieza solo ----
+    void setArmed(bool on);
+    void checkArmed(const std::vector<advisor::Signal> &now);
+    void checkLanded(const std::vector<advisor::Signal> &now);  // fin automatico: ya no queda ningun piloto
+    bool armed_ = false;
+    int armPresent_ = 0;          // pilotos en su canal en el ultimo barrido (mientras esta armado)
+    double lastPresentT_ = 0;     // surveyT_ de la ultima vez que se vio a alguno en carrera
+    bool raceSeenAny_ = false;    // en esta carrera se ha visto ya a alguno (si no, no se para sola)
+    QPushButton *armBtn_ = nullptr;
+    QSpinBox *armCount_ = nullptr;
+    QLabel *armLbl_ = nullptr;
+    QCheckBox *autoStop_ = nullptr;
+
+    // ---- historial de la carrera: avisos, recomendaciones, cambios aplicados y el resumen final ----
+    enum class Ev { Info, Ok, Warn, Move, Applied, Summary };
+    struct RaceEvent {
+        QDateTime when;
+        double raceS = 0;  // s desde que empezo el seguimiento
+        int sweep = 0;
+        Ev kind = Ev::Info;
+        QString channel, what, detail;
+    };
+    void addEvent(Ev kind, const QString &channel, const QString &what, const QString &detail = QString());
+    void addSummary();  // al parar: como ha ido cada canal
+    QString historyText(bool csv) const;
+    void saveHistory();
+    void updateHistoryTab();
+    QVector<RaceEvent> events_;   // de todas las carreras de esta ventana (Borrar las quita)
+    QElapsedTimer raceClock_;
+    QTreeWidget *histTable_ = nullptr;
+    QLabel *histHint_ = nullptr;
+    QPushButton *histCopy_ = nullptr, *histSave_ = nullptr, *histClear_ = nullptr;
 
     QVector<Pin> pinned_;
     race::Monitor race_;

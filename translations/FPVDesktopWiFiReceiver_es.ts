@@ -104,6 +104,70 @@
         <translation>Durante la carrera sigue barriendo y vigila cada canal fijado: la señal de su piloto, los cortes, otras señales encima y la interferencia. Los pilotos en canales fijados cuentan como tuyos. Recomienda un cambio si a un piloto le iría claramente mejor en otro canal libre.</translation>
     </message>
     <message>
+        <source>Start when the pilots are up</source>
+        <translation>Empezar al salir los pilotos</translation>
+    </message>
+    <message>
+        <source>Starts the analysis if needed and waits: race tracking starts by itself as soon as the chosen number of pilots are on the air on their pinned channels. Press again to cancel.</source>
+        <translation>Arranca el análisis si hace falta y espera: el seguimiento de carrera empieza solo en cuanto estén en el aire, en sus canales fijados, los pilotos elegidos. Vuelve a pulsarlo para cancelar.</translation>
+    </message>
+    <message>
+        <source>Pilots:</source>
+        <translation>Pilotos:</translation>
+    </message>
+    <message>
+        <source>all</source>
+        <translation>todos</translation>
+    </message>
+    <message>
+        <source>How many pilots on their pinned channels start the race (all = every pinned channel).</source>
+        <translation>Cuántos pilotos en sus canales fijados hacen empezar la carrera (todos = uno por canal fijado).</translation>
+    </message>
+    <message>
+        <source>Stop when all have landed</source>
+        <translation>Parar cuando aterricen todos</translation>
+    </message>
+    <message>
+        <source>Stops race tracking by itself when no pinned pilot has been seen for about a minute and a half (VTXs off). A pilot that leaves its VTX on after landing keeps it going.</source>
+        <translation>Para el seguimiento solo cuando no se ve a ningún piloto fijado durante cerca de minuto y medio (VTX apagados). Un piloto que deja el VTX encendido al aterrizar lo mantiene en marcha.</translation>
+    </message>
+    <message>
+        <source>History</source>
+        <translation>Historial</translation>
+    </message>
+    <message>
+        <source>Time</source>
+        <translation>Hora</translation>
+    </message>
+    <message>
+        <source>Event</source>
+        <translation>Evento</translation>
+    </message>
+    <message>
+        <source>Details</source>
+        <translation>Detalles</translation>
+    </message>
+    <message>
+        <source>Time since race tracking started (sweep number in the tooltip).</source>
+        <translation>Tiempo desde que empezó el seguimiento de carrera (el número de barrido, en la ayuda emergente).</translation>
+    </message>
+    <message>
+        <source>Warnings, recommendations and changes of every race since the program started, and a summary of each channel when it stops.</source>
+        <translation>Avisos, recomendaciones y cambios de cada carrera desde que se abrió el programa, y un resumen de cada canal al pararla.</translation>
+    </message>
+    <message>
+        <source>Copy</source>
+        <translation>Copiar</translation>
+    </message>
+    <message>
+        <source>Save...</source>
+        <translation>Guardar...</translation>
+    </message>
+    <message>
+        <source>Clear</source>
+        <translation>Borrar</translation>
+    </message>
+    <message>
         <source>Apply</source>
         <translation>Aplicar</translation>
     </message>
@@ -152,6 +216,18 @@
         <translation>Estimación de su vídeo en dB (más es mejor): la peor SNR menos lo que quitan el canal y los cortes. El peor aparece resaltado.</translation>
     </message>
     <message>
+        <source>The adapter was disconnected</source>
+        <translation>Se ha desconectado el adaptador</translation>
+    </message>
+    <message>
+        <source>The analysis was stopped</source>
+        <translation>Se ha parado el análisis</translation>
+    </message>
+    <message>
+        <source>The receiver went back to scanning or watching</source>
+        <translation>El receptor ha vuelto a buscar o a ver vídeo</translation>
+    </message>
+    <message>
         <source>pinned</source>
         <translation>fijado</translation>
     </message>
@@ -182,6 +258,97 @@
     <message>
         <source>WiFi seen on channel(s) %1: it counts against the channels it covers, even while quiet.</source>
         <translation>WiFi visto en los canales %1: cuenta en contra de los canales que pisa, aunque esté callado.</translation>
+    </message>
+    <message>
+        <source>Pinned channels changed by hand</source>
+        <translation>Canales fijados cambiados a mano</translation>
+    </message>
+    <message>
+        <source>Tracking starts again with %1.</source>
+        <translation>El seguimiento vuelve a empezar con %1.</translation>
+    </message>
+    <message>
+        <source>No pinned channels left</source>
+        <translation>No queda ningún canal fijado</translation>
+    </message>
+    <message>
+        <source>By hand</source>
+        <translation>A mano</translation>
+    </message>
+    <message>
+        <source>Race started</source>
+        <translation>Carrera empezada</translation>
+    </message>
+    <message>
+        <source>%1. Pinned: %2.</source>
+        <translation>%1. Fijados: %2.</translation>
+    </message>
+    <message>
+        <source>Race stopped</source>
+        <translation>Carrera parada</translation>
+    </message>
+    <message numerus="yes">
+        <source>%1, after %n sweep(s).</source>
+        <translation>
+            <numerusform>%1, tras %n barrido.</numerusform>
+            <numerusform>%1, tras %n barridos.</numerusform>
+        </translation>
+    </message>
+    <message>
+        <source>Started by itself: %1 of %2 pilot(s) on their channels</source>
+        <translation>Empezada sola: %1 de %2 piloto(s) en sus canales</translation>
+    </message>
+    <message>
+        <source>Stopped by itself: no pilot on the air for over a minute</source>
+        <translation>Parada sola: ningún piloto en el aire durante más de un minuto</translation>
+    </message>
+    <message>
+        <source>Sweep %1</source>
+        <translation>Barrido %1</translation>
+    </message>
+    <message>
+        <source>Its pilot was never seen.</source>
+        <translation>No se ha visto nunca a su piloto.</translation>
+    </message>
+    <message>
+        <source>SNR %1 / %2 dB, quality %3 dB, %4 dropout(s), intruders %5 %, interference %6 dB (%7 sweeps).</source>
+        <translation>SNR %1 / %2 dB, calidad %3 dB, %4 corte(s), intrusos %5 %, interferencia %6 dB (%7 barridos).</translation>
+    </message>
+    <message>
+        <source>Summary (worst video)</source>
+        <translation>Resumen (peor vídeo)</translation>
+    </message>
+    <message>
+        <source>Summary</source>
+        <translation>Resumen</translation>
+    </message>
+    <message>
+        <source>History (%1)</source>
+        <translation>Historial (%1)</translation>
+    </message>
+    <message>
+        <source>Date</source>
+        <translation>Fecha</translation>
+    </message>
+    <message>
+        <source>Sweep</source>
+        <translation>Barrido</translation>
+    </message>
+    <message>
+        <source>Save race history</source>
+        <translation>Guardar el historial de carrera</translation>
+    </message>
+    <message>
+        <source>CSV (*.csv);;Text (*.txt)</source>
+        <translation>CSV (*.csv);;Texto (*.txt)</translation>
+    </message>
+    <message>
+        <source>Could not save %1.</source>
+        <translation>No se ha podido guardar %1.</translation>
+    </message>
+    <message>
+        <source>Saved to %1.</source>
+        <translation>Guardado en %1.</translation>
     </message>
     <message>
         <source>not seen</source>
@@ -220,12 +387,24 @@
         <translation>Bien</translation>
     </message>
     <message>
+        <source>SNR %1 / %2 dB, quality %3 dB, %4 dropout(s), intruders %5 %, interference %6 dB.</source>
+        <translation>SNR %1 / %2 dB, calidad %3 dB, %4 corte(s), intrusos %5 %, interferencia %6 dB.</translation>
+    </message>
+    <message>
+        <source>Its pilot has not been seen.</source>
+        <translation>Aún no se ha visto a su piloto.</translation>
+    </message>
+    <message>
         <source>The worst video so far</source>
         <translation>El peor vídeo hasta ahora</translation>
     </message>
     <message>
         <source>Pin the channels you have given to the pilots first (Recommendation tab).</source>
         <translation>Primero fija los canales que has dado a los pilotos (pestaña Recomendación).</translation>
+    </message>
+    <message>
+        <source>Waiting for the pilots: %1 of %2 on their pinned channels. Tracking starts by itself.</source>
+        <translation>Esperando a los pilotos: %1 de %2 en sus canales fijados. El seguimiento empezará solo.</translation>
     </message>
     <message numerus="yes">
         <source>Tracking stopped after %n sweep(s).</source>
@@ -260,6 +439,14 @@
     <message>
         <source>No change needed: no pilot would clearly do better on another free channel.</source>
         <translation>No hace falta cambiar nada: a ningún piloto le iría claramente mejor en otro canal libre.</translation>
+    </message>
+    <message>
+        <source>Moved to %1 (%2 MHz)</source>
+        <translation>Movido a %1 (%2 MHz)</translation>
+    </message>
+    <message>
+        <source>Applied: its tracking starts again on the new channel.</source>
+        <translation>Aplicado: su seguimiento vuelve a empezar en el canal nuevo.</translation>
     </message>
     <message>
         <source>%1 is on the air here: taken as yours (if it is not, unpin this channel)</source>

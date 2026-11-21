@@ -573,6 +573,19 @@ int main() {
         check(up < 50 && sg < 150, "8 fijados: update < 50 ms, suggest < 150 ms");
         (void)mv;
     }
+    {
+        // auto-inicio: cuantos fijados tienen a su piloto en el aire
+        using advisor::Signal;
+        const std::vector<Signal> none;
+        check(race::present(kRace, none) == 0, "present: nadie en el aire = 0");
+        std::vector<Signal> two{Signal{kRace[0].mhz + 2, 0, false, "", 20}, Signal{kRace[2].mhz, 0, false, "", 20}};
+        check(race::present(kRace, two) == 2, "present: dos pilotos (uno desviado 2 MHz) = 2");
+        two.push_back(Signal{kRace[0].mhz - 1, 0, false, "", 20});  // otro en el mismo canal: no suma
+        check(race::present(kRace, two) == 2, "present: dos senales en el mismo canal cuentan una vez");
+        two.push_back(Signal{kRace[1].mhz, 13.5, true, "", 20});  // un digital en un canal analogico: no es el suyo
+        two.push_back(Signal{kRace[3].mhz + 20, 0, false, "", 20});  // lejos de todos
+        check(race::present(kRace, two) == 2, "present: otro sistema o lejos de los fijados no cuenta");
+    }
     std::printf("\n%s\n", failures ? "HAY FALLOS" : "todo bien");
     return failures ? 1 : 0;
 }

@@ -251,7 +251,9 @@ connect on startup · `--lang en|es|system` interface language (saved) · `--ver
 4. **Pin** the channels already given to pilots (tick box in the table, or right-click a channel mark): they are
    kept between analyses and the advice only picks the rest. During the race, **Race tracking** (*Race* tab)
    follows each pinned channel (SNR, dropouts, intruders, interference) and, per channel, says whether to move its
-   pilot and where (*R3 → F3*) when another free channel would clearly be better ([details](docs/wiki/Channel-analyzer.md#pinned-channels-and-race-tracking)).
+   pilot and where (*R3 → F3*) when another free channel would clearly be better. It can start by itself when the
+   pilots take off (*Start when the pilots are up*) and keeps a *History* of its warnings to review or save as CSV
+   afterwards ([details](docs/wiki/Channel-analyzer.md#pinned-channels-and-race-tracking)).
 
 How it measures: with a fixed gain, so every step of the sweep is on the same scale (if a nearby VTX clips a
 step, that step is measured with 10 dB less and corrected). Each step is measured over its
