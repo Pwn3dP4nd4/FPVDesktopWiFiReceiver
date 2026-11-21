@@ -60,7 +60,7 @@ public:
     // canales fijados ("R3", "hdz:R3"; se guardan como los del usuario) y activar el seguimiento de carrera
     void setPinnedForTest(const QStringList &pins);
     void setRaceForTest(bool on);
-    void applyForTest() { applyMove(); }  // pulsar Aplicar (si hay recomendacion)
+    void applyForTest() { applyMoves(moves_); }  // pulsar Aplicar (todas las recomendaciones)
     // marcar como mios en "En el aire" (clave: el nombre del piloto o sus MHz); se aplica a lo que ya se ve
     void setMineForTest(const QStringList &keys);
 
@@ -107,12 +107,13 @@ private:
     void setRace(bool on);
     void updateRaceControls();
     void updateRace();  // panel de carrera
-    void applyMove();
+    void applyMoves(const std::vector<race::Move> &moves);  // fija los canales nuevos (Aplicar)
+    bool canApplyAlone(const race::Move &m) const;  // compatible con los fijados de ahora (sin las demas)
 
     QVector<Pin> pinned_;
     race::Monitor race_;
     bool raceOn_ = false;
-    std::optional<race::Move> move_;  // la recomendacion mostrada (boton Apply)
+    std::vector<race::Move> moves_;  // las recomendaciones mostradas (columna Recomendacion, boton Apply)
     QTabWidget *tabs_ = nullptr;
     QLabel *pinHint_ = nullptr;
     QPushButton *unpinBtn_ = nullptr;

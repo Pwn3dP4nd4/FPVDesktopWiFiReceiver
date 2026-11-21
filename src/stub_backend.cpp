@@ -80,7 +80,8 @@ void StubBackend::stopSurvey() {
 }
 
 // Escenario de carrera: ruido, los cuatro pilotos del reparto (R1, R3, R6, R8, SNR 20-25 dB; R8 se pierde un
-// barrido de cada 7) y desde el barrido 5 un VTX ajeno en 5748 MHz, encima de R3 (que baja su SNR)
+// barrido de cada 7), desde el barrido 5 un VTX ajeno en 5748 MHz, encima de R3 (que baja su SNR), y desde el 8 otro
+// en 5858, encima de R6: dos recomendaciones a la vez
 void StubBackend::raceTick(SurveyData &d) {
     const int k = d.sweeps;
     const bool intruder = k >= 5;
@@ -94,7 +95,8 @@ void StubBackend::raceTick(SurveyData &d) {
                        {5732, intruder ? 15.f : 22.f, "R3", true},
                        {5843, 24, "R6", true},
                        {5917, 21, "R8", k % 7 != 3},
-                       {5748, 18, "", intruder}};
+                       {5748, 18, "", intruder},
+                       {5858, 17, "", k >= 8}};
     for (double f = surveyLo_ + 0.078; f < surveyHi_; f += 0.15625) {
         SpectrumPoint p{f, 0.4f + float((qHash(qint64(f * 1000)) % 100) / 100.0), 3.f, 0.f};
         for (const Vtx &v : vtx) {

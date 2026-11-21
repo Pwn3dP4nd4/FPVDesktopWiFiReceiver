@@ -83,15 +83,19 @@ class Monitor {
     int sweeps() const { return sweeps_; }
     // Indice del de peor quality entre los que se han visto alguna vez (seen > 0); -1 si ninguno
     int worst() const;
-    // Recomendar mover a uno de los de peor video: entre los vistos alguna vez, se mira, de peor a mejor quality,
-    // la mitad peor de los fijados (redondeando hacia arriba), y de ellos los que lleven al menos kMinSweeps
-    // barridos; para cada uno, su mejor canal nuevo es el que elige advisor::advise con los demas fijados
-    // (candidatos de su sistema, sin el suyo actual ni los que esten a menos de kMatchMhz de el ni a menos de
-    // advisor::min_spacing de una senal ajena), con el ultimo espectro (todos los fijados quitados) y las senales
-    // ajenas de los ultimos kForeignMemory barridos como ocupadas. Se recomienda el primero cuya mejora sea al menos
-    // kMoveMinGainDb. prev: la recomendacion anterior (la que se esta mostrando); si sigue valiendo (mismo piloto
-    // entre los peores, su canal nuevo sigue libre y compatible, mejora de al menos kMoveMinGainDb) se mantiene,
-    // salvo que otro canal mejore al menos kMoveMinGainDb mas: no cambia de un barrido a otro por poco.
+    // Recomendaciones de mover, una por canal fijado que la necesite: entre los vistos alguna vez, de peor a mejor
+    // quality (los de prev primero), los que lleven al menos kMinSweeps barridos; para cada uno, su mejor canal nuevo
+    // es el que elige advisor::advise con los demas fijados (con las recomendaciones anteriores de esta lista ya
+    // aplicadas: se pueden aplicar todas a la vez) y candidatos de su sistema, sin el suyo actual ni los que esten a
+    // menos de kMatchMhz de el ni a menos de advisor::min_spacing de una senal ajena; con el ultimo espectro (todos
+    // los fijados quitados) y las senales ajenas de los ultimos kForeignMemory barridos como ocupadas. Sale si la
+    // mejora es al menos kMoveMinGainDb. prev: las recomendaciones que se estan mostrando; la de un piloto se
+    // mantiene si sigue valiendo (su canal nuevo sigue libre y compatible, mejora de al menos kMoveMinGainDb), salvo
+    // que otro canal mejore al menos kMoveMinGainDb mas: no cambia de un barrido a otro por poco.
+    std::vector<Move> suggest_all(const std::vector<advisor::Candidate> &analog,
+                                  const std::vector<advisor::Candidate> &hdzero,
+                                  const std::vector<Move> &prev = {}) const;
+    // La primera de suggest_all (la del peor video, o la de prev si sigue valiendo)
     std::optional<Move> suggest(const std::vector<advisor::Candidate> &analog,
                                 const std::vector<advisor::Candidate> &hdzero, const Move *prev = nullptr) const;
 

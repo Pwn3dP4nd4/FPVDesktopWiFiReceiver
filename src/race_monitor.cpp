@@ -190,34 +190,41 @@ int Monitor::worst() const {
     return w;
 }
 
-std::optional<Move> Monitor::suggest(const std::vector<advisor::Candidate> &analog,
-                                     const std::vector<advisor::Candidate> &hdzero, const Move *prev) const {
-    // Solo los de peor video: mover a un piloto en plena carrera tiene un coste (aterrizar, cambiar el VTX), asi que
-    // no se busca el reparto optimo sino arreglar a los que lo estan pasando peor
+std::vector<Move> Monitor::suggest_all(const std::vector<advisor::Candidate> &analog,
+                                       const std::vector<advisor::Candidate> &hdzero,
+                                       const std::vector<Move> &prev) const {
+    // De peor a mejor video: mover a un piloto en plena carrera tiene un coste (aterrizar, cambiar el VTX), asi que
+    // no se busca el reparto optimo sino arreglar a los que lo estan pasando peor, uno a uno: cada recomendacion
+    // cuenta con las anteriores ya aplicadas (sus canales nuevos), para que se puedan aplicar todas a la vez
     std::vector<int> order;
     for (size_t i = 0; i < health_.size(); i++)
         if (health_[i].seen > 0) order.push_back(static_cast<int>(i));
     std::stable_sort(order.begin(), order.end(),
                      [&](int a, int b) { return health_[a].quality < health_[b].quality; });
-    const size_t half = (health_.size() + 1) / 2;
-    if (order.size() > half) order.resize(half);
-    // el de la recomendacion anterior, primero (si sigue entre los peores): que no salte de piloto por poco
-    if (prev) {
-        const auto it = std::find(order.begin(), order.end(), prev->from);
-        if (it != order.end()) std::rotate(order.begin(), it, it + 1);
-    }
+    // los de las recomendaciones anteriores, primero (en su orden): que no salten por poco
+    std::vector<int> first;
+    for (const auto &pv : prev)
+        if (std::find(order.begin(), order.end(), pv.from) != order.end() &&
+            std::find(first.begin(), first.end(), pv.from) == first.end())
+            first.push_back(pv.from);
+    for (int i : order)
+        if (std::find(first.begin(), first.end(), i) == first.end()) first.push_back(i);
+    order = first;
 
-    std::vector<advisor::Signal> foreign;  // las ajenas recordadas: ocupadas y a guardar separacion con ellas
+    std::vector<advisor::Candidate> chans;  // el reparto con las recomendaciones de este bucle aplicadas
+    for (const auto &h : health_) chans.push_back(h.ch);
+    std::vector<advisor::Signal> foreign;   // las ajenas recordadas: ocupadas y a guardar separacion con ellas
     for (const auto &r : recent_) foreign.push_back(r.s);
+    std::vector<Move> out;
     for (int i : order) {
         const ChannelHealth &h = health_[i];
         if (h.sweeps < kMinSweeps) continue;
         std::vector<advisor::Candidate> others;
         int n_a = 0, n_h = 0;
-        for (size_t j = 0; j < health_.size(); j++) {
+        for (size_t j = 0; j < chans.size(); j++) {
             if (static_cast<int>(j) == i) continue;
-            others.push_back(health_[j].ch);
-            (health_[j].ch.hdzero ? n_h : n_a)++;
+            others.push_back(chans[j]);
+            (chans[j].hdzero ? n_h : n_a)++;
         }
         (h.ch.hdzero ? n_h : n_a)++;  // el que se busca
         // candidatos de su sistema, sin el canal en que ya esta (ni otro casi en la misma frecuencia: otra banda) ni
@@ -236,14 +243,17 @@ std::optional<Move> Monitor::suggest(const std::vector<advisor::Candidate> &anal
         const std::vector<advisor::Candidate> none;
         const auto adv = advisor::advise(last_bins_, foreign, h.ch.hdzero ? none : cand, h.ch.hdzero ? cand : none,
                                          n_a, n_h, &wifi_, others);
-        // el elegido por la busqueda (no fijado) de su sistema; se comprueba que no pisa a los demas fijados por si
-        // no hubiera sitio (advise lo devuelve igual, con complete = false)
+        // el elegido por la busqueda (no fijado) de su sistema; se comprueba que no pisa a los demas por si no
+        // hubiera sitio (advise lo devuelve igual, con complete = false)
+        const auto fits = [&](const advisor::Candidate &c) {
+            bool ok = std::fabs(c.mhz - h.ch.mhz) >= kMatchMhz;
+            for (const auto &o : others) ok = ok && std::fabs(o.mhz - c.mhz) >= advisor::min_spacing(o, c);
+            return ok;
+        };
         const advisor::Pick *best = nullptr;
         for (const auto &pk : adv.picks) {
-            if (pk.pinned || pk.r.ch.hdzero != h.ch.hdzero) continue;
-            bool ok = std::fabs(pk.r.ch.mhz - h.ch.mhz) >= kMatchMhz;
-            for (const auto &o : others) ok = ok && std::fabs(o.mhz - pk.r.ch.mhz) >= advisor::min_spacing(o, pk.r.ch);
-            if (ok && (!best || pk.r.cost < best->r.cost)) best = &pk;
+            if (pk.pinned || pk.r.ch.hdzero != h.ch.hdzero || !fits(pk.r.ch)) continue;
+            if (!best || pk.r.cost < best->r.cost) best = &pk;
         }
         // lo que se gana: lo atribuible a su canal actual (interferencia e intrusos) contra el coste del nuevo. La
         // SNR baja y los cortes no entran: con el canal limpio no se arreglan cambiando de canal
@@ -254,19 +264,18 @@ std::optional<Move> Monitor::suggest(const std::vector<advisor::Candidate> &anal
             gain = h.penalty - best->r.cost;
         }
         // la anterior se mantiene si sigue valiendo y la nueva no es claramente mejor
-        if (prev && prev->from == i) {
+        for (const auto &pv : prev) {
+            if (pv.from != i) continue;
             const advisor::Candidate *pc = nullptr;
             for (const auto &c : cand)
-                if (c.name == prev->to.name && c.hdzero == prev->to.hdzero) pc = &c;
-            bool ok = pc != nullptr;
-            for (const auto &o : others) ok = ok && pc && std::fabs(o.mhz - pc->mhz) >= advisor::min_spacing(o, *pc);
-            if (ok) {
-                const float pg = h.penalty - advisor::rate(*pc, last_bins_, foreign, wifi_).cost;
-                if (pg >= kMoveMinGainDb && gain < pg + kMoveMinGainDb) {
-                    to = *pc;
-                    gain = pg;
-                }
+                if (c.name == pv.to.name && c.hdzero == pv.to.hdzero) pc = &c;
+            if (!pc || !fits(*pc)) break;
+            const float pg = h.penalty - advisor::rate(*pc, last_bins_, foreign, wifi_).cost;
+            if (pg >= kMoveMinGainDb && gain < pg + kMoveMinGainDb) {
+                to = *pc;
+                gain = pg;
             }
+            break;
         }
         if (gain < kMoveMinGainDb) continue;
         Move mv;
@@ -275,9 +284,17 @@ std::optional<Move> Monitor::suggest(const std::vector<advisor::Candidate> &anal
         mv.gain_db = gain;
         mv.cause = static_cast<float>(h.intruders) / static_cast<float>(h.sweeps) > 0.2f ? Cause::Intruder
                                                                                            : Cause::Interference;
-        return mv;
+        out.push_back(mv);
+        chans[i] = to;
     }
-    return std::nullopt;
+    return out;
+}
+
+std::optional<Move> Monitor::suggest(const std::vector<advisor::Candidate> &analog,
+                                     const std::vector<advisor::Candidate> &hdzero, const Move *prev) const {
+    const auto all = suggest_all(analog, hdzero, prev ? std::vector<Move>{*prev} : std::vector<Move>{});
+    if (all.empty()) return std::nullopt;
+    return all.front();
 }
 
 }  // namespace race

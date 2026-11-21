@@ -84,16 +84,27 @@ fijado:
 - la **interferencia** de su canal, con la señal de su propio piloto quitada (ruido, ráfagas, Wi-Fi recordado);
 - una **calidad** estimada del vídeo (la peor SNR menos lo que quitan el canal y los cortes). El peor se resalta.
 
-Durante los primeros 10 barridos está aprendiendo. Después, si a uno de los pilotos con peor vídeo le iría
-claramente mejor (al menos 3 dB) en otro canal libre compatible con los demás fijados y a una separación segura de
-las señales ajenas, lo recomienda («Pasa al piloto de R3 a R2: unos +X dB», con la causa: otro emitiendo encima, o
-interferencia o Wi-Fi en su canal). Un intruso cuenta una vez: como intruso, no también como interferencia del
-canal. **Aplicar** cambia ese fijado (dile al piloto que cambie de canal) y vuelve a
-empezar solo su seguimiento; los demás conservan lo apuntado. Hasta que el piloto aterriza y cambia, su señal en el
-canal viejo sigue siendo suya (*cambiando de canal* en *En el aire*), no la de otro. Una recomendación que se está
-mostrando se mantiene mientras siga valiendo, salvo que otro canal sea al menos 3 dB mejor: no salta entre dos
-canales parecidos de un barrido a otro. Cambiar los fijados a mano reinicia el seguimiento; cambiar el modo
-estrecho de HDZero solo reinicia los HDZero.
+Durante los primeros 10 barridos está aprendiendo. Después, la columna **Recomendación** dice de un vistazo qué
+hacer con cada canal:
+
+- **→ F3 (5780 MHz, +18 dB)**: a su piloto le iría claramente mejor (al menos 3 dB) en ese canal libre, compatible
+  con los demás fijados y a una separación segura de las señales ajenas. La ayuda emergente da la causa: otro
+  emitiendo encima, o interferencia o Wi-Fi en su canal.
+- **No hay canal libre mejor**: su canal tiene interferencia o un intruso, pero ningún canal libre compatible sería
+  claramente mejor (desfija alguno o añade bandas).
+- **Vídeo flojo: no es el canal**: SNR baja o cortes con el canal limpio; cambiar de canal no lo arreglaría
+  (antenas, potencia del VTX, distancia).
+- **Bien**.
+
+Puede haber varios cambios a la vez (primero el de peor vídeo); cada uno cuenta con los anteriores ya aplicados,
+así que se pueden aplicar todos juntos. Debajo de la tabla, *Cambiar: R3 → F3, R6 → B6* los resume. **Aplicar** (o
+**Aplicar todas**) fija los canales nuevos (dile a los pilotos que cambien) y vuelve a empezar solo su seguimiento;
+los demás conservan lo apuntado. Para aplicar solo uno, clic derecho en su fila (si solo cabe después de los demás,
+lo dice). Un intruso cuenta una vez: como intruso, no también como interferencia del canal. Hasta que un piloto
+aterriza y cambia, su señal en el canal viejo sigue siendo suya (*cambiando de canal* en *En el aire*), no la de
+otro. Un cambio que se está mostrando se mantiene mientras siga valiendo, salvo que otro canal sea al menos 3 dB
+mejor: no salta entre dos canales parecidos de un barrido a otro. Cambiar los fijados a mano reinicia el
+seguimiento; cambiar el modo estrecho de HDZero solo reinicia los HDZero.
 
 Lo que no puede ver:
 

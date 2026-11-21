@@ -423,7 +423,7 @@ ChannelAnalyzer::ChannelAnalyzer(Backend *backend, QWidget *parent) : QDialog(pa
         // los HDZero fijados cambian de ancho: el seguimiento tiene que usar el mismo que la recomendacion. Solo
         // vuelven a empezar ellos; lo de los analogicos sigue
         if (raceOn_) {
-            move_.reset();
+            moves_.clear();
             const auto pins = pinnedCandidates();
             const auto &hs = race_.health();
             for (int i = 0; i < static_cast<int>(pins.size()) && i < static_cast<int>(hs.size()); i++)
@@ -623,9 +623,33 @@ ChannelAnalyzer::ChannelAnalyzer(Backend *backend, QWidget *parent) : QDialog(pa
         v->addLayout(top);
         raceTable_ = new QTreeWidget;
         raceTable_->setRootIsDecorated(false);
-        raceTable_->setColumnCount(7);
+        raceTable_->setColumnCount(8);
         raceTable_->header()->setStretchLastSection(true);
         raceTable_->setSelectionMode(QAbstractItemView::NoSelection);
+        // clic derecho en una fila: aplicar solo la recomendacion de ese canal
+        raceTable_->setContextMenuPolicy(Qt::CustomContextMenu);
+        connect(raceTable_, &QWidget::customContextMenuRequested, this, [this](const QPoint &pos) {
+            QTreeWidgetItem *it = raceTable_->itemAt(pos);
+            if (!it) return;
+            const int row = raceTable_->indexOfTopLevelItem(it);
+            const auto ms = moves_;  // la tabla se rehace en cada barrido: lo de ahora
+            const auto &hs = race_.health();
+            QMenu menu(this);
+            for (const auto &m : ms) {
+                if (m.from != row || m.from >= static_cast<int>(hs.size())) continue;
+                const QString t = QStringLiteral("%1 \u2192 %2").arg(QString::fromStdString(hs[m.from].ch.name),
+                                                                     QString::fromStdString(m.to.name));
+                QAction *a = menu.addAction(canApplyAlone(m) ? tr("Apply %1 only").arg(t)
+                                                             : tr("Apply %1 only (apply the others first)").arg(t));
+                a->setEnabled(canApplyAlone(m));
+                connect(a, &QAction::triggered, this, [this, m] { applyMoves({m}); });
+            }
+            if (ms.size() > 1) {
+                QAction *all = menu.addAction(tr("Apply all (%1)").arg(ms.size()));
+                connect(all, &QAction::triggered, this, [this, ms] { applyMoves(ms); });
+            }
+            if (!menu.isEmpty()) menu.exec(raceTable_->viewport()->mapToGlobal(pos));
+        });
         v->addWidget(raceTable_, 1);
         auto *r = new QHBoxLayout;
         raceAdvice_ = new QLabel;
@@ -634,7 +658,7 @@ ChannelAnalyzer::ChannelAnalyzer(Backend *backend, QWidget *parent) : QDialog(pa
         r->addWidget(raceAdvice_, 1);
         applyBtn_ = new QPushButton;
         applyBtn_->setVisible(false);
-        connect(applyBtn_, &QPushButton::clicked, this, &ChannelAnalyzer::applyMove);
+        connect(applyBtn_, &QPushButton::clicked, this, [this] { applyMoves(moves_); });
         r->addWidget(applyBtn_);
         v->addLayout(r);
         tabs_->addTab(page, QString());
@@ -721,7 +745,10 @@ void ChannelAnalyzer::retranslate() {
     applyBtn_->setToolTip(tr("Pins the new channel instead of the old one (tell the pilot to change it). The other "
                              "channels keep their history."));
     raceTable_->setHeaderLabels({tr("Channel"), tr("MHz"), tr("SNR (median / low)"), tr("Dropouts"), tr("Intruders"),
-                                 tr("Interference"), tr("Quality")});
+                                 tr("Interference"), tr("Quality"), tr("Recommendation")});
+    raceTable_->headerItem()->setToolTip(7, tr("What to do with each channel: move it (→ new channel, tell the "
+                                               "pilot and Apply), or why not. Right-click a row to apply only that "
+                                               "one."));
     raceTable_->headerItem()->setToolTip(2, tr("Signal-to-noise ratio of its pilot while seen: the median and the "
                                                "worst moments (10th percentile)."));
     raceTable_->headerItem()->setToolTip(3, tr("Sweeps in which its pilot was missing, between the first and the "
@@ -1193,7 +1220,7 @@ void ChannelAnalyzer::savePins() const {
 void ChannelAnalyzer::setPins(const QVector<Pin> &pins) {
     pinned_ = pins;
     savePins();
-    move_.reset();
+    moves_.clear();
     // cambio a mano: el seguimiento vuelve a empezar (sin fijados, se apaga); parado, lo de la ultima carrera ya
     // no casa con los fijados
     if (raceOn_ && !pinned_.isEmpty()) race_.start(pinnedCandidates());
@@ -1231,7 +1258,7 @@ void ChannelAnalyzer::setRace(bool on) {
     }
     if (on != raceOn_) {
         raceOn_ = on;
-        move_.reset();
+        moves_.clear();
         if (on) race_.start(pinnedCandidates());  // apagado: lo apuntado se queda a la vista
         updateAir();
         recompute();
@@ -1249,13 +1276,32 @@ void ChannelAnalyzer::updateRace() {
     updateRaceControls();
     const auto &hs = race_.health();
     const int worst = race_.worst();
+    const int n = static_cast<int>(hs.size()), sw = race_.sweeps();
+    // las recomendaciones (una por canal): las que se estan mostrando se mantienen mientras sigan valiendo (no
+    // cambian de canal por poco entre barridos)
+    const std::vector<race::Move> prev = moves_;
+    moves_.clear();
+    if (raceOn_) {
+        const std::string b = bands().toStdString();
+        for (const auto &m : race_.suggest_all(advisor::analog_channels(b),
+                                               advisor::hdzero_channels(b, narrow_->isChecked()), prev))
+            if (m.from >= 0 && m.from < n && m.from < pinned_.size()) moves_.push_back(m);
+    }
+    const auto moveOf = [&](int i) -> const race::Move * {
+        for (const auto &m : moves_)
+            if (m.from == i) return &m;
+        return nullptr;
+    };
+
     raceTable_->clear();
     QFont bold = raceTable_->font();
     bold.setBold(true);
     const auto chName = [](const advisor::Candidate &c) {
         return QString::fromStdString(c.name) + (c.hdzero ? QStringLiteral(" HDZero") : QString());
     };
-    for (int i = 0; i < static_cast<int>(hs.size()); i++) {
+    const QColor red(0xd9, 0x48, 0x3b), orange(0xe0, 0xa0, 0x20), green(0x3a, 0xa8, 0x5a);
+    bool allOk = true;
+    for (int i = 0; i < n; i++) {
         const race::ChannelHealth &h = hs[i];
         auto *it = new QTreeWidgetItem(raceTable_);
         it->setIcon(0, pinIcon(h.ch.hdzero ? kHdzColour : kAnalogColour));
@@ -1271,19 +1317,58 @@ void ChannelAnalyzer::updateRace() {
         it->setText(3, QString::number(h.lost));
         it->setText(4, QStringLiteral("%1 %").arg(h.sweeps > 0 ? qRound(100.0 * h.intruders / h.sweeps) : 0));
         it->setText(5, QStringLiteral("%1 dB").arg(h.channel_cost, 0, 'f', 1));
-        if (i == worst && hs.size() > 1) {
+        // recomendacion de este canal, de un vistazo: "-> F3", o por que no se mueve
+        QString rec, tip;
+        QColor col;
+        if (const race::Move *m = moveOf(i)) {
+            rec = QStringLiteral("→ %1  (%2 MHz, +%3 dB)")
+                      .arg(QString::fromStdString(m->to.name))
+                      .arg(m->to.mhz, 0, 'f', 0)
+                      .arg(m->gain_db, 0, 'f', 0);
+            tip = (m->cause == race::Cause::Intruder ? tr("Someone else is transmitting on top of it.")
+                                                     : tr("Interference or WiFi on its channel.")) +
+                  QLatin1Char(' ') + tr("Tell the pilot, then Apply (right-click: only this one).");
+            col = red;
+            allOk = false;
+        } else if (raceOn_ && h.seen > 0 && h.sweeps >= race::kMinSweeps) {
+            const bool weak = h.snr_low < kLowSnrDb || h.lost > 0;
+            if (h.penalty >= race::kMoveMinGainDb) {
+                // su canal es el problema, pero no hay otro libre compatible claramente mejor
+                rec = tr("No better free channel");
+                tip = (5.0 * h.intruders > h.sweeps ? tr("Someone else is transmitting on top of it.")
+                                                    : tr("Interference or WiFi on its channel.")) +
+                      QLatin1Char(' ') +
+                      tr("No free channel compatible with the other pinned ones would be clearly better: unpin one "
+                         "or add bands.");
+                col = orange;
+                allOk = false;
+            } else if (weak) {
+                rec = tr("Weak video: not the channel");
+                tip = tr("Weak video on a clean channel: changing channel would not fix it. Check its antennas, VTX "
+                         "power and distance.");
+                col = orange;
+                allOk = false;
+            } else {
+                rec = tr("OK");
+                col = green;
+            }
+        }
+        it->setText(7, rec);
+        if (!tip.isEmpty()) it->setToolTip(7, tip);
+        if (col.isValid()) it->setForeground(7, col);
+        it->setFont(7, bold);
+        if (i == worst && n > 1) {
             for (int c = 0; c < raceTable_->columnCount(); c++) {
                 it->setBackground(c, QColor(0xd9, 0x48, 0x3b, 50));
-                it->setFont(c, bold);
+                if (c != 7) it->setFont(c, bold);
             }
             it->setToolTip(0, tr("The worst video so far"));
         }
     }
-    for (int c = 0; c < 6; c++) raceTable_->resizeColumnToContents(c);
+    for (int c = 0; c < 7; c++) raceTable_->resizeColumnToContents(c);
 
     // estado
     QString st;
-    const int n = static_cast<int>(hs.size()), sw = race_.sweeps();
     if (pinned_.isEmpty()) st = tr("Pin the channels you have given to the pilots first (Recommendation tab).");
     else if (!raceOn_ && sw > 0) st = tr("Tracking stopped after %n sweep(s).", nullptr, sw);
     else if (!raceOn_) st = running_ ? tr("Tick it when the race starts.")
@@ -1292,60 +1377,43 @@ void ChannelAnalyzer::updateRace() {
     else st = tr("Following %n pinned channel(s): %1 sweeps.", nullptr, n).arg(sw);
     raceState_->setText(st);
 
-    // recomendacion: mover a un piloto, o por que no se arregla cambiando de canal
+    // abajo, el resumen: los cambios a hacer (todos a la vez son compatibles) o que no hace falta ninguno
     QString adv;
-    // la que se esta mostrando: se mantiene mientras siga valiendo (no cambia de canal por poco entre barridos)
-    const std::optional<race::Move> prev = move_;
-    move_.reset();
-    if (raceOn_) {
-        const std::string b = bands().toStdString();
-        move_ = race_.suggest(advisor::analog_channels(b), advisor::hdzero_channels(b, narrow_->isChecked()),
-                              prev ? &*prev : nullptr);
-        if (move_ && (move_->from < 0 || move_->from >= n || move_->from >= pinned_.size())) move_.reset();
-        if (move_) {
-            const advisor::Candidate &from = hs[move_->from].ch;
-            const QString cause = move_->cause == race::Cause::Intruder
-                                      ? tr("someone else is transmitting on top of it")
-                                      : tr("interference or WiFi on its channel");
-            const QString f = QStringLiteral("<b>%1</b>").arg(QString::fromStdString(from.name));
-            const QString to = QStringLiteral("<b>%1</b> (%2 MHz)")
-                                   .arg(QString::fromStdString(move_->to.name))
-                                   .arg(move_->to.mhz, 0, 'f', 0);
-            adv = (from.hdzero ? tr("Move the HDZero pilot on %1 to %2: about +%3 dB (%4).")
-                               : tr("Move the pilot on %1 to %2: about +%3 dB (%4)."))
-                      .arg(f, to, QString::number(move_->gain_db, 'f', 0), cause);
-        } else if (sw >= race::kMinSweeps && worst >= 0) {
-            const race::ChannelHealth &h = hs[worst];
-            const bool weak = h.snr_low < kLowSnrDb || h.lost > 0;
-            const QString who = QStringLiteral("<b>%1</b>").arg(chName(h.ch));
-            if (weak && h.penalty < race::kMoveMinGainDb)
-                adv = tr("%1 has the weakest video on a clean channel: changing channel would not fix it. Check its "
-                         "antennas, VTX power and distance.").arg(who);
-            else if (h.penalty >= race::kMoveMinGainDb)
-                // su canal es el problema, pero no hay otro libre compatible con los demas fijados
-                adv = (h.sweeps > 0 && 5.0 * h.intruders > h.sweeps
-                           ? tr("%1 has someone else transmitting on top of it, but no free channel compatible with "
-                                "the other pinned ones would be clearly better: unpin one or add bands.")
-                           : tr("%1 has interference on its channel, but no free channel compatible with the other "
-                                "pinned ones would be clearly better: unpin one or add bands."))
-                          .arg(who);
-            else
-                adv = tr("No change needed: no pilot would clearly do better on another free channel.");
-        }
+    if (!moves_.empty()) {
+        QStringList l;
+        for (const auto &m : moves_)
+            l << QStringLiteral("<b>%1</b> → <b>%2</b>").arg(chName(hs[m.from].ch), chName(m.to));
+        adv = tr("Change: %1. Tell the pilots, then Apply.").arg(l.join(QStringLiteral(", ")));
+    } else if (raceOn_ && sw >= race::kMinSweeps && worst >= 0 && allOk) {
+        adv = tr("No change needed: no pilot would clearly do better on another free channel.");
     }
     raceAdvice_->setText(adv);
-    raceAdvice_->setStyleSheet(move_ ? QStringLiteral("color:#d9483b;") : QString());
-    applyBtn_->setVisible(move_.has_value());
+    raceAdvice_->setStyleSheet(moves_.empty() ? QString() : QStringLiteral("color:#d9483b;"));
+    applyBtn_->setText(moves_.size() > 1 ? tr("Apply all (%1)").arg(moves_.size()) : tr("Apply"));
+    applyBtn_->setVisible(!moves_.empty());
 }
 
-void ChannelAnalyzer::applyMove() {
-    if (!move_ || move_->from < 0 || move_->from >= pinned_.size()) return;
-    const race::Move m = *move_;
-    move_.reset();
-    // solo cambia ese fijado: lo de los demas sigue (moved, no start)
-    pinned_[m.from] = Pin{QString::fromStdString(m.to.name), m.to.hdzero};
+bool ChannelAnalyzer::canApplyAlone(const race::Move &m) const {
+    // calculadas una tras otra, una recomendacion cuenta con las anteriores ya aplicadas: sola, tiene que caber con
+    // los fijados de ahora
+    const auto &hs = race_.health();
+    for (int j = 0; j < static_cast<int>(hs.size()); j++)
+        if (j != m.from && std::abs(hs[j].ch.mhz - m.to.mhz) < advisor::min_spacing(hs[j].ch, m.to)) return false;
+    return true;
+}
+
+void ChannelAnalyzer::applyMoves(const std::vector<race::Move> &moves) {
+    bool any = false;
+    for (const auto &m : moves) {
+        if (m.from < 0 || m.from >= pinned_.size() || m.from >= static_cast<int>(race_.health().size())) continue;
+        // solo cambia ese fijado: lo de los demas sigue (moved, no start)
+        pinned_[m.from] = Pin{QString::fromStdString(m.to.name), m.to.hdzero};
+        race_.moved(m.from, m.to);
+        any = true;
+    }
+    if (!any) return;
+    moves_.clear();
     savePins();
-    race_.moved(m.from, m.to);
     updateAir();
     recompute();
     updateRace();

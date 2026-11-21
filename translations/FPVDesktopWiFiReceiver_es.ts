@@ -128,6 +128,10 @@
         <translation>Calidad</translation>
     </message>
     <message>
+        <source>What to do with each channel: move it (→ new channel, tell the pilot and Apply), or why not. Right-click a row to apply only that one.</source>
+        <translation>Qué hacer con cada canal: moverlo (→ canal nuevo, díselo al piloto y Aplicar) o por qué no. Clic derecho en una fila para aplicar solo esa.</translation>
+    </message>
+    <message>
         <source>Signal-to-noise ratio of its pilot while seen: the median and the worst moments (10th percentile).</source>
         <translation>Relación señal/ruido de su piloto mientras se ve: la mediana y los peores momentos (percentil 10).</translation>
     </message>
@@ -184,6 +188,38 @@
         <translation>no se ve</translation>
     </message>
     <message>
+        <source>Someone else is transmitting on top of it.</source>
+        <translation>Hay otro emitiendo encima.</translation>
+    </message>
+    <message>
+        <source>Interference or WiFi on its channel.</source>
+        <translation>Interferencia o Wi-Fi en su canal.</translation>
+    </message>
+    <message>
+        <source>Tell the pilot, then Apply (right-click: only this one).</source>
+        <translation>Díselo al piloto y pulsa Aplicar (clic derecho: solo esta).</translation>
+    </message>
+    <message>
+        <source>No better free channel</source>
+        <translation>No hay canal libre mejor</translation>
+    </message>
+    <message>
+        <source>No free channel compatible with the other pinned ones would be clearly better: unpin one or add bands.</source>
+        <translation>Ningún canal libre compatible con los demás fijados sería claramente mejor: desfija alguno o añade bandas.</translation>
+    </message>
+    <message>
+        <source>Weak video: not the channel</source>
+        <translation>Vídeo flojo: no es el canal</translation>
+    </message>
+    <message>
+        <source>Weak video on a clean channel: changing channel would not fix it. Check its antennas, VTX power and distance.</source>
+        <translation>Vídeo flojo con el canal limpio: cambiar de canal no lo arreglaría. Revisa sus antenas, la potencia del VTX y la distancia.</translation>
+    </message>
+    <message>
+        <source>OK</source>
+        <translation>Bien</translation>
+    </message>
+    <message>
         <source>The worst video so far</source>
         <translation>El peor vídeo hasta ahora</translation>
     </message>
@@ -218,36 +254,12 @@
         </translation>
     </message>
     <message>
-        <source>someone else is transmitting on top of it</source>
-        <translation>otro está emitiendo encima</translation>
-    </message>
-    <message>
-        <source>interference or WiFi on its channel</source>
-        <translation>interferencia o WiFi en su canal</translation>
-    </message>
-    <message>
-        <source>Move the HDZero pilot on %1 to %2: about +%3 dB (%4).</source>
-        <translation>Pasa al piloto HDZero de %1 a %2: unos +%3 dB (%4).</translation>
-    </message>
-    <message>
-        <source>Move the pilot on %1 to %2: about +%3 dB (%4).</source>
-        <translation>Pasa al piloto de %1 a %2: unos +%3 dB (%4).</translation>
-    </message>
-    <message>
-        <source>%1 has the weakest video on a clean channel: changing channel would not fix it. Check its antennas, VTX power and distance.</source>
-        <translation>%1 tiene el peor vídeo con el canal limpio: cambiar de canal no lo arreglaría. Revisa sus antenas, la potencia del VTX y la distancia.</translation>
+        <source>Change: %1. Tell the pilots, then Apply.</source>
+        <translation>Cambiar: %1. Díselo a los pilotos y pulsa Aplicar.</translation>
     </message>
     <message>
         <source>No change needed: no pilot would clearly do better on another free channel.</source>
         <translation>No hace falta cambiar nada: a ningún piloto le iría claramente mejor en otro canal libre.</translation>
-    </message>
-    <message>
-        <source>%1 has someone else transmitting on top of it, but no free channel compatible with the other pinned ones would be clearly better: unpin one or add bands.</source>
-        <translation>%1 tiene a otro emitiendo encima, pero ningún canal libre compatible con los demás fijados sería claramente mejor: desfija alguno o añade bandas.</translation>
-    </message>
-    <message>
-        <source>%1 has interference on its channel, but no free channel compatible with the other pinned ones would be clearly better: unpin one or add bands.</source>
-        <translation>%1 tiene interferencia en su canal, pero ningún canal libre compatible con los demás fijados sería claramente mejor: desfija alguno o añade bandas.</translation>
     </message>
     <message>
         <source>%1 is on the air here: taken as yours (if it is not, unpin this channel)</source>
@@ -356,6 +368,18 @@
     <message>
         <source>Ready: choose the bands and press Start analysis.</source>
         <translation>Listo: elige las bandas y pulsa Empezar el análisis.</translation>
+    </message>
+    <message>
+        <source>Apply %1 only</source>
+        <translation>Aplicar solo %1</translation>
+    </message>
+    <message>
+        <source>Apply %1 only (apply the others first)</source>
+        <translation>Aplicar solo %1 (antes hay que aplicar las demás)</translation>
+    </message>
+    <message>
+        <source>Apply all (%1)</source>
+        <translation>Aplicar todas (%1)</translation>
     </message>
     <message>
         <source>Remember</source>

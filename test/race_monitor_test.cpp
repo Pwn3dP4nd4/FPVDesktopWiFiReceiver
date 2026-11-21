@@ -349,6 +349,42 @@ int main() {
         check(same, "con la anterior, la sugerencia se mantiene");
     }
     {
+        // dos con problemas a la vez: intruso en R3 (5748) y otro en R8 (5900). Una recomendacion por canal, y los
+        // canales nuevos compatibles entre si (no los dos al mismo sitio), con los demas fijados y con los intrusos
+        race::Monitor m;
+        m.start(kRace);
+        const Signal i3{5748, 0, false, "", 15}, i8{5900, 0, false, "", 15};
+        run(m, 20, [&](int, auto &b, auto &now, auto &) {
+            four(b, now);
+            add_block(b, 5748 - 8, 5748 + 8, 22, 22, 1);
+            add_block(b, 5900 - 8, 5900 + 8, 22, 22, 1);
+            now.push_back(i3);
+            now.push_back(i8);
+        });
+        const auto all = m.suggest_all(analog_channels("ABEFR"), {});
+        std::printf("  intrusos en R3 y R8:");
+        for (const auto &mv : all)
+            std::printf(" %s->%s (+%.0f)", m.health()[mv.from].ch.name.c_str(), mv.to.name.c_str(), mv.gain_db);
+        std::printf("\n");
+        bool both = all.size() == 2 && ((all[0].from == 1 && all[1].from == 3) || (all[0].from == 3 && all[1].from == 1));
+        check(both, "dos canales con problemas: una recomendacion para cada uno");
+        bool ok = both;
+        if (both) {
+            // el reparto despues de aplicar las dos: todos separados entre si y de los intrusos
+            std::vector<Candidate> after;
+            for (size_t i = 0; i < m.health().size(); i++) after.push_back(m.health()[i].ch);
+            for (const auto &mv : all) after[mv.from] = mv.to;
+            for (size_t a = 0; a < after.size(); a++)
+                for (size_t b = a + 1; b < after.size(); b++)
+                    ok = ok && std::fabs(after[a].mhz - after[b].mhz) >= min_spacing(after[a], after[b]);
+            for (const auto &mv : all) ok = ok && fits(m, mv, {i3, i8});
+        }
+        check(ok, "los canales nuevos son compatibles entre si, con los demas y con los intrusos");
+        const auto one = m.suggest(analog_channels("ABEFR"), {});
+        check(one && both && one->from == all[0].from && one->to.name == all[0].to.name,
+              "suggest() es la primera de suggest_all() (la del peor video)");
+    }
+    {
         // la misma energia encima de R3 sin que el barrido la detecte como senal: no es intruso, pero sigue
         // contando como interferencia de su canal (solo se quita la de las senales ajenas detectadas)
         race::Monitor m;

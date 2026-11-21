@@ -84,16 +84,27 @@ starts: the analyzer keeps sweeping and, sweep by sweep, records for each pinned
 - an estimated video **quality** (the worst SNR minus what the channel and the dropouts take away). The worst one
   is highlighted.
 
-For the first 10 sweeps it is learning. After that, if one of the pilots with the worst video would clearly do
-better (at least 3 dB) on another free channel compatible with the other pinned ones and at a safe spacing from
-other people's signals, it says so ("Move the pilot on R3 to R2: about +X dB", with the cause: someone else transmitting on top of it, or
-interference or WiFi on its channel). An intruder counts once: as intruder, not also as interference on the
-channel. **Apply** changes that pinned channel (tell the pilot to switch) and restarts
-only its tracking; the others keep their history. Until the pilot lands and switches, its signal on the old channel
-is still its own (*changing channel* in *On the air*), not someone else's. A suggestion that is showing stays while
-it is still valid, unless another channel is at least 3 dB better: it does not jump between two similar channels
-from one sweep to the next. Changing the pinned channels by hand restarts the tracking; toggling HDZero narrow
-mode only restarts the HDZero ones.
+For the first 10 sweeps it is learning. After that, the **Recommendation** column says at a glance what to do
+with each channel:
+
+- **→ F3 (5780 MHz, +18 dB)**: its pilot would clearly do better (at least 3 dB) on that free channel, compatible
+  with the other pinned ones and at a safe spacing from other people's signals. The tooltip gives the cause:
+  someone else transmitting on top of it, or interference or WiFi on its channel.
+- **No better free channel**: its channel has interference or an intruder, but no compatible free channel would be
+  clearly better (unpin one or add bands).
+- **Weak video: not the channel**: weak SNR or dropouts on a clean channel; changing channel would not fix it
+  (antennas, VTX power, distance).
+- **OK**.
+
+Several channels can have a move at once (worst video first); each one counts with the previous ones already
+applied, so they can all be applied together. Below the table, *Change: R3 → F3, R6 → B6* sums them up.
+**Apply** (or **Apply all**) pins the new channels (tell the pilots to switch) and restarts only their tracking; the
+others keep their history. To apply just one, right-click its row (if it only fits after the others, it says so).
+An intruder counts once: as intruder, not also as interference on the channel. Until a pilot lands and switches,
+its signal on the old channel is still its own (*changing channel* in *On the air*), not someone else's. A move that
+is showing stays while it is still valid, unless another channel is at least 3 dB better: it does not jump between
+two similar channels from one sweep to the next. Changing the pinned channels by hand restarts the tracking;
+toggling HDZero narrow mode only restarts the HDZero ones.
 
 What it cannot see:
 
