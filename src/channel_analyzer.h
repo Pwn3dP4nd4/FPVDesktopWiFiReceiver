@@ -70,6 +70,15 @@ public:
     // pulsar "Empezar al salir los pilotos" con este numero de pilotos (<= 0: todos los fijados)
     void armForTest(int pilots);
     void showHistoryForTest();  // pestana Historial
+    // test/analyzer_logic_test.cpp: reloj del analisis (s) en lugar del real (< 0: el real) y estado interno
+    void setTimeForTest(double s) { testTimeS_ = s; }
+    bool runningForTest() const { return running_; }
+    bool raceOnForTest() const { return raceOn_; }
+    bool armedForTest() const { return armed_; }
+    int raceSweepsForTest() const { return race_.sweeps(); }
+    int recomputesForTest() const { return recomputes_; }
+    QStringList pinnedForTest() const;   // "R3", "hdz:R3", en el orden de pinned_
+    QStringList historyForTest() const;  // lo que dice cada evento del Historial (RaceEvent::what)
 
 signals:
     void requestStart(double loMHz, double hiMHz);
@@ -86,6 +95,9 @@ private:
     void toggle();
     void stop();
     void onStopped();     // el backend lo ha parado (otra orden): solo la ventana
+    double now() const;   // s desde que empezo el analisis (clock_, o el de setTimeForTest)
+    QByteArray airKey() const;        // los pilotos en el aire, sin la edad (cambia: hay que recomendar de nuevo)
+    QStringList mineForView() const;  // mios para la grafica: marcados y en un canal fijado
     void updateAir();     // lista de pilotos en el aire
     void onSurvey(const SurveyData &d);
     void recompute();
@@ -115,6 +127,7 @@ private:
     QVector<Pin> parsePins(const QStringList &s) const;  // "R3", "hdz:R3"; los que no existen se ignoran
     std::vector<advisor::Candidate> pinnedCandidates() const;  // en el orden de pinned_ (= race_.health())
     bool isPinned(const QString &name, bool hdzero) const;
+    QString pinsText() const;  // "R1, R3 HDZero"
     // cambio a mano (tabla, grafica, quitar todos): guarda, reinicia el seguimiento si esta activo y recalcula
     void setPins(const QVector<Pin> &pins);
     void togglePin(const QString &name, bool hdzero);
@@ -125,6 +138,14 @@ private:
     void updateRaceControls();
     void updateRace();  // panel de carrera
     void applyMoves(const std::vector<race::Move> &moves);  // fija los canales nuevos (Aplicar)
+    // las de moves que siguen entre las recomendaciones de ahora (mismo piloto y canal nuevo) con la carrera en marcha:
+    // un menu abierto mientras llegan barridos no aplica una ya pasada
+    std::vector<race::Move> stillValid(const std::vector<race::Move> &moves) const;
+    // texto de la columna Recomendacion de un canal en carrera (y su explicacion y color)
+    void rowAdvice(int i, QString &rec, QString &tip, QColor &col) const;
+    void logRaceRow(int i, const QString &rec, const QString &tip, const QColor &col);  // al log y al Historial
+    QString raceStateText() const;
+    QString healthText(const race::ChannelHealth &h, bool summary) const;  // SNR, calidad, cortes...
     bool canApplyAlone(const race::Move &m) const;  // compatible con los fijados de ahora (sin las demas)
     // lo que esta en el aire para el seguimiento (visto hace menos de kRaceHoldS), con su SNR
     std::vector<advisor::Signal> raceSignals() const;
@@ -133,6 +154,8 @@ private:
     void setArmed(bool on);
     void checkArmed(const std::vector<advisor::Signal> &now);
     void checkLanded(const std::vector<advisor::Signal> &now);  // fin automatico: ya no queda ningun piloto
+    QVector<double> pinLastT_;    // por fijado (como pinned_): surveyT_ de la ultima vez que se le vio en carrera
+    bool lingerWarned_ = false;   // ya se ha avisado de que una senal sola impide el fin automatico
     bool armed_ = false;
     int armPresent_ = 0;          // pilotos en su canal en el ultimo barrido (mientras esta armado)
     double lastPresentT_ = 0;     // surveyT_ de la ultima vez que se vio a alguno en carrera
@@ -203,4 +226,13 @@ private:
     QTreeWidget *table_ = nullptr;
     SurveyData last_;
     bool running_ = false, open_ = false;
+    // por barrido, no por actualizacion: el backend manda el espectro cada segundo y un barrido tarda ~3 s. El
+    // seguimiento de carrera, la memoria WiFi y la recomendacion solo avanzan con un barrido nuevo (o, la
+    // recomendacion, si cambian los pilotos en el aire); en medio solo se repinta la grafica
+    int lastSweep_ = -1;
+    QByteArray airKey_;           // los pilotos en el aire (sin la edad) del ultimo recompute
+    advisor::Advice advice_;      // la ultima recomendacion (para repintar la grafica entre barridos)
+    int recomputes_ = 0;
+    int pendingStops_ = 0;        // requestStop emitidos cuyo surveyStopped aun no ha llegado
+    double testTimeS_ = -1;
 };

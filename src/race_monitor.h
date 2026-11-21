@@ -97,7 +97,8 @@ class Monitor {
     // quality (los de prev primero), los que lleven al menos kMinSweeps barridos; para cada uno, su mejor canal nuevo
     // es el que elige advisor::advise con los demas fijados (con las recomendaciones anteriores de esta lista ya
     // aplicadas: se pueden aplicar todas a la vez) y candidatos de su sistema, sin el suyo actual ni los que esten a
-    // menos de kMatchMhz de el ni a menos de advisor::min_spacing de una senal ajena; con el ultimo espectro (todos
+    // menos de kMatchMhz de el ni a menos de advisor::min_spacing de una senal ajena o de un canal de leaving() (su
+    // piloto aun esta ahi); con el ultimo espectro (todos
     // los fijados quitados) y las senales ajenas de los ultimos kForeignMemory barridos como ocupadas. Sale si la
     // mejora es al menos kMoveMinGainDb. prev: las recomendaciones que se estan mostrando; la de un piloto se
     // mantiene si sigue valiendo (su canal nuevo sigue libre y compatible, mejora de al menos kMoveMinGainDb), salvo

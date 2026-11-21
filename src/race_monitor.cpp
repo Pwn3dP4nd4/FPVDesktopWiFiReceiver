@@ -19,8 +19,6 @@ float percentile(const std::vector<float> &sorted, double p) {
     return static_cast<float>(sorted[lo] + (sorted[hi] - sorted[lo]) * t);
 }
 
-double sig_width(const advisor::Signal &s) { return s.digital && s.bw_mhz > 0 ? s.bw_mhz : advisor::kAnalogBw; }
-
 // Una senal es la del piloto de un fijado si es del mismo sistema y su centro esta cerca: un VTX analogico se
 // desvia unos MHz de su canal y un HDZero se mide con el error del barrido. Un analogico encima de un HDZero (o al
 // reves) no es su piloto aunque este en la misma frecuencia: es otro sistema, un intruso.
@@ -31,7 +29,7 @@ bool matches(const advisor::Signal &s, const advisor::Candidate &c) {
 // Una senal ajena pisa el canal si sus anchos se solapan (el gap < 0 de advisor::rate); una digital junto a un canal
 // analogico, tambien si queda a menos de kDigitalGuardMhz de su borde
 bool overlaps(const advisor::Signal &s, const advisor::Candidate &c) {
-    const double gap = std::fabs(s.mhz - c.mhz) - (sig_width(s) + advisor::width(c)) / 2;
+    const double gap = std::fabs(s.mhz - c.mhz) - (advisor::width(s) + advisor::width(c)) / 2;
     return gap < (s.digital && !c.hdzero ? kDigitalGuardMhz : 0);
 }
 }  // namespace
@@ -254,6 +252,9 @@ std::vector<Move> Monitor::suggest_all(const std::vector<advisor::Candidate> &an
                 const advisor::Candidate fc{f.name, f.mhz, f.digital, f.digital ? f.bw_mhz : 0};
                 ok = ok && std::fabs(f.mhz - c.mhz) >= advisor::min_spacing(fc, c);
             }
+            // ni los que acaba de dejar un piloto movido: hasta que aterrice y cambie sigue emitiendo ahi (su senal
+            // cuenta como suya y esta quitada del espectro: el canal se veria libre y limpio)
+            for (const auto &l : leaving_ch_) ok = ok && std::fabs(l.mhz - c.mhz) >= advisor::min_spacing(l, c);
             if (ok) cand.push_back(c);
         }
         if (cand.empty()) continue;

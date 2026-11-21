@@ -323,6 +323,14 @@
         <translation>Empezada sola: %1 de %2 piloto(s) en sus canales</translation>
     </message>
     <message>
+        <source>Still on the air: the race will not stop by itself</source>
+        <translation>Sigue en el aire: la carrera no parará sola</translation>
+    </message>
+    <message>
+        <source>The other pilots are no longer seen. If this is not one of your pilots (someone else&apos;s VTX near its channel), stop the race by hand.</source>
+        <translation>Ya no se ve a los demás pilotos. Si no es uno de tus pilotos (el VTX de otro cerca de su canal), para la carrera a mano.</translation>
+    </message>
+    <message>
         <source>Stopped by itself: no pilot on the air for over a minute</source>
         <translation>Parada sola: ningún piloto en el aire durante más de un minuto</translation>
     </message>
@@ -990,6 +998,10 @@ Conéctalo y pulsa &quot;Conectar adaptador&quot;.</translation>
     <message>
         <source>The driver installer (driver\windows-driver.ps1) was not found.</source>
         <translation>No se encuentra el instalador del driver (driver\windows-driver.ps1).</translation>
+    </message>
+    <message>
+        <source>The driver installer next to the program (driver\windows-driver.ps1 and its .inf) is not the one of this version, or it has been modified: it will not be run as administrator. Download the program again.</source>
+        <translation>El instalador del driver que hay junto al programa (driver\windows-driver.ps1 y su .inf) no es el de esta versión o se ha modificado: no se ejecutará como administrador. Vuelve a descargar el programa.</translation>
     </message>
     <message>
         <source>This installs the WinUSB driver for the adapter, once. Windows will ask for administrator permission.

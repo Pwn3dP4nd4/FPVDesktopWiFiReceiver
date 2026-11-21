@@ -51,11 +51,9 @@ void wifi_block(int ch, Region region, double &lo, double &hi) {
     else pick(kBondsUs, std::size(kBondsUs));
 }
 
-double sig_width(const Signal &s) { return s.digital && s.bw_mhz > 0 ? s.bw_mhz : kAnalogBw; }
-
 bool covered_by_pilot(const Wifi &w, const std::vector<Signal> &seen) {
     for (const auto &s : seen)
-        if (std::fabs(w.mhz - s.mhz) < sig_width(s) / 2) return true;
+        if (std::fabs(w.mhz - s.mhz) < width(s) / 2) return true;
     return false;
 }
 
@@ -181,6 +179,7 @@ std::vector<Candidate> hdzero_channels(const std::string &bands, bool narrow) {
 }
 
 double width(const Candidate &c) { return c.bw_mhz > 0 ? c.bw_mhz : c.hdzero ? kHdzBw : kAnalogBw; }
+double width(const Signal &s) { return s.digital && s.bw_mhz > 0 ? s.bw_mhz : kAnalogBw; }
 
 double min_spacing(const Candidate &a, const Candidate &b) {
     // dos analogicos FM a 20 MHz se pisan (armonicos, desviacion) a poca distancia: 25 como minimo
@@ -195,7 +194,7 @@ double ideal_spacing(const Candidate &a, const Candidate &b) {
 }
 
 void mask_signal(std::vector<Bin> &bins, const Signal &s, const std::vector<Signal> &others) {
-    const double half = sig_width(s) / 2;
+    const double half = width(s) / 2;
     std::vector<float> ring, all;
     for (const auto &b : bins) {
         const double d = std::fabs(b.mhz - s.mhz);
@@ -203,7 +202,7 @@ void mask_signal(std::vector<Bin> &bins, const Signal &s, const std::vector<Sign
         all.push_back(b.mean_db);
         bool covered = false;
         for (const auto &o : others)
-            covered = covered || std::fabs(b.mhz - o.mhz) <= sig_width(o) / 2 + kMaskSkirt;
+            covered = covered || std::fabs(b.mhz - o.mhz) <= width(o) / 2 + kMaskSkirt;
         if (!covered) ring.push_back(b.mean_db);
     }
     if (ring.empty()) ring = std::move(all);
@@ -385,7 +384,7 @@ Rating rate(const Candidate &c, const std::vector<Bin> &bins, const std::vector<
     r.cost = r.noise_db + kBurstWeight * r.burst + r.wifi_cost;
     if (r.coverage < 0.5f) r.cost += kUnknownCost;
     for (size_t i = 0; i < seen.size(); i++) {
-        const double gap = std::fabs(seen[i].mhz - c.mhz) - (sig_width(seen[i]) + width(c)) / 2;
+        const double gap = std::fabs(seen[i].mhz - c.mhz) - (width(seen[i]) + width(c)) / 2;
         if (gap < 0) {
             r.busy = static_cast<int>(i);
             r.cost += kBusyCost;

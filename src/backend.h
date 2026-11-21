@@ -139,6 +139,7 @@ signals:
     void message(const QString &text);        // linea para la barra de estado / log
     void lost(const QString &text);           // adaptador desenchufado: se reconecta solo al volver
     void surveyUpdated(const SurveyData &data);
-    // El analizador se ha parado (por stopSurvey() o porque otra orden, escanear o ver un canal, lo ha parado)
+    // El analizador se ha parado: una respuesta por cada stopSurvey() (aunque ya estuviera parado) y una cuando otra
+    // orden (escanear, ver un canal, adaptador perdido) para un analisis en marcha
     void surveyStopped();
 };

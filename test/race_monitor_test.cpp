@@ -586,6 +586,36 @@ int main() {
         two.push_back(Signal{kRace[3].mhz + 20, 0, false, "", 20});  // lejos de todos
         check(race::present(kRace, two) == 2, "present: otro sistema o lejos de los fijados no cuenta");
     }
+    {
+        // el canal que deja un piloto movido no se le da a otro mientras su piloto sigue ahi (aun no ha aterrizado):
+        // su senal cuenta como suya y esta quitada del espectro, asi que el canal se veria libre y limpio
+        race::Monitor m;
+        m.start({R1, R8});
+        const auto intruder = [](auto &now) { now.push_back(Signal{5920, 0, false, "", 15}); };  // encima de R8
+        run(m, 12, [&](int, auto &b, auto &now, auto &) {
+            fly(b, now, R1.mhz, 25);
+            fly(b, now, R8.mhz, 25);
+            intruder(now);
+        });
+        m.moved(0, R3);  // A: R1 -> R3, pero sigue en R1 hasta que aterrice
+        run(m, 5, [&](int, auto &b, auto &now, auto &) {
+            fly(b, now, R1.mhz, 25);
+            fly(b, now, R8.mhz, 25);
+            intruder(now);
+        });
+        const std::vector<Candidate> cands{R1, R3, R8};
+        bool onOld = false;
+        for (const auto &mv : m.suggest_all(cands, {})) onOld = onOld || std::fabs(mv.to.mhz - R1.mhz) < 25;
+        check(m.leaving().size() == 1 && !onOld, "canal que deja un movido: no se le da a otro mientras sigue ahi");
+        run(m, 5, [&](int, auto &b, auto &now, auto &) {  // ya ha cambiado: R1 libre de verdad
+            fly(b, now, R3.mhz, 25);
+            fly(b, now, R8.mhz, 25);
+            intruder(now);
+        });
+        const auto all = m.suggest_all(cands, {});
+        check(m.leaving().empty() && all.size() == 1 && all[0].to.name == "R1",
+              "cuando ya ha cambiado, su canal viejo vuelve a estar libre");
+    }
     std::printf("\n%s\n", failures ? "HAY FALLOS" : "todo bien");
     return failures ? 1 : 0;
 }
