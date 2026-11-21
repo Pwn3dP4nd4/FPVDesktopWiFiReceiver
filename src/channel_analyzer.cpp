@@ -834,6 +834,7 @@ void ChannelAnalyzer::toggle() {
     range(lo, hi);
     last_ = SurveyData{};
     mine_.clear();  // "mio" vale para un analisis: otro dia, otro piloto puede estar en ese canal
+    adviceLogKey_.clear();  // cada analisis empieza su recomendacion en el log
     wifiMem_.reset();
     clock_.start();
     surveyT_ = 0;
@@ -1164,6 +1165,40 @@ void ChannelAnalyzer::recompute() {
              QStringLiteral("</span>");
     if (last_.sweeps < 3) s += QStringLiteral(" ") + tr("(still learning: let it run a few sweeps)");
     summary_->setText(s);
+
+    // al log, cuando cambia lo recomendado (canales, notas, WiFi, quien tiene que cambiar), no en cada barrido: los
+    // dB van en la linea pero no cuentan como cambio
+    if (running_ && last_.sweeps >= 3 && !a.picks.empty()) {
+        QStringList key, line;
+        for (const auto &p : a.picks) {
+            const QString name = QString::fromStdString(p.r.ch.name) + (p.r.ch.hdzero ? QStringLiteral(" HDZero") : QString());
+            const QString note = noteText(p, a.wifi);
+            key << name + (p.pinned ? QStringLiteral("*") : QString()) + QLatin1Char('|') + note;
+            line << QStringLiteral("%1 %2 MHz%3: %4 dB, rafagas %5 %%6")
+                        .arg(name)
+                        .arg(p.r.ch.mhz, 0, 'f', 0)
+                        .arg(p.pinned ? QStringLiteral(" (fijado)") : QString())
+                        .arg(p.r.noise_db, 0, 'f', 1)
+                        .arg(qRound(p.r.burst * 100))
+                        .arg(note.isEmpty() ? QString() : QStringLiteral(" (") + note + QLatin1Char(')'));
+        }
+        QStringList wifiChs;
+        for (const auto &g : advisor::group_wifi(a.wifi))
+            wifiChs << (g.first == g.last ? QString::number(g.first) : QStringLiteral("%1-%2").arg(g.first).arg(g.last));
+        QStringList moving;
+        for (int k = 0; k < ticked.size(); k++)
+            if (!placed[k]) moving << ticked[k];
+        key << wifiChs.join(QLatin1Char(',')) << moving.join(QLatin1Char(',')) << (a.complete ? "1" : "0");
+        const QString k = key.join(QLatin1Char(';'));
+        if (k != adviceLogKey_) {
+            adviceLogKey_ = k;
+            QString msg = line.join(QStringLiteral("; "));
+            if (!wifiChs.isEmpty()) msg += QStringLiteral(" | WiFi: ") + wifiChs.join(QStringLiteral(", "));
+            if (!moving.isEmpty()) msg += QStringLiteral(" | tienen que cambiar: ") + moving.join(QStringLiteral(", "));
+            if (!a.complete) msg += QStringLiteral(" | no caben con separacion segura");
+            KP_LOGI("analizador: recomendacion (barrido %d): %s", last_.sweeps, qUtf8Printable(msg));
+        }
+    }
 }
 
 // ---- canales fijados ----------------------------------------------------------------------------------------
@@ -1259,7 +1294,14 @@ void ChannelAnalyzer::setRace(bool on) {
     if (on != raceOn_) {
         raceOn_ = on;
         moves_.clear();
+        raceLogKeys_.clear();
         if (on) race_.start(pinnedCandidates());  // apagado: lo apuntado se queda a la vista
+        {
+            QStringList pins;
+            for (const Pin &p : pinned_) pins << p.name + (p.hdzero ? QStringLiteral(" HDZero") : QString());
+            if (on) KP_LOGI("carrera: seguimiento en marcha (fijados: %s)", qUtf8Printable(pins.join(QStringLiteral(", "))));
+            else KP_LOGI("carrera: seguimiento parado tras %d barrido(s)", race_.sweeps());
+        }
         updateAir();
         recompute();
     }
@@ -1301,6 +1343,7 @@ void ChannelAnalyzer::updateRace() {
     };
     const QColor red(0xd9, 0x48, 0x3b), orange(0xe0, 0xa0, 0x20), green(0x3a, 0xa8, 0x5a);
     bool allOk = true;
+    QStringList logKeys;  // por canal, lo que cuenta como cambio de su recomendacion (para el log)
     for (int i = 0; i < n; i++) {
         const race::ChannelHealth &h = hs[i];
         auto *it = new QTreeWidgetItem(raceTable_);
@@ -1353,6 +1396,23 @@ void ChannelAnalyzer::updateRace() {
                 col = green;
             }
         }
+        // al log: el canal y su recomendacion, solo cuando cambia (el +dB de un movimiento no cuenta, su destino si)
+        const race::Move *mv = moveOf(i);
+        const QString logKey = chName(h.ch) + QLatin1Char('|') +
+                               (mv ? QStringLiteral("-> ") + QString::fromStdString(mv->to.name) : rec);
+        logKeys << logKey;
+        if (raceOn_ && sw >= race::kMinSweeps && !rec.isEmpty() &&
+            (i >= raceLogKeys_.size() || raceLogKeys_[i] != logKey)) {
+            const QString seenTxt = h.seen > 0 ? QStringLiteral("SNR %1/%2 dB, calidad %3 dB")
+                                                     .arg(h.snr_med, 0, 'f', 0)
+                                                     .arg(h.snr_low, 0, 'f', 0)
+                                                     .arg(h.quality, 0, 'f', 0)
+                                               : QStringLiteral("piloto no visto");
+            KP_LOGI("carrera: %s %.0f MHz: %s%s%s [%s, cortes %d, intrusos %d %%, interferencia %.1f dB, %d barridos]",
+                    qUtf8Printable(chName(h.ch)), h.ch.mhz, qUtf8Printable(rec), tip.isEmpty() ? "" : " - ",
+                    qUtf8Printable(tip), qUtf8Printable(seenTxt), h.lost,
+                    h.sweeps > 0 ? qRound(100.0 * h.intruders / h.sweeps) : 0, h.channel_cost, h.sweeps);
+        }
         it->setText(7, rec);
         if (!tip.isEmpty()) it->setToolTip(7, tip);
         if (col.isValid()) it->setForeground(7, col);
@@ -1366,6 +1426,7 @@ void ChannelAnalyzer::updateRace() {
         }
     }
     for (int c = 0; c < 7; c++) raceTable_->resizeColumnToContents(c);
+    if (raceOn_ && sw >= race::kMinSweeps) raceLogKeys_ = logKeys;
 
     // estado
     QString st;
