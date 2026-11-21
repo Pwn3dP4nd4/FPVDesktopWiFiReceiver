@@ -244,7 +244,9 @@ Opciones de línea de comandos (opcionales, para pruebas): `--demo` sin hardware
 **Herramientas → Analizador de canales** recomienda qué canales usar cuando varios pilotos vuelan a la vez:
 
 1. Elige las **bandas** a analizar (A, B, E, F, R, L) y cuántos pilotos **analógicos** y **HDZero** van a volar
-   (y si los HDZero van en modo estrecho, unos 17 MHz).
+   (y si los HDZero van en modo estrecho, unos 17 MHz). El ▾ junto a cada banda deja fuera canales sueltos
+   (*R  Raceband (6/8)*): no se recomiendan, y quitar los de los extremos acorta el barrido. Si los quitas todos, la
+   banda se desmarca.
 2. **Empezar el análisis**: el adaptador barre esas bandas sin parar (no se ve vídeo mientras tanto). Todo lo que
    esté en el aire se toma como ocupado, salvo los pilotos en un canal fijado (paso 4): apaga tus otros VTX o
    márcalos en la lista **En el aire** (solo para ese análisis): su señal y sus bandas laterales no cuentan como
@@ -257,7 +259,9 @@ Opciones de línea de comandos (opcionales, para pruebas): `--demo` sin hardware
 4. **Fija** los canales que ya has dado a los pilotos (casilla en la tabla, o clic derecho sobre una marca de
    canal): se conservan entre análisis y la recomendación solo elige los demás. En carrera, el **Seguimiento de
    carrera** (pestaña *Carrera*) vigila cada canal fijado (SNR, cortes, intrusos, interferencia) y, canal a canal,
-   dice si mover a su piloto y a dónde (*R3 → F3*) cuando otro canal libre sería claramente mejor
+   dice si mover a su piloto y a dónde (*R3 → F3*) cuando otro canal libre sería claramente mejor. Puede empezar
+   solo cuando despegan los pilotos (*Empezar al salir los pilotos*) y guarda un *Historial* de sus avisos para
+   repasarlo o guardarlo en CSV al acabar
    ([detalles](docs/wiki/Analizador-de-canales.md#canales-fijados-y-seguimiento-de-carrera)).
 
 Cómo mide: con ganancia fija, así todos los pasos del barrido están en la misma escala (si un VTX cercano satura

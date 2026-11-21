@@ -185,6 +185,19 @@ void Monitor::moved(int i, const advisor::Candidate &c) {
     leaving_ch_.push_back(old);
 }
 
+int present(const std::vector<advisor::Candidate> &pinned, const std::vector<advisor::Signal> &now) {
+    std::vector<bool> got(pinned.size(), false);
+    for (const auto &s : now) {
+        int best = -1;
+        for (size_t i = 0; i < pinned.size(); i++)
+            if (matches(s, pinned[i]) &&
+                (best < 0 || std::fabs(s.mhz - pinned[i].mhz) < std::fabs(s.mhz - pinned[best].mhz)))
+                best = static_cast<int>(i);
+        if (best >= 0) got[best] = true;
+    }
+    return static_cast<int>(std::count(got.begin(), got.end(), true));
+}
+
 int Monitor::worst() const {
     int w = -1;
     for (size_t i = 0; i < health_.size(); i++) {

@@ -68,6 +68,11 @@ struct Move {
     Cause cause = Cause::Interference;
 };
 
+// Cuantos de estos canales fijados tienen a su piloto en now (una senal del mismo sistema a menos de kMatchMhz; cada
+// senal cuenta para uno solo, el mas cercano). Para el auto-inicio de la carrera (esperar a que salgan N pilotos) y
+// su fin automatico (ya no queda ninguno)
+int present(const std::vector<advisor::Candidate> &pinned, const std::vector<advisor::Signal> &now);
+
 class Monitor {
    public:
     // Empieza (o vuelve a empezar) con estos canales fijados; borra lo apuntado
