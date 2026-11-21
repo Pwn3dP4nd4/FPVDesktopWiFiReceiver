@@ -52,6 +52,10 @@
         <translation>WiFi visto (discontinua: resto de su bloque mientras no se sabe su ancho)</translation>
     </message>
     <message>
+        <source>Pinned channel (right-click a mark to pin)</source>
+        <translation>Canal fijado (clic derecho en una marca para fijar)</translation>
+    </message>
+    <message>
         <source>System</source>
         <translation>Sistema</translation>
     </message>
@@ -68,8 +72,198 @@
         <translation>Interferencia</translation>
     </message>
     <message>
+        <source>Pin</source>
+        <translation>Fijar</translation>
+    </message>
+    <message>
+        <source>Tick to pin the channel you have given to a pilot: it stays in every analysis and the advice only chooses the rest.</source>
+        <translation>Marca para fijar el canal que ya has dado a un piloto: se mantiene en todos los análisis y la recomendación solo elige los demás.</translation>
+    </message>
+    <message>
+        <source>Recommendation</source>
+        <translation>Recomendación</translation>
+    </message>
+    <message>
+        <source>Race</source>
+        <translation>Carrera</translation>
+    </message>
+    <message>
+        <source>Tick a row to pin its channel; right-click a channel mark on the graph to pin any other. Pinned channels are kept between analyses.</source>
+        <translation>Marca una fila para fijar su canal; con clic derecho en una marca de canal de la gráfica puedes fijar cualquier otro. Los canales fijados se conservan entre análisis.</translation>
+    </message>
+    <message>
+        <source>Unpin all</source>
+        <translation>Quitar todos los fijados</translation>
+    </message>
+    <message>
+        <source>Race tracking</source>
+        <translation>Seguimiento de carrera</translation>
+    </message>
+    <message>
+        <source>During the race, keeps sweeping and follows each pinned channel: its pilot&apos;s signal, dropouts, other signals on top of it and interference. Pilots on pinned channels count as yours. Suggests a move if a pilot would clearly do better on another free channel.</source>
+        <translation>Durante la carrera sigue barriendo y vigila cada canal fijado: la señal de su piloto, los cortes, otras señales encima y la interferencia. Los pilotos en canales fijados cuentan como tuyos. Recomienda un cambio si a un piloto le iría claramente mejor en otro canal libre.</translation>
+    </message>
+    <message>
+        <source>Apply</source>
+        <translation>Aplicar</translation>
+    </message>
+    <message>
+        <source>Pins the new channel instead of the old one (tell the pilot to change it). The other channels keep their history.</source>
+        <translation>Fija el canal nuevo en lugar del antiguo (dile al piloto que lo cambie). Los demás canales conservan su historial.</translation>
+    </message>
+    <message>
+        <source>SNR (median / low)</source>
+        <translation>SNR (mediana / baja)</translation>
+    </message>
+    <message>
+        <source>Dropouts</source>
+        <translation>Cortes</translation>
+    </message>
+    <message>
+        <source>Intruders</source>
+        <translation>Intrusos</translation>
+    </message>
+    <message>
+        <source>Quality</source>
+        <translation>Calidad</translation>
+    </message>
+    <message>
+        <source>What to do with each channel: move it (→ new channel, tell the pilot and Apply), or why not. Right-click a row to apply only that one.</source>
+        <translation>Qué hacer con cada canal: moverlo (→ canal nuevo, díselo al piloto y Aplicar) o por qué no. Clic derecho en una fila para aplicar solo esa.</translation>
+    </message>
+    <message>
+        <source>Signal-to-noise ratio of its pilot while seen: the median and the worst moments (10th percentile).</source>
+        <translation>Relación señal/ruido de su piloto mientras se ve: la mediana y los peores momentos (percentil 10).</translation>
+    </message>
+    <message>
+        <source>Sweeps in which its pilot was missing, between the first and the last time it was seen (take-off and landing do not count).</source>
+        <translation>Barridos en los que no se vio a su piloto, entre la primera y la última vez que se le vio (el despegue y el aterrizaje no cuentan).</translation>
+    </message>
+    <message>
+        <source>Share of the sweeps in which someone else&apos;s signal overlapped its channel.</source>
+        <translation>Parte de los barridos en los que la señal de otro se metía en su canal.</translation>
+    </message>
+    <message>
+        <source>Average interference on its channel with its pilot&apos;s own signal removed. Interference right under the carrier of a pilot that is transmitting cannot be seen.</source>
+        <translation>Interferencia media en su canal, quitada la señal de su propio piloto. La interferencia justo debajo de la portadora de un piloto que está emitiendo no se ve.</translation>
+    </message>
+    <message>
+        <source>Estimate of its video in dB (higher is better): the worst SNR minus what the channel and the dropouts take away. The worst one is highlighted.</source>
+        <translation>Estimación de su vídeo en dB (más es mejor): la peor SNR menos lo que quitan el canal y los cortes. El peor aparece resaltado.</translation>
+    </message>
+    <message>
+        <source>pinned</source>
+        <translation>fijado</translation>
+    </message>
+    <message>
+        <source>changing channel</source>
+        <translation>cambiando de canal</translation>
+    </message>
+    <message>
+        <source>Pinned: %1.</source>
+        <translation>Fijados: %1.</translation>
+    </message>
+    <message>
+        <source>Pinned: untick to let the advice choose this pilot&apos;s channel again.</source>
+        <translation>Fijado: desmárcalo para que la recomendación vuelva a elegir el canal de este piloto.</translation>
+    </message>
+    <message>
+        <source>Tick to pin this channel (it is already given to a pilot).</source>
+        <translation>Marca para fijar este canal (ya se lo has dado a un piloto).</translation>
+    </message>
+    <message>
+        <source>Pinned: %1. Suggested for the rest: %2.</source>
+        <translation>Fijados: %1. Sugeridos para los demás: %2.</translation>
+    </message>
+    <message>
+        <source>Not enough room for that many pilots with safe spacing next to the pinned channels: unpin some, add bands or fly fewer at once.</source>
+        <translation>No caben tantos pilotos con una separación segura junto a los canales fijados: quita algún fijado, añade bandas o volad menos a la vez.</translation>
+    </message>
+    <message>
         <source>WiFi seen on channel(s) %1: it counts against the channels it covers, even while quiet.</source>
         <translation>WiFi visto en los canales %1: cuenta en contra de los canales que pisa, aunque esté callado.</translation>
+    </message>
+    <message>
+        <source>not seen</source>
+        <translation>no se ve</translation>
+    </message>
+    <message>
+        <source>Someone else is transmitting on top of it.</source>
+        <translation>Hay otro emitiendo encima.</translation>
+    </message>
+    <message>
+        <source>Interference or WiFi on its channel.</source>
+        <translation>Interferencia o Wi-Fi en su canal.</translation>
+    </message>
+    <message>
+        <source>Tell the pilot, then Apply (right-click: only this one).</source>
+        <translation>Díselo al piloto y pulsa Aplicar (clic derecho: solo esta).</translation>
+    </message>
+    <message>
+        <source>No better free channel</source>
+        <translation>No hay canal libre mejor</translation>
+    </message>
+    <message>
+        <source>No free channel compatible with the other pinned ones would be clearly better: unpin one or add bands.</source>
+        <translation>Ningún canal libre compatible con los demás fijados sería claramente mejor: desfija alguno o añade bandas.</translation>
+    </message>
+    <message>
+        <source>Weak video: not the channel</source>
+        <translation>Vídeo flojo: no es el canal</translation>
+    </message>
+    <message>
+        <source>Weak video on a clean channel: changing channel would not fix it. Check its antennas, VTX power and distance.</source>
+        <translation>Vídeo flojo con el canal limpio: cambiar de canal no lo arreglaría. Revisa sus antenas, la potencia del VTX y la distancia.</translation>
+    </message>
+    <message>
+        <source>OK</source>
+        <translation>Bien</translation>
+    </message>
+    <message>
+        <source>The worst video so far</source>
+        <translation>El peor vídeo hasta ahora</translation>
+    </message>
+    <message>
+        <source>Pin the channels you have given to the pilots first (Recommendation tab).</source>
+        <translation>Primero fija los canales que has dado a los pilotos (pestaña Recomendación).</translation>
+    </message>
+    <message numerus="yes">
+        <source>Tracking stopped after %n sweep(s).</source>
+        <translation>
+            <numerusform>Seguimiento parado tras %n barrido.</numerusform>
+            <numerusform>Seguimiento parado tras %n barridos.</numerusform>
+        </translation>
+    </message>
+    <message>
+        <source>Tick it when the race starts.</source>
+        <translation>Márcalo cuando empiece la carrera.</translation>
+    </message>
+    <message>
+        <source>Start the analysis, then tick it when the race starts.</source>
+        <translation>Empieza el análisis y márcalo cuando empiece la carrera.</translation>
+    </message>
+    <message>
+        <source>Learning the channels: sweep %1 of %2...</source>
+        <translation>Aprendiendo los canales: barrido %1 de %2...</translation>
+    </message>
+    <message numerus="yes">
+        <source>Following %n pinned channel(s): %1 sweeps.</source>
+        <translation>
+            <numerusform>Siguiendo %n canal fijado: %1 barridos.</numerusform>
+            <numerusform>Siguiendo %n canales fijados: %1 barridos.</numerusform>
+        </translation>
+    </message>
+    <message>
+        <source>Change: %1. Tell the pilots, then Apply.</source>
+        <translation>Cambiar: %1. Díselo a los pilotos y pulsa Aplicar.</translation>
+    </message>
+    <message>
+        <source>No change needed: no pilot would clearly do better on another free channel.</source>
+        <translation>No hace falta cambiar nada: a ningún piloto le iría claramente mejor en otro canal libre.</translation>
+    </message>
+    <message>
+        <source>%1 is on the air here: taken as yours (if it is not, unpin this channel)</source>
+        <translation>%1 está en el aire aquí: se da por tuyo (si no lo es, desfija este canal)</translation>
     </message>
     <message>
         <source>Spectrum</source>
@@ -120,8 +314,8 @@
         <translation>Parte del tiempo que pisan el canal señales intermitentes (WiFi y similares): van y vienen, mucho más fuertes que la media, que las esconde. 0% = nada intermitente.</translation>
     </message>
     <message>
-        <source>Anything on the air is treated as taken: switch your own VTXs off, or tick them in the list (only for this analysis). It averages the last sweeps (Remember). No video while it runs.</source>
-        <translation>Todo lo que esté en el aire cuenta como ocupado: apaga tus VTX o márcalos en la lista (solo para este análisis). Promedia los últimos barridos (Recordar). No se ve vídeo mientras analiza.</translation>
+        <source>Anything on the air is treated as taken, unless it is on a pinned channel or you tick it in the list (only for this analysis). It averages the last sweeps (Remember). No video while it runs.</source>
+        <translation>Todo lo que esté en el aire cuenta como ocupado, salvo si está en un canal fijado o lo marcas en la lista (solo para este análisis). Promedia los últimos barridos (Recordar). No se ve vídeo mientras analiza.</translation>
     </message>
     <message>
         <source>Sweep k/N: where it is within the sweeps it remembers. The average slides: it does not start over at N.</source>
@@ -140,8 +334,8 @@
         <translation>En el aire (marca los tuyos)</translation>
     </message>
     <message>
-        <source>Pilots the analyzer has seen. Tick the ones that are yours: their channel is not treated as taken.</source>
-        <translation>Pilotos que ha visto el analizador. Marca los tuyos: su canal no cuenta como ocupado.</translation>
+        <source>Pilots the analyzer has seen. Those on a pinned channel are already yours. Tick the other ones that are yours: their channel is not treated as taken and the advice may give them another one.</source>
+        <translation>Pilotos que ha visto el analizador. Los que están en un canal fijado ya son tuyos. Marca los otros que sean tuyos: su canal no cuenta como ocupado y la recomendación puede darles otro.</translation>
     </message>
     <message>
         <source>(none)</source>
@@ -174,6 +368,18 @@
     <message>
         <source>Ready: choose the bands and press Start analysis.</source>
         <translation>Listo: elige las bandas y pulsa Empezar el análisis.</translation>
+    </message>
+    <message>
+        <source>Apply %1 only</source>
+        <translation>Aplicar solo %1</translation>
+    </message>
+    <message>
+        <source>Apply %1 only (apply the others first)</source>
+        <translation>Aplicar solo %1 (antes hay que aplicar las demás)</translation>
+    </message>
+    <message>
+        <source>Apply all (%1)</source>
+        <translation>Aplicar todas (%1)</translation>
     </message>
     <message>
         <source>Remember</source>
@@ -272,6 +478,18 @@
     <message>
         <source>(still learning: let it run a few sweeps)</source>
         <translation>(aún aprendiendo: déjalo unos cuantos barridos)</translation>
+    </message>
+    <message>
+        <source>your pilot %1 is already here</source>
+        <translation>ya está aquí tu piloto %1</translation>
+    </message>
+    <message>
+        <source>%1 must change to one of the suggested channels (or pin its channel if it stays).</source>
+        <translation>%1 tiene que cambiar a uno de los canales sugeridos (o fija su canal si se queda).</translation>
+    </message>
+    <message>
+        <source>%1 must change to the suggested channels (or pin their channels if they stay).</source>
+        <translation>%1 tienen que cambiar a los canales sugeridos (o fija sus canales si se quedan).</translation>
     </message>
 </context>
 <context>
@@ -932,6 +1150,26 @@ Lo grabado hasta entonces se ha guardado en %2</translation>
     <message>
         <source>Analog</source>
         <translation>Analógico</translation>
+    </message>
+    <message>
+        <source>analog</source>
+        <translation>analógico</translation>
+    </message>
+    <message>
+        <source>Unpin %1 (%2, %3 MHz)</source>
+        <translation>Quitar el fijado de %1 (%2, %3 MHz)</translation>
+    </message>
+    <message>
+        <source>Pin %1 (%2, %3 MHz)</source>
+        <translation>Fijar %1 (%2, %3 MHz)</translation>
+    </message>
+    <message>
+        <source>Right-click a channel mark to pin it</source>
+        <translation>Clic derecho en una marca de canal para fijarlo</translation>
+    </message>
+    <message>
+        <source>Unpin all</source>
+        <translation>Quitar todos los fijados</translation>
     </message>
 </context>
 <context>

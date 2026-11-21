@@ -11,7 +11,7 @@ case "$(uname -s)" in
   *) BUILD=${1:-build/release} ;;
 esac
 [ -f "$BUILD/CMakeCache.txt" ] || { echo "No hay compilacion en $BUILD: ejecuta antes scripts/build.sh" >&2; exit 2; }
-TESTS=(channel_advisor_test survey_test digital_scan_test)
+TESTS=(channel_advisor_test race_monitor_test survey_test digital_scan_test)
 cmake --build "$BUILD" --target "${TESTS[@]}"
 failed=()
 for t in "${TESTS[@]}"; do

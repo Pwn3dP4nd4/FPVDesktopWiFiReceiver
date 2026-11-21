@@ -26,6 +26,7 @@ struct Signal {  // un piloto visto en el aire
     double bw_mhz = 0;  // ancho ocupado; analogico: 0 (se toma kAnalogBw)
     bool digital = false;
     std::string name;   // "R4", "" si no coincide con ninguno
+    float snr_db = 0;   // SNR de su senal (Pilot::snrDb); lo usa el seguimiento de carrera (src/race_monitor.h)
 };
 
 struct Candidate {
@@ -126,6 +127,7 @@ enum class Note {
 struct Pick {
     Rating r;
     std::vector<Note> notes;
+    bool pinned = false;  // canal fijado por el usuario (advise, pinned): no lo ha elegido la busqueda
 };
 
 struct Advice {
@@ -139,9 +141,12 @@ struct Advice {
 // Quita del espectro la senal de un piloto propio (marcado como mio en la ventana): no es interferencia. Un VTX
 // tiene energia mas alla de su ancho (bandas laterales: medido un bloque de 31 dB a ~12 MHz de un analogico), asi
 // que se quita su ancho y, hasta kMaskSkirt MHz mas alla, lo que este 3 dB por encima del nivel de alrededor
-// (mediana de un anillo despues de eso). Lo quitado queda a ese nivel, sin rafagas.
+// (mediana de un anillo despues de eso). Lo quitado queda a ese nivel, sin rafagas. others: las senales que se ven
+// (puede estar la misma s); lo que cae en el ancho mas kMaskSkirt de alguna no entra en el anillo, para que una
+// senal pegada no ponga el nivel (si no queda nada del anillo, se usa entero), y del faldon no se quita lo que esta
+// mas cerca del centro de otra que del de s (es de la otra).
 constexpr double kMaskSkirt = 6, kMaskRing = 5;
-void mask_signal(std::vector<Bin> &bins, const Signal &s);
+void mask_signal(std::vector<Bin> &bins, const Signal &s, const std::vector<Signal> &others = {});
 
 // Puntuacion de un canal (sin vecinos). wifi: las redes vistas (find_wifi / WifiMemory); cada una suma por estar
 // ahi, segun su pico, aunque ahora este callada; si no se le ha visto trafico (ancho desconocido), en el resto de su
@@ -151,9 +156,15 @@ Rating rate(const Candidate &c, const std::vector<Bin> &bins, const std::vector<
 
 // wifi: las redes a tener en cuenta (la ventana pasa las que recuerda, WifiMemory); nullptr = las de este espectro
 // (find_wifi, reglas de la UE)
+// pinned: canales fijados por el usuario (ya repartidos a unos pilotos). Entran siempre en la recomendacion
+// (Pick::pinned), aunque esten ocupados, sucios o fuera de las bandas elegidas, y la busqueda solo elige los que
+// faltan, respetando con ellos las separaciones y la intermodulacion. n_analog y n_hdzero son el total, fijados
+// incluidos (con 4 pilotos y 2 fijados busca 2); si hay mas fijados de un sistema que su total, salen todos los
+// fijados y ninguno mas de ese sistema. Un fijado se reconoce entre los candidatos por nombre y sistema (no sale
+// dos veces). Dos fijados por debajo de la separacion minima: salen los dos y complete = false.
 Advice advise(const std::vector<Bin> &bins, const std::vector<Signal> &seen, const std::vector<Candidate> &analog,
               const std::vector<Candidate> &hdzero, int n_analog, int n_hdzero,
-              const std::vector<Wifi> *wifi = nullptr);
+              const std::vector<Wifi> *wifi = nullptr, const std::vector<Candidate> &pinned = {});
 
 // Candidatos de las bandas elegidas (letras de kp::fpv_channels(): "ABEFRL"). HDZero: R1-R8, E1, F1, F2, F4,
 // L1-L8 (los mismos que src/kp_ext/digital_scan.cpp), con el nombre del canal analogico de esa frecuencia.

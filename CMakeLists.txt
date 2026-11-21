@@ -156,6 +156,7 @@ add_executable(FPVDesktopWiFiReceiver
   src/scan_plan.cpp src/scan_plan.h
   src/scan_channels_dialog.cpp src/scan_channels_dialog.h
   src/channel_analyzer.cpp src/channel_analyzer.h src/channel_advisor.cpp src/channel_advisor.h
+  src/race_monitor.cpp src/race_monitor.h
   src/channel_names.cpp src/channel_names.h
   src/i18n.cpp src/i18n.h
   src/video_recorder.cpp src/video_recorder.h src/video_encoder.h
@@ -231,7 +232,7 @@ endif()
 
 # Captura del analizador con el backend de demo: QT_QPA_PLATFORM=offscreen analyzer_shot salida.png [N M [s]]
 add_executable(analyzer_shot test/analyzer_shot.cpp src/channel_analyzer.cpp src/channel_analyzer.h
-               src/channel_advisor.cpp src/channel_names.cpp src/stub_backend.cpp src/stub_backend.h src/backend.h
+               src/channel_advisor.cpp src/race_monitor.cpp src/channel_names.cpp src/stub_backend.cpp src/stub_backend.h src/backend.h
                src/video_widget.cpp)
 target_include_directories(analyzer_shot PRIVATE src)
 target_link_libraries(analyzer_shot PRIVATE Qt6::Widgets kepyur_dsp)
@@ -252,6 +253,15 @@ target_link_libraries(channel_advisor_test PRIVATE kepyur_dsp)
 target_compile_options(channel_advisor_test PRIVATE -Wall -Wextra)
 if(WIN32)
   target_link_options(channel_advisor_test PRIVATE -static-libgcc -static-libstdc++)
+endif()
+
+# Seguimiento de carrera (canales fijados) con espectros sinteticos: cmake --build <dir> --target race_monitor_test
+add_executable(race_monitor_test EXCLUDE_FROM_ALL test/race_monitor_test.cpp src/race_monitor.cpp src/channel_advisor.cpp)
+target_include_directories(race_monitor_test PRIVATE src)
+target_link_libraries(race_monitor_test PRIVATE kepyur_dsp)
+target_compile_options(race_monitor_test PRIVATE -Wall -Wextra)
+if(WIN32)
+  target_link_options(race_monitor_test PRIVATE -static-libgcc -static-libstdc++)
 endif()
 
 if(KP_WITH_RADIO)

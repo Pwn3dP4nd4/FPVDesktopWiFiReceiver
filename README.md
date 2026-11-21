@@ -241,13 +241,17 @@ connect on startup · `--lang en|es|system` interface language (saved) · `--ver
 1. Choose the **bands** to analyse (A, B, E, F, R, L) and how many **analog** and **HDZero** pilots will fly (and
    whether the HDZero ones use narrow mode, about 17 MHz).
 2. **Start analysis**: the adapter sweeps those bands continuously (no video meanwhile). Anything on the air is
-   treated as taken: switch your own VTXs off or tick them in the **On the air** list (for
-   that analysis only): their signal and sidebands do not count as interference.
+   treated as taken, except pilots on a pinned channel (step 4): switch your other VTXs off or tick them in the
+   **On the air** list (for that analysis only): their signal and sidebands do not count as interference.
 3. The graph shows the average level over the noise floor, the strongest recent burst and the areas with bursty
    interference (5 GHz WiFi), the pilots already on the air (analog and HDZero) and each channel coloured (green
    clean, yellow some interference, red busy or noisy). Below, the **recommended** channels with their interference,
    the share of time with bursts and notes. It follows roughly the last minute of the band: what appears or
    leaves shows quickly.
+4. **Pin** the channels already given to pilots (tick box in the table, or right-click a channel mark): they are
+   kept between analyses and the advice only picks the rest. During the race, **Race tracking** (*Race* tab)
+   follows each pinned channel (SNR, dropouts, intruders, interference) and, per channel, says whether to move its
+   pilot and where (*R3 → F3*) when another free channel would clearly be better ([details](docs/wiki/Channel-analyzer.md#pinned-channels-and-race-tracking)).
 
 How it measures: with a fixed gain, so every step of the sweep is on the same scale (if a nearby VTX clips a
 step, that step is measured with 10 dB less and corrected). Each step is measured over its

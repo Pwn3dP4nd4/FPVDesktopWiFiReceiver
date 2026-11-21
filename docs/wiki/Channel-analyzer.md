@@ -25,8 +25,8 @@ Each candidate channel gets a score, and the lowest total wins:
 1. **Average interference** within its width (analog 20 MHz, HDZero 27 MHz or 17 in narrow mode).
 2. **Bursts**: the share of time something intermittent hits it (WiFi and the like). The average alone hides them.
 3. **WiFi networks seen**, even while they are quiet (see below).
-4. A channel where **a pilot is already flying** is ruled out. Your own VTXs can be ticked in *On the air* so
-   they do not count.
+4. A channel where **a pilot is already flying** is ruled out. A pilot on a pinned channel is yours already (see
+   below); any other of your own VTXs can be ticked in *On the air* so it does not count.
 
 Between the chosen channels it requires a minimum spacing, penalises going under the ideal one, avoids 3rd-order
 intermodulation between analog pilots and, on a clean band, spreads them as far apart as possible.
@@ -55,6 +55,69 @@ becomes unusable. That is why the analyzer does not only look at how busy each c
 
 In the graph they show as **WiFi 149** (or **WiFi 100–112** for an 80 MHz network), with their block dashed while
 their width is unknown.
+
+## Pinned channels and race tracking
+
+**Pinning channels.** Once you have given channels to some pilots, pin them: tick the **Pin** box on their row of
+the recommendation table, or right-click a channel mark on the graph to pin any other one (also one that is not
+recommended). Pinned channels are always part of the recommendation, even if busy, noisy or outside the chosen
+bands, and the search only picks the missing ones, keeping spacing and intermodulation with them: with 4 pilots
+and 2 pinned, it looks for 2. On the graph they have a stronger band with marked edges and a pin; in the summary,
+*Pinned* is listed apart from *Suggested for the rest*. They are saved and kept between analyses and sessions. **Unpin all** clears them.
+
+A pilot on the air on a pinned channel (same system, within 5 MHz) is always yours: it does not take its own channel
+or count as interference, and in the *On the air* list it shows ticked and greyed out, *(pinned)*. Since pinned channels are kept between
+sessions, the pinned row says so (*… is on the air here: taken as yours*): if it is someone else, unpin it. The tick in that
+list is for your other pilots, the ones not pinned yet: their channel is not taken and the advice may give them
+another one, or put someone else next to them, as if they were going to move too. If one of them is already on a
+recommended channel, its row says *your pilot … is already here*; if not, the summary says it must change channel.
+If it is going to stay where it is, pin its channel instead. The tick lasts one analysis.
+
+**Race tracking** (*Race* tab). With pinned channels and the analysis running, tick **Race tracking** when the race
+starts: the analyzer keeps sweeping and, sweep by sweep, records for each pinned channel:
+
+- the **SNR** of its pilot (median and the worst moments, 10th percentile);
+- **dropouts**: sweeps in which its pilot is missing, between the first and the last time it was seen (take-off
+  and landing do not count);
+- **intruders**: the share of sweeps in which someone else's signal (matching no pinned channel) overlaps it;
+- the **interference** on its channel, with its own pilot's signal removed (noise, bursts, remembered WiFi);
+- an estimated video **quality** (the worst SNR minus what the channel and the dropouts take away). The worst one
+  is highlighted.
+
+For the first 10 sweeps it is learning. After that, the **Recommendation** column says at a glance what to do
+with each channel:
+
+- **→ F3 (5780 MHz, +18 dB)**: its pilot would clearly do better (at least 3 dB) on that free channel, compatible
+  with the other pinned ones and at a safe spacing from other people's signals. The tooltip gives the cause:
+  someone else transmitting on top of it, or interference or WiFi on its channel.
+- **No better free channel**: its channel has interference or an intruder, but no compatible free channel would be
+  clearly better (unpin one or add bands).
+- **Weak video: not the channel**: weak SNR or dropouts on a clean channel; changing channel would not fix it
+  (antennas, VTX power, distance).
+- **OK**.
+
+Several channels can have a move at once (worst video first); each one counts with the previous ones already
+applied, so they can all be applied together. Below the table, *Change: R3 → F3, R6 → B6* sums them up.
+**Apply** (or **Apply all**) pins the new channels (tell the pilots to switch) and restarts only their tracking; the
+others keep their history. To apply just one, right-click its row (if it only fits after the others, it says so).
+An intruder counts once: as intruder, not also as interference on the channel. Until a pilot lands and switches,
+its signal on the old channel is still its own (*changing channel* in *On the air*), not someone else's. A move that
+is showing stays while it is still valid, unless another channel is at least 3 dB better: it does not jump between
+two similar channels from one sweep to the next. Changing the pinned channels by hand restarts the tracking;
+toggling HDZero narrow mode only restarts the HDZero ones.
+
+What it cannot see:
+
+- **Interference right under the carrier of a pilot that is transmitting**: it is removed together with its
+  signal. It shows in the sweeps where that pilot is missing, in the remembered WiFi networks and in whatever
+  sticks out beyond its width.
+- **Low SNR or dropouts on a clean channel are not fixed by changing channel**: that is the antenna, the VTX power
+  or the distance. In that case it does not suggest a move and says so.
+- **Someone else on a pinned channel before its pilot takes off**: a signal of the same system within 5 MHz is
+  taken for its pilot. With two, the closest is its pilot and the other an intruder.
+
+Other people's signals seen in the last 10 sweeps count when suggesting a move (one that comes and goes too), and
+if the worst channel has interference but no compatible free channel would be clearly better, it says so.
 
 ## Ideas taken from Ryan Quellet's video
 

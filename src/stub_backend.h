@@ -9,6 +9,9 @@ class StubBackend : public Backend {
 public:
     explicit StubBackend(QObject *parent = nullptr);
     QString name() const override { return QStringLiteral("demo"); }
+    // Analizador: escenario de carrera (test/analyzer_shot.cpp --race): cuatro analogicos en R1, R3, R6 y R8 y, desde
+    // el barrido 5, un VTX ajeno encima de R3 (y desde el 8 otro encima de R6); un barrido cada 200 ms. Antes de startSurvey.
+    void setRaceDemo(bool on) { race_ = on; }
 
 public slots:
     void setDigitalScan(bool on) override { digital_ = on; }
@@ -34,5 +37,7 @@ private:
     double surveyLo_ = 0, surveyHi_ = 0;
     int memory_ = 20;  // con menos barridos, las rafagas simuladas se ven antes
     int sweeps_ = 0;
+    bool race_ = false;
     void surveyTick();
+    void raceTick(SurveyData &d);
 };

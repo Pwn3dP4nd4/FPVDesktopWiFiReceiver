@@ -80,9 +80,41 @@ bool avoids(const Advice &a, double lo, double hi) {
 }
 std::string list(const Advice &a) {
     std::string s;
-    for (const auto &p : a.picks) s += p.r.ch.name + (p.r.ch.hdzero ? "(hdz) " : " ");
+    for (const auto &p : a.picks) s += p.r.ch.name + (p.pinned ? "* " : "") + (p.r.ch.hdzero ? "(hdz) " : " ");
     return s;
 }
+// la eleccion con el canal name (y sistema) y si va fijado
+const Pick *find(const Advice &a, const std::string &name, bool hdzero = false) {
+    for (const auto &p : a.picks)
+        if (p.r.ch.name == name && p.r.ch.hdzero == hdzero) return &p;
+    return nullptr;
+}
+int count(const Advice &a, const std::string &name, bool hdzero = false) {
+    int n = 0;
+    for (const auto &p : a.picks) n += p.r.ch.name == name && p.r.ch.hdzero == hdzero;
+    return n;
+}
+int pinned(const Advice &a) {
+    int n = 0;
+    for (const auto &p : a.picks) n += p.pinned;
+    return n;
+}
+bool has(const Pick &p, Note n) {
+    for (auto x : p.notes)
+        if (x == n) return true;
+    return false;
+}
+// los no fijados, fuera de [lo, hi]
+bool free_avoid(const Advice &a, double lo, double hi) {
+    for (const auto &p : a.picks) {
+        if (p.pinned) continue;
+        const double half = width(p.r.ch) / 2;
+        if (p.r.ch.mhz + half > lo && p.r.ch.mhz - half < hi) return false;
+    }
+    return true;
+}
+const Candidate kR1{"R1", 5658, false}, kR2{"R2", 5695, false}, kR3{"R3", 5732, false}, kR4{"R4", 5769, false},
+    kR7{"R7", 5880, false}, kR8{"R8", 5917, false}, kF1{"F1", 5740, false}, kF4{"F4", 5800, false};
 }  // namespace
 
 int main() {
@@ -150,6 +182,36 @@ int main() {
         add_block(c, 5764, 5774, 30, 31, 1);
         mask_signal(c, Signal{5731.5, 0, false, "R3"});
         check(rate(r4, c, {}).noise_db > 20, "un piloto ajeno al lado no se quita");
+        // con un piloto ajeno pegado (5748, se solapan): sin decirle que esta ahi, el nivel de alrededor sale de su
+        // senal y R3 queda tapado a ese nivel; diciendoselo (others), R3 queda al nivel del ruido
+        auto d = flat();
+        add_block(d, 5724, 5740, 25, 25, 1);
+        add_block(d, 5740, 5756, 22, 22, 1);
+        const Signal mine{5732, 0, false, "R3"}, near{5748, 0, false, ""};
+        auto e = d;
+        mask_signal(d, mine);
+        mask_signal(e, mine, {mine, near});
+        std::printf("  mi VTX en R3 con otro pegado en 5748: R3 %.1f dB sin others, %.1f dB con others\n",
+                    rate(r3, d, {}).noise_db, rate(r3, e, {}).noise_db);
+        check(rate(r3, e, {}).noise_db < 6, "el nivel de alrededor no sale de las otras senales (others)");
+        mask_signal(e, near, {mine, near});
+        check(rate(r3, e, {}).noise_db < 1.5, "y quitada tambien la ajena, R3 queda limpio");
+        // quitando solo la mia, lo que esta en su faldon pero mas cerca del centro de la ajena (5744-5748) es de la
+        // ajena: se queda (si no, un canal pegado a ella pareceria limpio)
+        auto g = flat();
+        add_block(g, 5724, 5740, 25, 25, 1);
+        add_block(g, 5740, 5756, 22, 22, 1);
+        mask_signal(g, mine, {mine, near});
+        double lin = 0;
+        int n = 0;
+        for (const auto &x : g)
+            if (x.mhz >= 5744 && x.mhz <= 5748) {
+                lin += std::pow(10.0, x.mean_db / 10.0);
+                n++;
+            }
+        const double side = n ? 10 * std::log10(lin / n) : 0;
+        std::printf("  faldon de mi R3 junto a la ajena (5744-5748): %.1f dB\n", side);
+        check(side > 20, "el faldon de la mia no borra el borde de una ajena pegada");
     }
     {
         // un AP sin trafico en el canal WiFi 153 (5765 MHz): solo beacons, pico 20 dB y encendido el 0.3 % del
@@ -326,6 +388,105 @@ int main() {
         const auto g = group_wifi(w);
         check(g.size() == 3 && g[0].first == 100 && g[0].last == 112 && g[1].first == 132 && g[2].first == 140,
               "agrupa los canales de una misma red (100-112) y separa bloques distintos");
+    }
+    // ---- canales fijados (advise, pinned): entran siempre y solo se buscan los que faltan ----
+    {
+        // sin fijar, 4 en R con la banda limpia sale R1 R3 R6 R8: fijando R2, la recomendacion cambia a su alrededor
+        const auto base = advise(flat(), {}, analog("R"), {}, 4, 0);
+        const auto a = advise(flat(), {}, analog("R"), {}, 4, 0, nullptr, {kR2});
+        std::printf("  4 en R, R2 fijado: %s (sin fijar: %s)\n", list(a).c_str(), list(base).c_str());
+        check(pinned(base) == 0 && !find(base, "R2"), "sin fijados: ningun Pick::pinned (y R2 no sale)");
+        const Pick *r2 = find(a, "R2");
+        check(r2 && r2->pinned && pinned(a) == 1, "fijado R2: sale, marcado como fijado, y solo el");
+        check(a.complete && a.picks.size() == 4 && spaced(a), "fijado R2: busca los 3 que faltan, separados de R2");
+    }
+    {
+        const auto a = advise(flat(), {}, analog("R"), {}, 4, 0, nullptr, {kR1, kR8});
+        std::printf("  4 en R, R1 y R8 fijados: %s\n", list(a).c_str());
+        check(a.complete && a.picks.size() == 4 && pinned(a) == 2 && find(a, "R1") && find(a, "R8") &&
+                  find(a, "R1")->pinned && find(a, "R8")->pinned && spaced(a),
+              "dos fijados (R1, R8) y dos buscados");
+    }
+    {
+        // un fijado se respeta aunque este sucio (decision del usuario); los demas se apartan de lo sucio
+        auto b = flat();
+        add_block(b, 5650, 5690, 4, 30, 0.2f);  // WiFi a rafagas encima de R1
+        const auto a = advise(b, {}, analog("R"), {}, 3, 0, nullptr, {kR1});
+        std::printf("  R1 fijado bajo un WiFi: %s\n", list(a).c_str());
+        check(a.picks.size() == 3 && find(a, "R1") && find(a, "R1")->pinned && free_avoid(a, 5650, 5690),
+              "fijado en un canal sucio: se queda; los buscados evitan el WiFi");
+    }
+    {
+        // un fijado donde ya vuela un piloto ajeno: se queda, con la nota de ocupado
+        std::vector<Signal> seen{{5769, 0, false, "R4"}};
+        auto b = flat();
+        add_block(b, 5759, 5779, 20, 22, 1);
+        const auto a = advise(b, seen, analog("R"), {}, 3, 0, nullptr, {kR4});
+        const Pick *r4 = find(a, "R4");
+        check(r4 && r4->pinned && has(*r4, Note::Busy) && a.picks.size() == 3,
+              "fijado en un canal ocupado: se queda, con Note::Busy");
+    }
+    {
+        // mas fijados que pilotos: salen todos los fijados y ninguno mas
+        const auto a = advise(flat(), {}, analog("R"), {}, 2, 0, nullptr, {kR1, kR4, kR7});
+        std::printf("  2 pilotos y 3 fijados: %s\n", list(a).c_str());
+        check(a.picks.size() == 3 && pinned(a) == 3, "mas fijados que pilotos: todos los fijados, ninguno buscado");
+        const auto all = advise(flat(), {}, analog("R"), {}, 3, 0, nullptr, {kR1, kR4, kR7});
+        check(all.picks.size() == 3 && pinned(all) == 3 && all.complete, "tantos fijados como pilotos: esos mismos");
+    }
+    {
+        // un fijado no sale dos veces aunque tambien sea candidato
+        const auto a = advise(flat(), {}, analog("R"), {}, 4, 0, nullptr, {kR1});
+        check(count(a, "R1") == 1 && a.picks.size() == 4, "un fijado que tambien es candidato no se repite");
+    }
+    {
+        // un fijado fuera de las bandas elegidas (F4 con solo R): entra igual y R5 (6 MHz al lado) no puede salir
+        const auto a = advise(flat(), {}, analog("R"), {}, 4, 0, nullptr, {kF4});
+        std::printf("  F4 fijado, bandas R: %s\n", list(a).c_str());
+        check(find(a, "F4") && find(a, "F4")->pinned && !find(a, "R5") && a.picks.size() == 4 && spaced(a),
+              "un fijado fuera de las bandas elegidas tambien cuenta");
+    }
+    {
+        // con fijados fuera de las bandas elegidas, el total puede pasar de los candidatos de esas bandas: solo L
+        // (8 canales) y R1 y R8 fijados, 9 pilotos: los 2 fijados y 7 de L
+        const auto a = advise(flat(), {}, analog("L"), {}, 9, 0, nullptr, {kR1, kR8});
+        std::printf("  9 pilotos, bandas L, R1 y R8 fijados: %s\n", list(a).c_str());
+        check(a.picks.size() == 9 && pinned(a) == 2 && a.complete && spaced(a),
+              "fijados fuera de las bandas: busca los que faltan del total pedido (no menos)");
+    }
+    {
+        // dos fijados demasiado juntos (R3 5732 y F1 5740): salen los dos, y se avisa de que no cabe
+        const auto a = advise(flat(), {}, analog("R"), {}, 3, 0, nullptr, {kR3, kF1});
+        check(find(a, "R3") && find(a, "F1") && !a.complete, "dos fijados por debajo de la separacion minima: !complete");
+    }
+    {
+        // HDZero fijado (R3, 27 MHz) con 2 analogicos y 1 HDZero en total: el HDZero es el fijado y los analogicos
+        // se apartan de el; un analogico "R3" no queda marcado como fijado (otro sistema)
+        const Candidate h3{"R3", 5732, true, kHdzBw};
+        const auto a = advise(flat(), {}, analog("R"), hdz(), 2, 1, nullptr, {h3});
+        std::printf("  HDZero R3 fijado + 2 analogicos: %s\n", list(a).c_str());
+        int h = 0;
+        for (const auto &p : a.picks) h += p.r.ch.hdzero;
+        check(a.complete && a.picks.size() == 3 && h == 1 && find(a, "R3", true) && find(a, "R3", true)->pinned &&
+                  !find(a, "R3", false) && spaced(a),
+              "HDZero fijado: cuenta como el HDZero, los analogicos separados");
+    }
+    {
+        // fijar no deja la recomendacion peor de lo necesario: con R1 y R8 fijados en una banda limpia, los
+        // buscados no quedan por debajo de la separacion ideal (37 MHz) si caben (R3-R6 caben a 74)
+        const auto a = advise(flat(), {}, analog("R"), {}, 4, 0, nullptr, {kR1, kR8});
+        bool notes = false;
+        for (const auto &p : a.picks) notes = notes || has(p, Note::TooClose);
+        check(!notes, "con sitio de sobra: los buscados respetan la separacion ideal con los fijados");
+    }
+    {
+        // peor caso con fijados: no puede ser mas lento que sin ellos
+        const Candidate h3{"R3", 5732, true, kHdzBw}, h6{"R6", 5843, true, kHdzBw};
+        const auto t0 = std::chrono::steady_clock::now();
+        auto a = advise(flat(), {}, analog("ABEFRL"), hdz(), 8, 8, nullptr, {kR1, kR8, h3, h6});
+        const double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
+        std::printf("  8 + 8 en ABEFRL con 4 fijados: %.0f ms (%s)\n", ms, list(a).c_str());
+        check(ms < 150 && pinned(a) == 4, "peor caso con fijados en menos de 150 ms");
     }
     {
         // el peor caso de la ventana (todas las bandas, 8 + 8): se recalcula en el hilo de la GUI cada segundo
