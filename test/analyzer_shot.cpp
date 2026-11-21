@@ -1,5 +1,5 @@
 // Captura del analizador de canales con el backend de demostracion (sin adaptador), para revisar la ventana:
-//   analyzer_shot SALIDA.png [ANALOGICOS HDZERO [SEGUNDOS]] [--pin R1,R3,hdz:R6] [--race] [--auto N] [--history] [--apply] [--mine R4/A6/B3]
+//   analyzer_shot SALIDA.png [ANALOGICOS HDZERO [SEGUNDOS]] [--pin R1,R3,hdz:R6] [--race] [--auto N] [--history] [--idle] [--apply] [--mine R4/A6/B3]
 //   [--qm TRADUCCION.qm] [--dark]
 // (QT_QPA_PLATFORM=offscreen: sin pantalla). --pin: canales fijados (hdz: = HDZero); --race: escenario de carrera
 // del backend de demo y el seguimiento de carrera activado; --apply: pulsa Aplicar 1.5 s antes de la captura; --mine: pilotos marcados como mios en "En el aire"
@@ -20,7 +20,7 @@
 int main(int argc, char **argv) {
     QApplication app(argc, argv);
     QStringList pos, pins, mine;
-    bool race = false, apply = false, history = false;
+    bool race = false, apply = false, history = false, idle = false;  // --idle: sin empezar el analisis
     int autoN = -1;  // --auto N: armar el auto-inicio (0 = todos los fijados) en vez de --race
     QTranslator tr;
     for (int i = 1; i < argc; i++) {
@@ -30,6 +30,7 @@ int main(int argc, char **argv) {
             autoN = QString::fromLocal8Bit(argv[++i]).toInt();
             race = true;
         } else if (a == QLatin1String("--history")) history = true;
+        else if (a == QLatin1String("--idle")) idle = true;
         else if (a == QLatin1String("--apply")) apply = true;
         else if (a == QLatin1String("--pin") && i + 1 < argc)
             pins = QString::fromLocal8Bit(argv[++i]).split(QLatin1Char(','), Qt::SkipEmptyParts);
@@ -71,6 +72,7 @@ int main(int argc, char **argv) {
     const int secs = pos.size() > 3 ? pos[3].toInt() : 4;
     QTimer::singleShot(200, &w, [&] {
         w.setCounts(na, nh);
+        if (idle) return;
         if (autoN >= 0) w.armForTest(autoN);  // arranca el analisis y espera a los pilotos
         else {
             w.startForTest();

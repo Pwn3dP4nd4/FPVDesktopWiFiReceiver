@@ -244,6 +244,14 @@
         <translation>Fijado: desmárcalo para que la recomendación vuelva a elegir el canal de este piloto.</translation>
     </message>
     <message>
+        <source>not measured yet</source>
+        <translation>aún sin medir</translation>
+    </message>
+    <message>
+        <source>not measured yet: start the analysis</source>
+        <translation>aún sin medir: empieza el análisis</translation>
+    </message>
+    <message>
         <source>Tick to pin this channel (it is already given to a pilot).</source>
         <translation>Marca para fijar este canal (ya se lo has dado a un piloto).</translation>
     </message>

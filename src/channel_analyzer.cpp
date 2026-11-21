@@ -1139,11 +1139,18 @@ void ChannelAnalyzer::recompute() {
     const bool haveData = !bins.empty();
     QElapsedTimer t;
     t.start();
-    const advisor::Advice a = haveData ? advisor::advise(bins, seen, advisor::analog_channels(b),
-                                                         advisor::hdzero_channels(b, narrow_->isChecked()),
-                                                         nAnalog_->value(), nHdz_->value(), &wifi,
-                                                         pinnedCandidates())
-                                       : advisor::Advice{};
+    advisor::Advice a = haveData ? advisor::advise(bins, seen, advisor::analog_channels(b),
+                                                   advisor::hdzero_channels(b, narrow_->isChecked()),
+                                                   nAnalog_->value(), nHdz_->value(), &wifi, pinnedCandidates())
+                                 : advisor::Advice{};
+    // sin barridos todavia (recien abierta): los fijados se ven igual, en la grafica y en la tabla, sin medir
+    if (!haveData)
+        for (const auto &c : pinnedCandidates()) {
+            advisor::Pick pk;
+            pk.r.ch = c;
+            pk.pinned = true;
+            a.picks.push_back(pk);
+        }
     if (t.elapsed() > 100) KP_LOGW("analizador: recomendar ha tardado %lld ms", static_cast<long long>(t.elapsed()));
     double lo, hi;
     range(lo, hi);
@@ -1167,6 +1174,26 @@ void ChannelAnalyzer::recompute() {
             s += QStringLiteral(" ") + tr("Pinned: %1.").arg(pins.join(QStringLiteral(", ")));
         }
         summary_->setText(s);
+        for (const auto &p : a.picks) {
+            const QString name = QString::fromStdString(p.r.ch.name);
+            auto *it = new QTreeWidgetItem(table_);
+            it->setFlags(it->flags() | Qt::ItemIsUserCheckable);
+            it->setCheckState(0, Qt::Checked);
+            it->setData(0, Qt::UserRole, name);
+            it->setData(0, Qt::UserRole + 1, p.r.ch.hdzero);
+            it->setIcon(0, pinIcon(p.r.ch.hdzero ? kHdzColour : kAnalogColour));
+            it->setToolTip(0, tr("Pinned: untick to let the advice choose this pilot's channel again."));
+            it->setText(1, p.r.ch.hdzero ? QStringLiteral("HDZero") : tr("Analog"));
+            it->setText(2, name);
+            QFont bold = table_->font();
+            bold.setBold(true);
+            it->setFont(2, bold);
+            it->setText(3, QString::number(p.r.ch.mhz, 'f', 0));
+            it->setText(4, QStringLiteral("-"));
+            it->setText(5, QStringLiteral("-"));
+            it->setText(6, running_ ? tr("not measured yet") : tr("not measured yet: start the analysis"));
+        }
+        for (int c = 0; c < 6; c++) table_->resizeColumnToContents(c);
         return;
     }
     // los marcados como mios (sin canal fijado) se tratan como si no estuvieran: su canal queda libre y se reparten
