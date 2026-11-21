@@ -19,6 +19,7 @@
 #include <QElapsedTimer>
 #include <QSignalBlocker>
 #include <QLabel>
+#include <QLineEdit>
 #include <QListWidget>
 #include <QLocale>
 #include <QMenu>
@@ -62,6 +63,29 @@ bool onPinned(const std::vector<advisor::Candidate> &pins, const Pilot &p) {
 const QColor kAnalogColour(0x2f, 0x80, 0xed), kHdzColour(0x7b, 0x5c, 0xd6);
 // seguimiento de carrera: por debajo de esta SNR (dB) el video de un piloto se tiene por flojo
 constexpr float kLowSnrDb = 12;
+
+// Numero de pilotos para el auto-inicio: el maximo (todos los fijados) se muestra con un texto ("todos")
+class AllSpinBox : public QSpinBox {
+public:
+    QString allText;
+    void setAllText(const QString &t) {  // y vuelve a escribir el valor mostrado (cambio de idioma)
+        allText = t;
+        lineEdit()->setText(textFromValue(value()));
+    }
+
+protected:
+    QString textFromValue(int v) const override {
+        return v == maximum() && !allText.isEmpty() ? allText : QSpinBox::textFromValue(v);
+    }
+    int valueFromText(const QString &t) const override {
+        return t.compare(allText, Qt::CaseInsensitive) == 0 ? maximum() : QSpinBox::valueFromText(t);
+    }
+    QValidator::State validate(QString &t, int &pos) const override {
+        if (!allText.isEmpty() && allText.startsWith(t, Qt::CaseInsensitive))
+            return t.size() == allText.size() ? QValidator::Acceptable : QValidator::Intermediate;
+        return QSpinBox::validate(t, pos);
+    }
+};
 
 // chincheta de un canal fijado: cabeza redonda y punta en at
 void drawPin(QPainter &p, QPointF at, const QColor &c) {
@@ -645,11 +669,15 @@ ChannelAnalyzer::ChannelAnalyzer(Backend *backend, QWidget *parent) : QDialog(pa
         arm->addWidget(armBtn_);
         armLbl_ = new QLabel;
         arm->addWidget(armLbl_);
-        armCount_ = new QSpinBox;
-        armCount_->setRange(0, 16);
-        armCount_->setValue(settings().value("analyzer/raceAutoPilots", 0).toInt());
+        armCount_ = new AllSpinBox;
+        // guardado: 0 = todos. El rango (1..fijados) lo pone updateRaceControls
+        const int saved = settings().value("analyzer/raceAutoPilots", 0).toInt();
+        armAll_ = saved <= 0;
+        armCount_->setRange(1, 16);
+        armCount_->setValue(armAll_ ? 16 : saved);
         connect(armCount_, &QSpinBox::valueChanged, this, [this](int v) {
-            settings().setValue("analyzer/raceAutoPilots", v);
+            armAll_ = v >= armCount_->maximum();
+            settings().setValue("analyzer/raceAutoPilots", armAll_ ? 0 : v);
             updateRace();
         });
         arm->addWidget(armCount_);
@@ -818,7 +846,7 @@ void ChannelAnalyzer::retranslate() {
     armBtn_->setToolTip(tr("Starts the analysis if needed and waits: race tracking starts by itself as soon as the "
                            "chosen number of pilots are on the air on their pinned channels. Press again to cancel."));
     armLbl_->setText(tr("Pilots:"));
-    armCount_->setSpecialValueText(tr("all"));
+    static_cast<AllSpinBox *>(armCount_)->setAllText(tr("all"));
     armCount_->setToolTip(tr("How many pilots on their pinned channels start the race (all = every pinned channel)."));
     autoStop_->setText(tr("Stop when all have landed"));
     autoStop_->setToolTip(tr("Stops race tracking by itself when no pinned pilot has been seen for about a minute "
@@ -891,7 +919,7 @@ void ChannelAnalyzer::setMineForTest(const QStringList &keys) {
 
 void ChannelAnalyzer::armForTest(int pilots) {
     tabs_->setCurrentIndex(1);
-    armCount_->setValue(std::max(0, pilots));
+    armCount_->setValue(pilots <= 0 ? armCount_->maximum() : pilots);
     armBtn_->setChecked(true);
 }
 
@@ -1470,7 +1498,16 @@ void ChannelAnalyzer::updateRaceControls() {
         const QSignalBlocker b(armBtn_);
         armBtn_->setChecked(armed_);
     }
-    armCount_->setMaximum(std::max(1, static_cast<int>(pinned_.size())));
+    {
+        // "todos" sigue siendo todos con mas o menos fijados; un numero se queda (o baja al maximo)
+        const QSignalBlocker b(armCount_);
+        const bool all = armAll_;
+        armCount_->setMaximum(std::max(1, static_cast<int>(pinned_.size())));
+        if (all) armCount_->setValue(armCount_->maximum());
+        armAll_ = all || armCount_->value() >= armCount_->maximum();
+        auto *sb = static_cast<AllSpinBox *>(armCount_);
+        sb->setAllText(sb->allText);  // al cambiar el maximo, el mismo valor puede pasar a ser "todos"
+    }
 }
 
 std::vector<advisor::Signal> ChannelAnalyzer::raceSignals() const {
@@ -1495,7 +1532,7 @@ void ChannelAnalyzer::setArmed(bool on) {
         armed_ = on;
         armPresent_ = 0;
         const int n = static_cast<int>(pinned_.size());
-        const int want = armCount_->value() <= 0 ? n : std::min(armCount_->value(), n);
+        const int want = armWant();
         if (on) KP_LOGI("carrera: esperando a %d de %d piloto(s) para empezar", want, n);
         else KP_LOGI("carrera: ya no se espera a los pilotos");
         if (on && running_ && last_.sweeps > 0) checkArmed(raceSignals());  // ya pueden estar todos
@@ -1503,10 +1540,15 @@ void ChannelAnalyzer::setArmed(bool on) {
     updateRace();
 }
 
+int ChannelAnalyzer::armWant() const {
+    const int n = static_cast<int>(pinned_.size());
+    return armAll_ ? n : std::min(armCount_->value(), n);
+}
+
 void ChannelAnalyzer::checkArmed(const std::vector<advisor::Signal> &now) {
     const int n = static_cast<int>(pinned_.size());
     if (!armed_ || n == 0) return;
-    const int want = armCount_->value() <= 0 ? n : std::min(armCount_->value(), n);
+    const int want = armWant();
     armPresent_ = race::present(pinnedCandidates(), now);
     if (armPresent_ >= want)
         setRace(true, tr("Started by itself: %1 of %2 pilot(s) on their channels").arg(armPresent_).arg(n));
@@ -1774,8 +1816,7 @@ void ChannelAnalyzer::updateRace() {
     QString st;
     if (pinned_.isEmpty()) st = tr("Pin the channels you have given to the pilots first (Recommendation tab).");
     else if (armed_) {
-        const int np = static_cast<int>(pinned_.size());
-        const int want = armCount_->value() <= 0 ? np : std::min(armCount_->value(), np);
+        const int want = armWant();
         st = tr("Waiting for the pilots: %1 of %2 on their pinned channels. Tracking starts by itself.")
                  .arg(armPresent_).arg(want);
     }

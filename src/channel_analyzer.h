@@ -126,7 +126,9 @@ private:
     double lastPresentT_ = 0;     // surveyT_ de la ultima vez que se vio a alguno en carrera
     bool raceSeenAny_ = false;    // en esta carrera se ha visto ya a alguno (si no, no se para sola)
     QPushButton *armBtn_ = nullptr;
-    QSpinBox *armCount_ = nullptr;
+    QSpinBox *armCount_ = nullptr;  // 1..fijados; el maximo se muestra "todos"
+    bool armAll_ = true;            // "todos": sigue en el maximo aunque cambie el numero de fijados
+    int armWant() const;            // pilotos que hacen falta para empezar
     QLabel *armLbl_ = nullptr;
     QCheckBox *autoStop_ = nullptr;
 
