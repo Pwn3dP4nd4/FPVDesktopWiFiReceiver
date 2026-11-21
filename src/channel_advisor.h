@@ -27,6 +27,7 @@ struct Signal {  // un piloto visto en el aire
     bool digital = false;
     std::string name;   // "R4", "" si no coincide con ninguno
     float snr_db = 0;   // SNR de su senal (Pilot::snrDb); lo usa el seguimiento de carrera (src/race_monitor.h)
+    bool fresh = true;  // medida en este barrido (Pilot::ageS == 0); si no, sigue en el aire pero su snr_db es vieja
 };
 
 struct Candidate {

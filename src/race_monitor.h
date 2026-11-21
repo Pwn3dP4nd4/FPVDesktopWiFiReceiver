@@ -24,6 +24,10 @@ namespace race {
 
 // Una senal esta en un canal fijado si es del mismo sistema (analogica / digital) y su centro esta a menos de esto
 constexpr double kMatchMhz = 5;
+// Una senal digital ajena (DJI, Walksnail, HDZero...) a menos de esto del borde de un canal analogico cuenta como
+// intruso aunque no lo pise: un receptor FM se come el derrame de un OFDM pegado a su canal, y lo que cae dentro
+// del canal queda tapado con la senal de su propio piloto (advisor::mask_signal), asi que no se veria de otro modo
+constexpr double kDigitalGuardMhz = 5;
 // Penalizaciones (dB) por la fraccion de barridos con el problema (todo el tiempo: esto)
 constexpr float kIntruderCost = 20;  // una senal ajena encima de su canal
 constexpr float kLostCost = 20;      // su piloto no se ve (corte), entre la primera y la ultima vez que se vio
@@ -68,9 +72,10 @@ class Monitor {
    public:
     // Empieza (o vuelve a empezar) con estos canales fijados; borra lo apuntado
     void start(const std::vector<advisor::Candidate> &pinned);
-    // Un barrido. bins: el espectro tal cual (con las senales de los pilotos dentro); now: lo que se ve en ESTE
-    // barrido (Pilot::ageS == 0), con su snr_db, fijados y ajenos mezclados; wifi: las redes a tener en cuenta
-    // (WifiMemory::known)
+    // Un barrido. bins: el espectro tal cual (con las senales de los pilotos dentro); now: lo que esta en el aire,
+    // con su snr_db, fijados y ajenos mezclados (el analizador pasa los vistos hace poco, kRaceHoldS en
+    // src/channel_analyzer.cpp: los pilotos se miden menos a menudo que el espectro); wifi: las redes a tener en
+    // cuenta (WifiMemory::known)
     void update(const std::vector<advisor::Bin> &bins, const std::vector<advisor::Signal> &now,
                 const std::vector<advisor::Wifi> &wifi);
     // El piloto de health()[i] se ha cambiado al canal c: lo suyo vuelve a empezar, lo de los demas sigue. Hasta
