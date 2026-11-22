@@ -15,7 +15,7 @@ struct Pilot {
     QString name;   // canal estandar ("R4"), vacio si no coincide
     QString stdName;  // NTSC / PAL
     int ageS = 0;   // segundos desde el ultimo barrido que lo vio
-    // Senal digital (no se decodifica): "hdzero", "hdzero_narrow" o "digital"; vacio = video analogico
+    // Senal digital (no se decodifica): "hdzero", "hdzero_narrow", "dji" o "digital"; vacio = video analogico
     QString digital;
     double bwMHz = 0;  // ancho ocupado de la senal digital
     // La GUI (src/channel_names.h): los canales estandar que puede ser ("R5", "A4"...), primero name; vacia si solo

@@ -1210,6 +1210,10 @@ Lo grabado hasta entonces se ha guardado en %2</translation>
         <translation>digital %1 MHz</translation>
     </message>
     <message>
+        <source>DJI %1 MHz</source>
+        <translation>DJI %1 MHz</translation>
+    </message>
+    <message>
         <source>%1 MHz is between several standard channels (%2): from the frequency alone it is not possible to tell which one. Right-click to say which one is yours.</source>
         <translation>%1 MHz está entre varios canales estándar (%2): solo con la frecuencia no se puede saber cuál es. Clic derecho para decir cuál es el tuyo.</translation>
     </message>

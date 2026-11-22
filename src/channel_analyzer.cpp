@@ -70,6 +70,13 @@ QString pilotShown(const Pilot &p) { return p.name.isEmpty() ? pilotKey(p) : p.s
 advisor::Signal toSignal(const Pilot &p) {
     return advisor::Signal{p.freqMHz, p.bwMHz, p.isDigital(), p.name.toStdString(), float(p.snrDb), p.ageS == 0};
 }
+// que senal digital es, para la grafica ("HDZ") y la lista ("HDZero"); vacio = analogica
+QString digitalTag(const Pilot &p, bool shortTag) {
+    if (!p.isDigital()) return QString();
+    if (p.digital.startsWith(QLatin1String("hdzero"))) return shortTag ? QStringLiteral("HDZ") : QStringLiteral("HDZero");
+    if (p.digital == QLatin1String("dji")) return QStringLiteral("DJI");
+    return shortTag ? QStringLiteral("DIG") : QStringLiteral("digital");
+}
 QString chName(const advisor::Candidate &c) {
     return QString::fromStdString(c.name) + (c.hdzero ? QStringLiteral(" HDZero") : QString());
 }
@@ -334,7 +341,7 @@ void SpectrumView::paintEvent(QPaintEvent *) {
         const QString key = pilotKey(s);
         const bool mine = mine_.contains(key);
         const QString shown = pilotShown(s);  // "R5/A4" mientras no se elija
-        const QString t = shown + (s.isDigital() ? QStringLiteral(" HDZ") : QString()) +
+        const QString t = shown + (s.isDigital() ? QLatin1Char(' ') + digitalTag(s, true) : QString()) +
                           (mine ? QStringLiteral(" \u2713") : QString());
         const QColor c = mine ? QColor(0x3a, 0xa8, 0x5a) : QColor(0xd9, 0x48, 0x3b);  // tuyo: verde
         p.setPen(QPen(c, 1.5, Qt::DashLine));
@@ -1189,7 +1196,7 @@ void ChannelAnalyzer::updateAir() {
         onPin << pinnedMine(p);
         const bool leaving = onPin.back() && !onPinned(pinnedCandidates(), p);  // movido, aun en el canal viejo
         texts << QStringLiteral("%1  %2 MHz%3%4").arg(pilotShown(p)).arg(p.freqMHz, 0, 'f', 0)
-                     .arg(p.isDigital() ? QStringLiteral("  HDZero") : QString(),
+                     .arg(p.isDigital() ? QStringLiteral("  ") + digitalTag(p, false) : QString(),
                           onPin.back() ? QStringLiteral("  (") + (leaving ? tr("changing channel") : tr("pinned")) +
                                              QLatin1Char(')')
                                        : QString());
