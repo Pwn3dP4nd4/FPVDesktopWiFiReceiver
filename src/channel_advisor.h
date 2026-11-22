@@ -76,13 +76,15 @@ enum class Region { Eu, Us };
 // Canales WiFi en los que ha habido rafagas en casi todo su ancho ocupado (en al menos una mitad: un paso del
 // barrido mide 20 MHz y los dos lados de un canal pueden caer en pasos distintos, medidos en momentos distintos).
 // seen: pilotos en el aire; un "WiFi" cuyo centro tapa uno no cuenta (un piloto recien llegado parece
-// intermitente unos barridos, hasta que su media alcanza a su pico)
+// intermitente unos barridos, hasta que su media alcanza a su pico), ni uno flojo en las bandas laterales de uno
+// fuerte (sideband_reach)
 std::vector<Wifi> find_wifi(const std::vector<Bin> &bins, Region region = Region::Eu,
                             const std::vector<Signal> &seen = {});
 
 // Un AP sin trafico se ve a ratos: cada paso del barrido mide 12 ms y hay un beacon cada ~102 ms (~12 % de
 // pillarlo), y su pico se olvida en unos barridos. Lo visto se recuerda kWifiHoldS desde la ultima vez, con el
-// pico mas alto y si alguna vez tuvo trafico. Lo que tapa un piloto se olvida.
+// pico mas alto y si alguna vez tuvo trafico. Lo que tapa un piloto se olvida; lo que cae en las bandas laterales
+// de uno fuerte (sideband_reach) no se apunta, pero una red ya vista antes de que se encendiera no se olvida por eso.
 constexpr double kWifiHoldS = 300;
 class WifiMemory {
    public:
@@ -148,6 +150,24 @@ struct Advice {
 // mas cerca del centro de otra que del de s (es de la otra).
 constexpr double kMaskSkirt = 6, kMaskRing = 5;
 void mask_signal(std::vector<Bin> &bins, const Signal &s, const std::vector<Signal> &others = {});
+
+// Un VTX fuerte ensucia mucho mas alla de su ancho. Medido: un analogico en R1 (5658) a 35-39 dB de SNR, muy cerca
+// del adaptador, enciende a rafagas de 20 a 40 MHz a cada lado (salian como redes WiFi en los canales 124-128 y
+// 136-140, 5620-5700) y, quitado como mio, su canal quedaba a 6-9 dB (sin el VTX, 0.8): el nivel de alrededor
+// (el anillo de mask_signal) caia sobre sus propias bandas laterales. Su alcance (MHz mas alla de su ancho) crece
+// con su SNR: kSidebandMhzPerDb por dB sobre kSidebandFromDb, entre kMaskSkirt y kSidebandMaxMhz (a 37 dB, 40:
+// hasta 50 MHz del centro). Hasta ahi:
+//   - mask_signal: si el nivel de alrededor queda kMaskOwnSidebandDb o mas por debajo de su SNR (medido: sus bandas
+//     laterales, ~30 dB por debajo) puede ser suya, y se toma el de un anillo mas alla de su alcance si es menor.
+//     Mas cerca de su SNR es de otra cosa (una senal ajena pegada que no se ha detectado) y se queda: cuenta. Lo que
+//     sobresale entre su faldon y su alcance tambien se queda: no cae en su canal y para un vecino si es interferencia.
+//   - find_wifi y WifiMemory no cuentan como WiFi un canal cuyo centro cae en el alcance de una senal al menos
+//     kSidebandBelowDb mas fuerte que el (como los hombros entre redes WiFi, kWifiShoulderDb): una red real tan
+//     fuerte como para importar junto a un VTX asi sigue viendose, y junto a uno flojo (alcance kMaskSkirt) todo.
+// Sin SNR (0) el alcance es kMaskSkirt y nada cuenta como banda lateral.
+constexpr float kSidebandFromDb = 10, kSidebandBelowDb = 10, kMaskOwnSidebandDb = 20;
+constexpr double kSidebandMhzPerDb = 1.5, kSidebandMaxMhz = 40;
+double sideband_reach(const Signal &s);
 
 // Puntuacion de un canal (sin vecinos). wifi: las redes vistas (find_wifi / WifiMemory); cada una suma por estar
 // ahi, segun su pico, aunque ahora este callada; si no se le ha visto trafico (ancho desconocido), en el resto de su

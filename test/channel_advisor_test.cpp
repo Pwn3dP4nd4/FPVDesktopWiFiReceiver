@@ -50,6 +50,18 @@ void add_block(std::vector<Bin> &b, double lo, double hi, float mean, float peak
             x.duty = duty;
         }
 }
+// un VTX analogico fuerte: su portadora (snr dB en su ancho) y, de 10 a 45 MHz a cada lado, bandas laterales que se
+// encienden a rafagas (media de snr - 29 a snr - 36 dB, picos 14 dB por encima). Medido en R1 a 35-39 dB.
+void vtx_sidebands(std::vector<Bin> &b, double mhz, float snr) {
+    for (auto &x : b) {
+        const double d = std::fabs(x.mhz - mhz);
+        if (d <= 10) x = Bin{x.mhz, snr, snr + 1, 1};
+        else if (d <= 45) {
+            const float mean = snr - 29 - static_cast<float>(d - 10) * 0.2f;
+            x = Bin{x.mhz, std::max(0.5f, mean), std::max(0.5f, mean) + 14, 0.1f};
+        }
+    }
+}
 std::vector<Candidate> analog(const std::string &bands) {
     std::vector<Candidate> c;
     for (const auto &ch : kp::fpv_channels())
@@ -212,6 +224,56 @@ int main() {
         const double side = n ? 10 * std::log10(lin / n) : 0;
         std::printf("  faldon de mi R3 junto a la ajena (5744-5748): %.1f dB\n", side);
         check(side > 20, "el faldon de la mia no borra el borde de una ajena pegada");
+    }
+    {
+        // lo medido con un VTX analogico en R1 (5658) a 35-39 dB de SNR, muy cerca del adaptador: sus bandas laterales
+        // se encienden a rafagas de 10 a 45 MHz a cada lado (media de 8 a 1 dB, picos de 22 a 15) y salian como redes
+        // WiFi en los canales 124-128 y 136-140; marcado como mio, su canal quedaba a 6-9 dB (sin el VTX, 0.8)
+        auto b = flat();
+        vtx_sidebands(b, 5658, 37);
+        const Signal r1{5658, 0, false, "R1", 37};
+        const std::vector<Signal> all{r1};
+        auto m = b;
+        mask_signal(m, r1, all);  // lo que hace la ventana con uno mio antes de buscar redes (feedWifi)
+        const auto w = find_wifi(m, Region::Eu, all);
+        std::printf("  mi VTX fuerte en R1: %zu red(es)", w.size());
+        for (const auto &x : w) std::printf(" ch%d (%.0f dB)", x.ch, x.peak_db);
+        std::printf(", R1 quitado %.1f dB\n", rate(kR1, m, {}).noise_db);
+        check(w.empty(), "las bandas laterales de un VTX fuerte no son redes WiFi");
+        check(rate(kR1, m, {}).noise_db < 1.5, "quitado mi VTX fuerte, su canal queda al nivel del ruido");
+        WifiMemory mem;
+        mem.update(find_wifi(m, Region::Eu, all), all, 0);
+        check(rate(kR1, m, {}, mem.known(0)).cost < 2, "y su canal no paga redes WiFi que son el");
+        // sin saber su SNR (0) se hace lo de siempre: su anillo cae sobre las bandas laterales
+        auto u = b;
+        const Signal r1u{5658, 0, false, "R1"};
+        mask_signal(u, r1u, {r1u});
+        check(!find_wifi(u, Region::Eu, {r1u}).empty(), "sin SNR del piloto, sus bordes siguen pareciendo WiFi");
+        // una red real junto a un piloto flojo (SNR 12, alcance kMaskSkirt) se sigue viendo
+        auto f = flat();
+        add_block(f, 5648, 5668, 12, 13, 1);
+        add_block(f, 5640 - 8.3, 5640 + 8.3, 0.6f, 20, 0.004f);
+        const Signal weak{5658, 0, false, "R1", 12};
+        mask_signal(f, weak, {weak});
+        const auto wf = find_wifi(f, Region::Eu, {weak});
+        check(wf.size() == 1 && wf[0].ch == 128, "una red real junto a un piloto flojo se sigue viendo");
+        // y una fuerte (beacons a 25 dB) a 42 MHz de un VTX a 30 dB tambien: no es tan floja como un borde suyo
+        auto g = flat();
+        vtx_sidebands(g, 5658, 30);
+        add_block(g, 5700 - 8.3, 5700 + 8.3, 0.6f, 25, 0.004f);
+        const Signal r30{5658, 0, false, "R1", 30};
+        mask_signal(g, r30, {r30});
+        const auto wg = find_wifi(g, Region::Eu, {r30});
+        check(wg.size() == 1 && wg[0].ch == 140, "una red fuerte junto a un VTX fuerte se sigue viendo");
+        // una red vista antes de encenderse el VTX no se olvida porque caiga en sus bandas laterales
+        WifiMemory mem2;
+        Wifi real;
+        real.ch = 128;
+        real.mhz = 5640;
+        real.peak_db = 18;
+        mem2.update({real}, {}, 0);
+        mem2.update({}, all, 3);
+        check(mem2.known(3).size() == 1, "una red recordada no se olvida al encenderse un VTX fuerte al lado");
     }
     {
         // un AP sin trafico en el canal WiFi 153 (5765 MHz): solo beacons, pico 20 dB y encendido el 0.3 % del
