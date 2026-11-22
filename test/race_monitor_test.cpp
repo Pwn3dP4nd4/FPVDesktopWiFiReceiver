@@ -616,6 +616,37 @@ int main() {
         check(m.leaving().empty() && all.size() == 1 && all[0].to.name == "R1",
               "cuando ya ha cambiado, su canal viejo vuelve a estar libre");
     }
+    {
+        // margen: con la mejora rondando kMoveMinGainDb, una recomendacion no aparece y desaparece de un barrido a
+        // otro. Un intruso encima de R1 en 2 de 16 barridos: penalizacion ~ 20 * 2/16 = 2.5 dB, entre kMoveKeepGainDb
+        // y kMoveMinGainDb
+        const auto scene = [](int k) {
+            return [k](int sw, auto &b, auto &now, auto &) {
+                fly(b, now, R1.mhz, 25);
+                fly(b, now, R8.mhz, 25);
+                if (sw < k) now.push_back(Signal{5661, 0, false, "", 15});  // encima de R1 (no el suyo: mas lejos)
+            };
+        };
+        const std::vector<Candidate> cands{R1, R3, R8};
+        race::Monitor m;
+        m.start({R1, R8});
+        run(m, 16, scene(2));
+        const auto fresh = m.suggest_all(cands, {});
+        race::Move shown;
+        shown.from = 0;
+        shown.to = R3;
+        const auto kept = m.suggest_all(cands, {}, {shown});
+        std::printf("    R1: penalizacion %.2f dB; nueva %zu, mantenida %zu (%.2f dB)\n", m.health()[0].penalty,
+                    fresh.size(), kept.size(), kept.empty() ? 0.f : kept[0].gain_db);
+        check(fresh.empty(), "mejora entre kMoveKeepGainDb y kMoveMinGainDb: no sale una recomendacion nueva");
+        check(kept.size() == 1 && kept[0].to.name == "R3" && kept[0].gain_db >= race::kMoveKeepGainDb &&
+                  kept[0].gain_db < race::kMoveMinGainDb,
+              "la misma mejora con la recomendacion ya mostrada: se mantiene");
+        race::Monitor low;
+        low.start({R1, R8});
+        run(low, 20, scene(1));  // ~1 dB: por debajo de kMoveKeepGainDb
+        check(low.suggest_all(cands, {}, {shown}).empty(), "por debajo de kMoveKeepGainDb se quita");
+    }
     std::printf("\n%s\n", failures ? "HAY FALLOS" : "todo bien");
     return failures ? 1 : 0;
 }

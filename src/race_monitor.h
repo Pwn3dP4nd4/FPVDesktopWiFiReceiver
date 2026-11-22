@@ -34,6 +34,10 @@ constexpr float kLostCost = 20;      // su piloto no se ve (corte), entre la pri
 // Para recomendar mover: barridos minimos observados y mejora minima (dB) del canal nuevo sobre el actual
 constexpr int kMinSweeps = 10;
 constexpr float kMoveMinGainDb = 3;
+// Una recomendacion que ya se esta mostrando (prev de suggest_all) se mantiene mientras su mejora no baje de esto:
+// con la mejora rondando kMoveMinGainDb, la medida de cada barrido la hacia aparecer y desaparecer (medido con un VTX
+// en R1: "-> R2 +3 dB" y "sin canal mejor" alternando)
+constexpr float kMoveKeepGainDb = 2;
 // suggest tiene en cuenta las senales ajenas vistas en estos ultimos barridos (una que sale a ratos tambien)
 constexpr int kForeignMemory = 10;
 // El canal que deja un piloto movido (moved): su senal ahi sigue siendo suya (no ajena) hasta que no se la ve en
@@ -101,7 +105,7 @@ class Monitor {
     // piloto aun esta ahi); con el ultimo espectro (todos
     // los fijados quitados) y las senales ajenas de los ultimos kForeignMemory barridos como ocupadas. Sale si la
     // mejora es al menos kMoveMinGainDb. prev: las recomendaciones que se estan mostrando; la de un piloto se
-    // mantiene si sigue valiendo (su canal nuevo sigue libre y compatible, mejora de al menos kMoveMinGainDb), salvo
+    // mantiene si sigue valiendo (su canal nuevo sigue libre y compatible, mejora de al menos kMoveKeepGainDb), salvo
     // que otro canal mejore al menos kMoveMinGainDb mas: no cambia de un barrido a otro por poco.
     std::vector<Move> suggest_all(const std::vector<advisor::Candidate> &analog,
                                   const std::vector<advisor::Candidate> &hdzero,

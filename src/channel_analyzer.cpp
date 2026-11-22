@@ -1650,6 +1650,7 @@ void ChannelAnalyzer::setPins(const QVector<Pin> &pins) {
     savePins();
     moves_.clear();
     pinLastT_.clear();  // otros fijados: lo de cada uno vuelve a empezar
+    noBetter_.clear();
     // cambio a mano: el seguimiento vuelve a empezar (sin fijados, se apaga); parado, lo de la ultima carrera ya
     // no casa con los fijados
     if (raceOn_ && !pinned_.isEmpty()) {
@@ -1693,6 +1694,7 @@ void ChannelAnalyzer::setRace(bool on, const QString &why) {
         raceOn_ = on;
         moves_.clear();
         raceLogKeys_.clear();
+        noBetter_.clear();
         const QString pins = pinsText();
         const QString how = why.isEmpty() ? tr("By hand") : why;
         if (on) {
@@ -1947,13 +1949,14 @@ void ChannelAnalyzer::saveHistory() {
     histHint_->setText(tr("Saved to %1.").arg(QDir::toNativeSeparators(fn)));
 }
 
-void ChannelAnalyzer::rowAdvice(int i, QString &rec, QString &tip, QColor &col) const {
+void ChannelAnalyzer::rowAdvice(int i, QString &rec, QString &tip, QColor &col, bool &noBetter) const {
     // recomendacion de este canal, de un vistazo: "-> F3", o por que no se mueve
     const race::ChannelHealth &h = race_.health()[i];
     const QColor red(0xd9, 0x48, 0x3b), orange(0xe0, 0xa0, 0x20), green(0x3a, 0xa8, 0x5a);
     rec.clear();
     tip.clear();
     col = QColor();
+    noBetter = false;
     for (const auto &m : moves_) {
         if (m.from != i) continue;
         rec = QStringLiteral("→ %1  (%2 MHz, +%3 dB)")
@@ -1967,8 +1970,12 @@ void ChannelAnalyzer::rowAdvice(int i, QString &rec, QString &tip, QColor &col) 
         return;
     }
     if (!raceOn_ || h.seen == 0 || h.sweeps < race::kMinSweeps) return;
-    if (h.penalty >= race::kMoveMinGainDb) {
+    // con el mismo margen que las recomendaciones (race::kMoveKeepGainDb): si ya lo decia, sigue mientras no baje de
+    // ahi; si no, no alterna con OK por unas decimas
+    const bool was = i < noBetter_.size() && noBetter_[i];
+    if (h.penalty >= (was ? race::kMoveKeepGainDb : race::kMoveMinGainDb)) {
         // su canal es el problema, pero no hay otro libre compatible claramente mejor
+        noBetter = true;
         rec = tr("No better free channel");
         tip = (5.0 * h.intruders > h.sweeps ? tr("Someone else is transmitting on top of it.")
                                             : tr("Interference or WiFi on its channel.")) +
@@ -2067,7 +2074,10 @@ void ChannelAnalyzer::updateRace() {
         it->setText(5, QStringLiteral("%1 dB").arg(h.channel_cost, 0, 'f', 1));
         QString rec, tip;
         QColor col;
-        rowAdvice(i, rec, tip, col);
+        bool noBetter = false;
+        rowAdvice(i, rec, tip, col, noBetter);
+        if (noBetter_.size() < n) noBetter_.resize(n);
+        noBetter_[i] = noBetter;
         if (!rec.isEmpty() && col != QColor(0x3a, 0xa8, 0x5a)) allOk = false;
         logRaceRow(i, rec, tip, col);
         it->setText(7, rec);

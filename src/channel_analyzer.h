@@ -141,8 +141,10 @@ private:
     // las de moves que siguen entre las recomendaciones de ahora (mismo piloto y canal nuevo) con la carrera en marcha:
     // un menu abierto mientras llegan barridos no aplica una ya pasada
     std::vector<race::Move> stillValid(const std::vector<race::Move> &moves) const;
-    // texto de la columna Recomendacion de un canal en carrera (y su explicacion y color)
-    void rowAdvice(int i, QString &rec, QString &tip, QColor &col) const;
+    // texto de la columna Recomendacion de un canal en carrera (y su explicacion y color); noBetter: dice "sin canal
+    // mejor" (noBetter_ para el siguiente barrido)
+    void rowAdvice(int i, QString &rec, QString &tip, QColor &col, bool &noBetter) const;
+    QVector<bool> noBetter_;  // por fila de la carrera: la ultima vez decia "sin canal mejor" (margen para quitarlo)
     void logRaceRow(int i, const QString &rec, const QString &tip, const QColor &col);  // al log y al Historial
     QString raceStateText() const;
     QString healthText(const race::ChannelHealth &h, bool summary) const;  // SNR, calidad, cortes...

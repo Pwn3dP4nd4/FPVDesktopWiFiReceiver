@@ -281,7 +281,9 @@ std::vector<Move> Monitor::suggest_all(const std::vector<advisor::Candidate> &an
             to = best->r.ch;
             gain = h.penalty - best->r.cost;
         }
-        // la anterior se mantiene si sigue valiendo y la nueva no es claramente mejor
+        // la anterior se mantiene si sigue valiendo (con menos mejora que para salir: kMoveKeepGainDb) y la nueva no
+        // es claramente mejor
+        bool kept = false;
         for (const auto &pv : prev) {
             if (pv.from != i) continue;
             const advisor::Candidate *pc = nullptr;
@@ -289,13 +291,14 @@ std::vector<Move> Monitor::suggest_all(const std::vector<advisor::Candidate> &an
                 if (c.name == pv.to.name && c.hdzero == pv.to.hdzero) pc = &c;
             if (!pc || !fits(*pc)) break;
             const float pg = h.penalty - advisor::rate(*pc, last_bins_, foreign, wifi_).cost;
-            if (pg >= kMoveMinGainDb && gain < pg + kMoveMinGainDb) {
+            if (pg >= kMoveKeepGainDb && gain < pg + kMoveMinGainDb) {
                 to = *pc;
                 gain = pg;
+                kept = true;
             }
             break;
         }
-        if (gain < kMoveMinGainDb) continue;
+        if (gain < (kept ? kMoveKeepGainDb : kMoveMinGainDb)) continue;
         Move mv;
         mv.from = i;
         mv.to = to;
