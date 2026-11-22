@@ -34,6 +34,19 @@ const char *const kHintLinux = QT_TRANSLATE_NOOP(
     "packaging/linux/60-kepyur.rules /etc/udev/rules.d/ && sudo udevadm control --reload && sudo udevadm "
     "trigger, then replug it. Use a USB 3 port.");
 
+// un piloto de fpv::Radio::status_json() ("pilots")
+Pilot pilotFromJson(const QJsonObject &p) {
+    Pilot x;
+    x.freqMHz = p.value("mhz").toDouble();
+    x.snrDb = p.value("snr").toDouble();
+    x.name = p.value("name").toString();
+    x.stdName = p.value("std").toString();
+    x.ageS = p.value("age_s").toInt();
+    x.digital = p.value("digital").toString();  // cmake/kepyur_patches.cmake, conjunto "digital"
+    x.bwMHz = p.value("bw").toDouble();
+    return x;
+}
+
 QString hint(bool switchedToUsb3) {
 #ifdef _WIN32
     const char *h = switchedToUsb3 ? kHintWinUsb3 : kHintWin;
@@ -229,7 +242,12 @@ void RadioBackend::setSurveyMemory(int sweeps) {
 }
 
 void RadioBackend::stopSurvey() {
-    if (surveyPlan_.empty()) return;
+    // la ventana espera una respuesta por cada stopSurvey suyo (ChannelAnalyzer::onStopped): tambien si ya estaba
+    // parado. Las paradas internas (escanear, ver, adaptador perdido) solo lo llaman con el analizador en marcha
+    if (surveyPlan_.empty()) {
+        emit surveyStopped();
+        return;
+    }
     surveyPlan_.clear();
     KP_LOGI("analizador: parado");
     if (radio_) {
@@ -245,18 +263,7 @@ void RadioBackend::emitSurvey(const QJsonArray &pilots) {
     std::vector<fpv::SurveyBin> bins = radio_->survey_spectrum(&d.sweeps);
     d.bins.reserve(int(bins.size()));
     for (const auto &b : bins) d.bins.push_back(SpectrumPoint{b.mhz, b.mean_db, b.peak_db, b.duty});
-    for (const auto &e : pilots) {
-        const QJsonObject p = e.toObject();
-        Pilot x;
-        x.freqMHz = p.value("mhz").toDouble();
-        x.snrDb = p.value("snr").toDouble();
-        x.name = p.value("name").toString();
-        x.stdName = p.value("std").toString();
-        x.ageS = p.value("age_s").toInt();
-        x.digital = p.value("digital").toString();
-        x.bwMHz = p.value("bw").toDouble();
-        d.pilots.push_back(x);
-    }
+    for (const auto &e : pilots) d.pilots.push_back(pilotFromJson(e.toObject()));
     emit surveyUpdated(d);
 }
 
@@ -336,15 +343,7 @@ void RadioBackend::poll() {
     QVector<Pilot> ps;
     QByteArray key;
     for (const auto &e : pa) {
-        const QJsonObject p = e.toObject();
-        Pilot x;
-        x.freqMHz = p.value("mhz").toDouble();
-        x.snrDb = p.value("snr").toDouble();
-        x.name = p.value("name").toString();
-        x.stdName = p.value("std").toString();
-        x.ageS = p.value("age_s").toInt();
-        x.digital = p.value("digital").toString();  // cmake/kepyur_patches.cmake, conjunto "digital"
-        x.bwMHz = p.value("bw").toDouble();
+        const Pilot x = pilotFromJson(e.toObject());
         key += QStringLiteral("%1|%2|%3|%4|%5;").arg(x.freqMHz, 0, 'f', 1).arg(x.snrDb, 0, 'f', 1).arg(x.name, x.stdName, x.digital).toUtf8();
         ps.push_back(x);
     }

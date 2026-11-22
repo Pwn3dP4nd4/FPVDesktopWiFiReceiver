@@ -185,6 +185,17 @@ else()
   endif()
 endif()
 target_compile_definitions(FPVDesktopWiFiReceiver PRIVATE KP_VERSION="${PROJECT_VERSION}")
+if(WIN32)
+  # Archivo > Instalar driver lanza windows-driver.ps1 como administrador desde la carpeta de la app (que el usuario
+  # puede escribir): la app solo lo lanza si el script y el INF son estos (src/main_window.cpp, installDriver)
+  set(_kp_driver_ps1 "${CMAKE_CURRENT_SOURCE_DIR}/scripts/windows-driver.ps1")
+  set(_kp_driver_inf "${CMAKE_CURRENT_SOURCE_DIR}/packaging/windows/driver/fpvdesktopwifireceiver_winusb.inf")
+  file(SHA256 "${_kp_driver_ps1}" KP_DRIVER_PS1_SHA256)
+  file(SHA256 "${_kp_driver_inf}" KP_DRIVER_INF_SHA256)
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${_kp_driver_ps1}" "${_kp_driver_inf}")
+  target_compile_definitions(FPVDesktopWiFiReceiver PRIVATE KP_DRIVER_PS1_SHA256="${KP_DRIVER_PS1_SHA256}"
+                             KP_DRIVER_INF_SHA256="${KP_DRIVER_INF_SHA256}")
+endif()
 
 # ---- Idiomas: textos fuente en ingles; espanol en translations/*.ts, compilado (.qm) dentro del ejecutable ----
 # Tras cambiar textos: cmake --build build/release (Windows: build/msys2) --target update_translations (actualiza los .ts con lupdate)
@@ -236,6 +247,14 @@ add_executable(analyzer_shot test/analyzer_shot.cpp src/channel_analyzer.cpp src
                src/video_widget.cpp)
 target_include_directories(analyzer_shot PRIVATE src)
 target_link_libraries(analyzer_shot PRIVATE Qt6::Widgets kepyur_dsp)
+
+# Logica de la ventana del analizador (ritmo de barridos, parar/empezar, auto-inicio y fin de la carrera) con un
+# backend falso y sin pantalla: cmake --build <dir> --target analyzer_logic_test
+add_executable(analyzer_logic_test EXCLUDE_FROM_ALL test/analyzer_logic_test.cpp src/channel_analyzer.cpp
+               src/channel_analyzer.h src/channel_advisor.cpp src/race_monitor.cpp src/channel_names.cpp src/backend.h
+               src/video_widget.cpp)
+target_include_directories(analyzer_logic_test PRIVATE src)
+target_link_libraries(analyzer_logic_test PRIVATE Qt6::Widgets kepyur_dsp)
 
 # Medida del analizador (src/radio/survey.cpp) con IQ sinteticos: cmake --build <dir> --target survey_test
 add_executable(survey_test EXCLUDE_FROM_ALL test/survey_test.cpp src/radio/survey.cpp)

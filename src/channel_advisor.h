@@ -176,5 +176,6 @@ std::vector<Candidate> hdzero_channels(const std::string &bands, bool narrow = f
 double min_spacing(const Candidate &a, const Candidate &b);
 double ideal_spacing(const Candidate &a, const Candidate &b);
 double width(const Candidate &c);
+double width(const Signal &s);  // ancho ocupado de una senal en el aire (analogica: kAnalogBw)
 
 }  // namespace advisor

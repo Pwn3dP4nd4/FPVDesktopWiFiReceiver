@@ -16,7 +16,9 @@
 #      del equipo (Windows solo instala drivers firmados por alguien de confianza). Es lo mismo que hace Zadig.
 #   4. Instala el driver con pnputil. Windows lo preferira al driver Realtek en cada enchufado (ver el INF).
 # -Uninstall quita el driver y el certificado. El adaptador vuelve a su driver Realtek al reenchufarlo.
-param([switch]$Uninstall, [switch]$Status, [switch]$RemoveZadig)
+#   -InfSha256 <hex>: el SHA-256 que tiene que tener el INF (la app lo pasa: el de su version); si no es ese, no
+#                     se instala nada
+param([switch]$Uninstall, [switch]$Status, [switch]$RemoveZadig, [string]$InfSha256)
 $ErrorActionPreference = 'Stop'
 $CertSubject = 'CN=FPVDesktopWiFiReceiver local driver signing'
 $InfName = 'fpvdesktopwifireceiver_winusb.inf'
@@ -73,10 +75,24 @@ if ($Uninstall) {
 
 # ---- instalar ----
 if (-not $InfSrc) { Write-Error "No encuentro $InfName junto al script ni en packaging\windows\driver" }
-$work = Join-Path $env:TEMP ("fpvdwr-driver-" + [guid]::NewGuid().ToString('N'))
+# Carpeta de trabajo que solo pueden tocar los administradores y SYSTEM: el INF que se firma e instala no se puede
+# cambiar entre la comprobacion y la firma (el %TEMP% del usuario, y la carpeta de la app, los puede escribir el)
+$work = Join-Path $env:SystemRoot ("Temp\fpvdwr-driver-" + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory $work | Out-Null
 try {
+    $acl = New-Object System.Security.AccessControl.DirectorySecurity
+    $acl.SetAccessRuleProtection($true, $false)
+    foreach ($sid in 'S-1-5-32-544', 'S-1-5-18') {  # Administradores, SYSTEM
+        $id = New-Object System.Security.Principal.SecurityIdentifier $sid
+        $acl.AddAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule $id, 'FullControl',
+            'ContainerInherit,ObjectInherit', 'None', 'Allow'))
+    }
+    Set-Acl -Path $work -AclObject $acl
     Copy-Item $InfSrc $work
+    if ($InfSha256) {
+        $got = (Get-FileHash -Algorithm SHA256 (Join-Path $work $InfName)).Hash
+        if ($got -ne $InfSha256) { Write-Error "El INF no es el de esta version (SHA-256 $got): no se instala." }
+    }
     $cat = Join-Path $work 'fpvdesktopwifireceiver_winusb.cat'
     New-FileCatalog -Path $work -CatalogFilePath $cat -CatalogVersion 2.0 | Out-Null
 
