@@ -5,7 +5,7 @@
 //   digital_scan_test                      todos los casos; sale con 1 si alguno falla
 //   digital_scan_test --write F.cs16 KIND MHZ [SNR]
 //       graba 0.5 s de una senal para radio_sim (KP_SIM_FILE=F.cs16, centro 5770 MHz). KIND: hdzero, narrow,
-//       wifi, dji, fm, fmnoise
+//       wifi, dji, dji_idle, fm, fmnoise
 //
 // Las senales son modelos, no capturas reales: HDZero se modela como OFDM continuo y plano de 27 (o 17) MHz porque
 // es lo que se sabe de el (hoja de datos del DM5680: OFDM; 27 MHz segun Divimath). Con una captura real hay que
@@ -39,7 +39,17 @@ struct Signal {
     double width = 27e6; // OFDM: ancho ocupado
     double snr_db = 15;  // OFDM: densidad espectral sobre el ruido; FM: potencia total sobre el ruido en 20 MHz
     double duty = 1;     // OFDM: fraccion del tiempo emitiendo (rafagas de 0.3 ms)
+    int dji = 0;         // OFDM con la trama de DJI (en vez de duty): 1 con video, 2 sin enlace con las gafas
 };
+
+// Tramas de DJI medidas con un VTX real (20 MHz en R2), de 2.5 ms. Con video (rec-20261122-143904-R2): 1.73 ms
+// emitiendo, hueco de 0.25 ms, 0.37 ms emitiendo, hueco de 0.15 ms. Sin enlace con las gafas (dji2/take1-8): 0.41 ms,
+// hueco de 0.08 ms, 0.43 ms, hueco de 1.53 ms.
+bool dji_on(int mode, double sample) {
+    const double t = std::fmod(sample / kFs, 2.5e-3);
+    if (mode == 2) return t < 0.41e-3 || (t >= 0.49e-3 && t < 0.92e-3);
+    return t < 1.73e-3 || (t >= 1.98e-3 && t < 2.35e-3);
+}
 
 void ifft(std::vector<cf> &x) {
     for (auto &v : x) v = std::conj(v);
@@ -60,10 +70,21 @@ void add_ofdm(std::vector<cf> &x, double offset, const Signal &s) {
     std::uniform_int_distribution<int> bit(0, 1);
     std::vector<cf> sym(N);
     const double burst = 0.3e-3 * kFs;
-    double t = std::uniform_real_distribution<double>(0, burst / std::max(0.01, s.duty))(rng);
+    double t = std::uniform_real_distribution<double>(0, s.dji ? 2.5e-3 * kFs : burst / std::max(0.01, s.duty))(rng);
+    // a rafagas (WiFi): de 0.3 ms, separadas al azar (exponencial), sin ritmo; de media, duty del tiempo emitiendo
+    std::exponential_distribution<double> gap(s.duty / (burst * (1 - std::min(0.99, s.duty))));
+    double burstEnd = -1, nextBurst = t;
     for (size_t pos = 0; pos < x.size(); pos += N + CP) {
-        const double period = burst / std::max(0.01, s.duty);
-        const bool on = s.duty >= 1 || std::fmod(t + pos, period) < burst;
+        bool on;
+        if (s.dji) on = dji_on(s.dji, t + pos);
+        else if (s.duty >= 1) on = true;
+        else {
+            if (pos >= nextBurst) {
+                burstEnd = nextBurst + burst;
+                nextBurst = burstEnd + gap(rng);
+            }
+            on = pos < burstEnd;
+        }
         if (!on) continue;
         std::fill(sym.begin(), sym.end(), cf(0, 0));
         for (int k = -N / 2; k < N / 2; k++) {
@@ -173,7 +194,8 @@ int write_recording(const char *file, const std::string &kind, double mhz, doubl
     if (kind == "hdzero") s.type = Sig::Ofdm;
     else if (kind == "narrow") { s.type = Sig::Ofdm; s.width = 17e6; }
     else if (kind == "wifi") { s.type = Sig::Ofdm; s.width = 16.25e6; s.duty = 0.3; }
-    else if (kind == "dji") { s.type = Sig::Ofdm; s.width = 18e6; }
+    else if (kind == "dji") { s.type = Sig::Ofdm; s.width = 18e6; s.dji = 1; }
+    else if (kind == "dji_idle") { s.type = Sig::Ofdm; s.width = 18e6; s.dji = 2; }
     else if (kind == "fm") { s.type = Sig::FmBars; s.snr_db = snr + 10; }
     else if (kind == "fmnoise") { s.type = Sig::FmNoise; s.snr_db = snr + 10; }
     else { std::fprintf(stderr, "tipo desconocido: %s\n", kind.c_str()); return 2; }
@@ -233,6 +255,17 @@ int main(int argc, char **argv) {
     // otras senales digitales: no son HDZero
     expect("OFDM continuo 18 MHz en 5745 (no HDZero)", run(full_plan(5745e6, 5745e6), {{Sig::Ofdm, 5745, 18e6, 15, 1}}),
            K::Other, 5745);
+    // DJI (20 MHz, trama TDD de 2.5 ms): aunque este en un canal de HDZero
+    expect("DJI 20 MHz R2, barrido completo", run(full_plan(5695e6, 5695e6), {{Sig::Ofdm, 5695, 18e6, 15, 1, 1}}),
+           K::DJI, 5695, 16e6, 21e6);
+    expect("DJI 20 MHz R2, paso centrado", run({5695e6}, {{Sig::Ofdm, 5695, 18e6, 30, 1, 1}}), K::DJI, 5695);
+    expect("DJI 20 MHz R2 debil (10 dB)", run(full_plan(5695e6, 5695e6), {{Sig::Ofdm, 5695, 18e6, 10, 1, 1}}),
+           K::DJI, 5695);
+    expect("DJI 20 MHz R2 sin gafas, barrido completo",
+           run(full_plan(5695e6, 5695e6), {{Sig::Ofdm, 5695, 18e6, 15, 1, 2}}), K::DJI, 5695);
+    expect("DJI 20 MHz R2 sin gafas, paso centrado", run({5695e6}, {{Sig::Ofdm, 5695, 18e6, 30, 1, 2}}), K::DJI, 5695);
+    expect("DJI 20 MHz en 5745, barrido completo", run(full_plan(5745e6, 5745e6), {{Sig::Ofdm, 5745, 18e6, 15, 1, 1}}),
+           K::DJI, 5745);
     expect("WiFi 20 MHz a rafagas (30 %) en 5745: no", run(full_plan(5745e6, 5745e6), {{Sig::Ofdm, 5745, 16.25e6, 20, 0.3}}),
            K::None, 0);
     expect("WiFi 40 MHz continuo en 5775: no", run(full_plan(5775e6, 5775e6), {{Sig::Ofdm, 5775, 38e6, 20, 1}}),

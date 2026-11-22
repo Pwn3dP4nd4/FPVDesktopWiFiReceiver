@@ -151,7 +151,7 @@ void Radio::open(int fd) {
   _dsp = std::thread([this] { dsp_loop(); });
   _decoder = std::thread([this] { decode_loop(); });
   _rx->start([this](const uint8_t *b, size_t n, const wsdr::BankMeta &m) {
-    on_bank(b, n, m.seq, m.gen, m.fs, m.centre_hz, m.shift_hz);
+    on_bank(b, n, m.seq, m.gen, m.fs, m.centre_hz, m.shift_hz, m.gapped);
   });
 }
 
@@ -181,7 +181,8 @@ void Radio::close() {
 }
 
 // Receiver stream thread: copy only.
-void Radio::on_bank(const uint8_t *b, size_t n, uint64_t seq, uint32_t gen, double fs, double centre, double shift) {
+void Radio::on_bank(const uint8_t *b, size_t n, uint64_t seq, uint32_t gen, double fs, double centre, double shift,
+                    bool gapped) {
   thread_local bool boosted = false;
   if (!boosted) {
     boosted = true;
@@ -203,7 +204,7 @@ void Radio::on_bank(const uint8_t *b, size_t n, uint64_t seq, uint32_t gen, doub
       _q.pop_front();
       _dropped++;
     }
-    _q.push_back(Bank{std::move(v), seq, gen, fs, centre, shift});
+    _q.push_back(Bank{std::move(v), seq, gen, fs, centre, shift, gapped});
   }
   _banks++;
   _qcv.notify_one();
@@ -674,6 +675,8 @@ void Radio::handle_scan(Bank &b) {
   if (_step >= _plan.size()) return;
   const double req = _plan[_step];
   if (std::fabs(b.centre_hz + b.shift_hz - req) > 1e3 || b.fs != kFs) return;
+  // survey: the step taken again streaming, on the same frequency: banks still gapped are from before the change
+  if (_survey_cont && b.gapped) return;
   if (_settle < 0) {
     _settle = kSettleBanks;
     _cap.clear();
@@ -704,7 +707,6 @@ void Radio::handle_scan(Bank &b) {
     psd.add(x.data(), x.size());
     const std::vector<float> psd_db = psd.db();
     _humps = find_humps(psd_db, kFs, kEdge);
-    if (_digital && !_survey_cont) _digital->analyse(psd_db, x.data(), x.size(), kFs, kEdge);  // once a step
     bool survey;
     double floor_hint;
     {
@@ -712,6 +714,15 @@ void Radio::handle_scan(Bank &b) {
       survey = _survey;
       floor_hint = _grid.reference(_cap_centre);
     }
+    // the survey streams gapped (one bank of ~0.2 ms, then a gap): fine for the spectrum, but the digital scan's
+    // timing (band_duty, tdd_frame) needs contiguous samples. A step with a block that may be digital is taken
+    // again streaming, as for the video sync check, and that capture replaces this one. Measured with a real DJI
+    // in R2: gapped, its 2.5 ms frame read as 1.28 ms (every burst and gap half as long) and it was never listed.
+    const bool gapped = survey && !_survey_cont;
+    if (_digital) _digital->analyse(psd_db, x.data(), x.size(), kFs, kEdge);
+    const bool digital_timing = gapped && _digital && _digital->wants_timing();
+    if (digital_timing) KP_LOGI("survey: %.1f MHz taken again streaming, for the digital scan", req / 1e6);
+    if (_survey_cont && _digital_only_recheck) _humps.clear();  // already checked: no second sync check
     if (!survey) {  // the survey keeps its fixed steps: they tile its spectrum
       for (const auto &h : _humps)  // whole here: an edge of it cut in another step needs no step of its own
         _whole_spans.emplace_back(_cap_centre + h.offset_hz - h.width_hz / 2, _cap_centre + h.offset_hz + h.width_hz / 2);
@@ -769,18 +780,19 @@ void Radio::handle_scan(Bank &b) {
       }
       if (known) _humps.clear();
     }
-    if (!_humps.empty()) {
-      if (survey && !_survey_cont) {
-        // the video sync check needs contiguous samples, and the survey streams gapped: the same step again,
-        // streaming (the humps are found again on its spectrum)
-        {
-          std::lock_guard<std::mutex> l(_m);
-          _survey_cont = true;
-        }
-        tune(req, 1);
-        _settle = -1;
-        return;
+    if (gapped && (!_humps.empty() || digital_timing)) {
+      // the video sync check needs contiguous samples, and the survey streams gapped: the same step again,
+      // streaming (the humps are found again on its spectrum)
+      {
+        std::lock_guard<std::mutex> l(_m);
+        _survey_cont = true;
       }
+      _digital_only_recheck = _humps.empty();
+      tune(req, 1);
+      _settle = -1;
+      return;
+    }
+    if (!_humps.empty()) {
       _cap_need = static_cast<size_t>(kCapture * kFs);
       return;
     }
@@ -823,6 +835,7 @@ void Radio::scan_step_done() {
     std::lock_guard<std::mutex> l(_m);
     recheck = _survey_cont;
     _survey_cont = false;  // survey: back to gapped
+    _digital_only_recheck = false;
   }
   _step++;
   if (_step < _plan.size()) {

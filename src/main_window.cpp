@@ -1004,6 +1004,7 @@ void MainWindow::onLost(const QString &msg) {
 QString MainWindow::digitalKind(const Pilot &p) const {
     if (p.digital == QLatin1String("hdzero")) return tr("HDZero");
     if (p.digital == QLatin1String("hdzero_narrow")) return tr("HDZero narrow");
+    if (p.digital == QLatin1String("dji")) return tr("DJI %1 MHz").arg(p.bwMHz, 0, 'f', 0);
     return tr("digital %1 MHz").arg(p.bwMHz, 0, 'f', 0);
 }
 
