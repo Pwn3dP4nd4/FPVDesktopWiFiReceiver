@@ -4,6 +4,7 @@
 #include <cmath>
 #include <iterator>
 #include <limits>
+#include <optional>
 
 #include "spectrum.h"  // kp::fpv_channels()
 
@@ -54,6 +55,15 @@ void wifi_block(int ch, Region region, double &lo, double &hi) {
 bool covered_by_pilot(const Wifi &w, const std::vector<Signal> &seen) {
     for (const auto &s : seen)
         if (std::fabs(w.mhz - s.mhz) < width(s) / 2) return true;
+    return false;
+}
+
+// tapado por un piloto o en las bandas laterales de uno mucho mas fuerte (sideband_reach)
+bool pilot_sideband(const Wifi &w, const std::vector<Signal> &seen) {
+    if (covered_by_pilot(w, seen)) return true;
+    for (const auto &s : seen)
+        if (std::fabs(w.mhz - s.mhz) < width(s) / 2 + sideband_reach(s) && w.peak_db + kSidebandBelowDb <= s.snr_db)
+            return true;
     return false;
 }
 
@@ -193,24 +203,34 @@ double ideal_spacing(const Candidate &a, const Candidate &b) {
     return 37;                            // Raceband
 }
 
+double sideband_reach(const Signal &s) {
+    return std::clamp((s.snr_db - kSidebandFromDb) * kSidebandMhzPerDb, kMaskSkirt, kSidebandMaxMhz);
+}
+
 void mask_signal(std::vector<Bin> &bins, const Signal &s, const std::vector<Signal> &others) {
     const double half = width(s) / 2;
-    std::vector<float> ring, all;
-    for (const auto &b : bins) {
-        const double d = std::fabs(b.mhz - s.mhz);
-        if (d <= half + kMaskSkirt || d > half + kMaskSkirt + kMaskRing) continue;
-        all.push_back(b.mean_db);
-        bool covered = false;
-        for (const auto &o : others)
-            covered = covered || std::fabs(b.mhz - o.mhz) <= width(o) / 2 + kMaskSkirt;
-        if (!covered) ring.push_back(b.mean_db);
-    }
-    if (ring.empty()) ring = std::move(all);
-    float level = 0;
-    if (!ring.empty()) {
+    // mediana de un anillo de kMaskRing MHz empezando a from MHz del centro (sin lo que tapan las otras); nullopt si
+    // ahi no hay espectro (fuera de lo analizado)
+    const auto ring_level = [&](double from) -> std::optional<float> {
+        std::vector<float> ring, all;
+        for (const auto &b : bins) {
+            const double d = std::fabs(b.mhz - s.mhz);
+            if (d <= from || d > from + kMaskRing) continue;
+            all.push_back(b.mean_db);
+            bool covered = false;
+            for (const auto &o : others)
+                covered = covered || std::fabs(b.mhz - o.mhz) <= width(o) / 2 + kMaskSkirt;
+            if (!covered) ring.push_back(b.mean_db);
+        }
+        if (ring.empty()) ring = std::move(all);
+        if (ring.empty()) return std::nullopt;
         std::nth_element(ring.begin(), ring.begin() + ring.size() / 2, ring.end());
-        level = ring[ring.size() / 2];
-    }
+        return ring[ring.size() / 2];
+    };
+    float level = ring_level(half + kMaskSkirt).value_or(0.f);
+    // muy por debajo de la propia senal puede ser su banda lateral (sideband_reach): el nivel, mas alla de ella
+    if (level <= s.snr_db - kMaskOwnSidebandDb)
+        if (const auto far = ring_level(half + sideband_reach(s))) level = std::min(level, *far);
     for (auto &b : bins) {
         const double d = std::fabs(b.mhz - s.mhz);
         if (d > half + kMaskSkirt) continue;
@@ -268,7 +288,7 @@ std::vector<Wifi> find_wifi(const std::vector<Bin> &bins, Region region, const s
             w.duty = static_cast<float>(duty / (total[0] + total[1]));
             w.traffic = w.mean_db >= kWifiTrafficDb;
             wifi_block(n, region, w.block_lo, w.block_hi);
-            if (!covered_by_pilot(w, seen)) out.push_back(w);
+            if (!pilot_sideband(w, seen)) out.push_back(w);
         }
     // los hombros de una senal fuerte (lo que derrama un WiFi a los lados: medido, un bloque de 80 MHz a 33 dB baja
     // de 24 a 13 dB en los 30 MHz siguientes) parecen canales WiFi flojos al lado: fuera los que tienen cerca otro
@@ -284,11 +304,12 @@ std::vector<Wifi> find_wifi(const std::vector<Bin> &bins, Region region, const s
 }
 
 void WifiMemory::update(const std::vector<Wifi> &now, const std::vector<Signal> &seen, double t_s) {
-    // lo que tapa un piloto no es un WiFi (uno recien llegado lo parece unos barridos): se olvida
+    // lo que tapa un piloto no es un WiFi (uno recien llegado lo parece unos barridos): se olvida. Lo que cae en las
+    // bandas laterales de uno fuerte no se apunta, pero no se olvida: una red vista antes de que se encendiera es real
     nets_.erase(std::remove_if(nets_.begin(), nets_.end(), [&](const Entry &e) { return covered_by_pilot(e.w, seen); }),
                 nets_.end());
     for (const auto &w : now) {
-        if (covered_by_pilot(w, seen)) continue;
+        if (pilot_sideband(w, seen)) continue;
         auto it = std::find_if(nets_.begin(), nets_.end(), [&](const Entry &e) { return e.w.ch == w.ch; });
         if (it == nets_.end()) {
             nets_.push_back(Entry{w, t_s});

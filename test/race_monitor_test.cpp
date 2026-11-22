@@ -122,6 +122,47 @@ int main() {
         check(!mv, "carrera limpia: no recomienda mover a nadie");
     }
     {
+        // lo medido: un VTX en R1 a 37 dB, muy cerca del adaptador, con sus bandas laterales encendiendose a rafagas
+        // de 10 a 45 MHz a cada lado. Como en la ventana: lo fijado es mio (se quita antes de buscar redes WiFi, que
+        // se recuerdan) y el monitor recibe el espectro tal cual. Antes salian WiFi 124-128 y 136-140, su canal a ~7
+        // dB y se recomendaba mover a R1 a F3.
+        race::Monitor m;
+        m.start(kRace);
+        WifiMemory mem;
+        std::vector<Wifi> seenWifi;
+        int sw = 0;
+        run(m, 20, [&](int, auto &b, auto &now, auto &wifi) {
+            for (auto &x : b) {
+                const double d = std::fabs(x.mhz - R1.mhz);
+                if (d <= 10) x = Bin{x.mhz, 37, 38, 1};
+                else if (d <= 45) {
+                    const float mean = std::max(0.5f, 8 - static_cast<float>(d - 10) * 0.2f);
+                    x = Bin{x.mhz, mean, mean + 14, 0.1f};
+                }
+            }
+            Signal r1;
+            r1.mhz = R1.mhz;
+            r1.snr_db = 37;
+            now.push_back(r1);
+            fly(b, now, R3.mhz, 25);
+            fly(b, now, R6.mhz, 25);
+            fly(b, now, R8.mhz, 25);
+            auto masked = b;
+            for (const auto &s : now) mask_signal(masked, s, now);
+            const auto found = find_wifi(masked, Region::Eu, now);
+            seenWifi.insert(seenWifi.end(), found.begin(), found.end());
+            mem.update(found, now, 3.3 * sw++);
+            wifi = mem.known(3.3 * (sw - 1));
+        });
+        std::printf("  mi VTX fuerte en R1 (%zu WiFi vistas):\n", seenWifi.size());
+        show(m);
+        const auto mv = m.suggest(raceband(), {});
+        show(mv, m);
+        check(seenWifi.empty(), "las bandas laterales de un VTX fijado fuerte no salen como WiFi");
+        check(m.health()[0].channel_cost < 2, "ni suben el coste de su propio canal");
+        check(!mv, "y no se recomienda mover a ese piloto por su propia senal");
+    }
+    {
         // su piloto un poco desviado (R3 en 5734): sigue siendo el suyo, no un intruso
         race::Monitor m;
         m.start(kRace);
