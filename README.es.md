@@ -63,9 +63,10 @@ FPVDesktopWiFiReceiver/
   (`kp::Frame`, RGBX 720×480/576) salen como `QImage` hacia la ventana en vez de a una `Surface`; el estado se lee
   de `Radio::status_json()`, con las mismas claves que en kepyur.
 - Los submódulos no se modifican nunca. Lo poco que sigue cambiando en kepyur se aplica al compilar sobre copias
-  en la carpeta de compilación, como sustituciones de texto listadas en `cmake/kepyur_patches.cmake`: `comb` (el
-  filtro peine en `native/dsp`, propuesto a kepyur) y `rxdma` (desatascar el RX DMA del 8822B en wifi-sdr). Si
-  upstream cambia alguna de esas líneas, CMake se para diciendo cuál.
+  en la carpeta de compilación, como sustituciones de texto listadas en `cmake/kepyur_patches.cmake`: `rxdma`
+  (desatascar el RX DMA del 8822B en wifi-sdr) y `gapped` (capturar a huecos para el analizador, también en
+  wifi-sdr). El filtro peine de croma NTSC ya está en kepyur. Si upstream cambia alguna de esas líneas, CMake se
+  para diciendo cuál.
 - Sin adaptador: `cmake --build build/msys2 --target radio_sim` y
   `KP_SIM_FILE=grabacion.cs16 build/msys2/radio_sim --scan [--digital]` (o `--watch MHZ`), que reproduce una
   grabación de 40 MS/s centrada en 5770 MHz como si fuera el adaptador (`sim_receiver.cpp` de kepyur).
