@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.22)
-project(FPVDesktopWiFiReceiver VERSION 0.12.0 LANGUAGES C CXX)
+project(FPVDesktopWiFiReceiver VERSION 0.13.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
