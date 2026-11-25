@@ -4,10 +4,6 @@
 <context>
     <name>ChannelAnalyzer</name>
     <message>
-        <source>Channel analyzer</source>
-        <translation>Analizador de canales</translation>
-    </message>
-    <message>
         <source>Bands to analyse</source>
         <translation>Bandas a analizar</translation>
     </message>
@@ -18,6 +14,10 @@
     <message>
         <source>Pilots flying together</source>
         <translation>Pilotos que vuelan a la vez</translation>
+    </message>
+    <message>
+        <source>5.8 GHz analyzer (video)</source>
+        <translation>Analizador de 5,8 GHz (vídeo)</translation>
     </message>
     <message>
         <source>Analog</source>
@@ -831,6 +831,420 @@
     </message>
 </context>
 <context>
+    <name>ElrsAnalyzer</name>
+    <message>
+        <source>Connect the adapter first.</source>
+        <translation>Conecta antes el adaptador.</translation>
+    </message>
+    <message>
+        <source>2.4 GHz analyzer (ELRS)</source>
+        <translation>Analizador de 2,4 GHz (ELRS)</translation>
+    </message>
+    <message>
+        <source>I fly</source>
+        <translation>Vuelo</translation>
+    </message>
+    <message>
+        <source>Racing</source>
+        <translation>Carreras</translation>
+    </message>
+    <message>
+        <source>Freestyle</source>
+        <translation>Freestyle</translation>
+    </message>
+    <message>
+        <source>Long range</source>
+        <translation>Largo alcance</translation>
+    </message>
+    <message>
+        <source>What you fly: it changes which packet rates are suggested</source>
+        <translation>Qué vuelas: cambia las tasas de paquetes que se sugieren</translation>
+    </message>
+    <message>
+        <source>ELRS regulatory domain</source>
+        <translation>Dominio regulatorio de ELRS</translation>
+    </message>
+    <message>
+        <source>Other ELRS pilots</source>
+        <translation>Otros pilotos ELRS</translation>
+    </message>
+    <message>
+        <source>How many other pilots will fly ELRS 2.4 GHz at the same time as you (not counting you). Their packets hop over the same 80 channels and sometimes meet yours. Pilots already flying while you measure also show in the spectrum as short bursts.</source>
+        <translation>Cuántos pilotos más van a volar con ELRS de 2,4 GHz a la vez que tú (sin contarte). Sus paquetes saltan por los mismos 80 canales y a veces coinciden con los tuyos. Los que ya vuelan mientras mides también salen en el espectro como ráfagas cortas.</translation>
+    </message>
+    <message>
+        <source>ISM 2.4 GHz (FCC, most countries)</source>
+        <translation>ISM 2,4 GHz (FCC, la mayoría de países)</translation>
+    </message>
+    <message>
+        <source>EU LBT (CE_LBT)</source>
+        <translation>UE LBT (CE_LBT)</translation>
+    </message>
+    <message>
+        <source>The 2.4 GHz regulatory domain your ELRS firmware was built with (shown as ISM2G4 or CE_LBT). The EU build listens before transmitting above 10 mW and skips the packet when the channel is busy.</source>
+        <translation>El dominio regulatorio de 2,4 GHz con el que se compiló tu firmware de ELRS (aparece como ISM2G4 o CE_LBT). El de la UE escucha antes de transmitir por encima de 10 mW y se salta el paquete si el canal está ocupado.</translation>
+    </message>
+    <message>
+        <source>Average</source>
+        <translation>Media</translation>
+    </message>
+    <message numerus="yes">
+        <source>last %n sweep(s)</source>
+        <translation>
+            <numerusform>último %n barrido</numerusform>
+            <numerusform>últimos %n barridos</numerusform>
+        </translation>
+    </message>
+    <message>
+        <source>How many recent sweeps the graph and the advice average. Fewer: it follows changes sooner; more: it also catches WiFi that only transmits now and then.</source>
+        <translation>Cuántos barridos recientes promedian la gráfica y los consejos. Menos: sigue antes los cambios; más: también pilla las WiFi que solo transmiten de vez en cuando.</translation>
+    </message>
+    <message>
+        <source>Stop</source>
+        <translation>Parar</translation>
+    </message>
+    <message>
+        <source>Start analysis</source>
+        <translation>Empezar el análisis</translation>
+    </message>
+    <message>
+        <source>Stop when the result is steady</source>
+        <translation>Parar cuando el resultado no cambie</translation>
+    </message>
+    <message>
+        <source>On the air</source>
+        <translation>En el aire</translation>
+    </message>
+    <message>
+        <source>How to set up ELRS here</source>
+        <translation>Cómo configurar ELRS aquí</translation>
+    </message>
+    <message>
+        <source>Signal</source>
+        <translation>Señal</translation>
+    </message>
+    <message>
+        <source>Frequency</source>
+        <translation>Frecuencia</translation>
+    </message>
+    <message>
+        <source>Peak</source>
+        <translation>Pico</translation>
+    </message>
+    <message>
+        <source>Activity</source>
+        <translation>Actividad</translation>
+    </message>
+    <message>
+        <source>Ready: press Start analysis.</source>
+        <translation>Listo: pulsa Empezar el análisis.</translation>
+    </message>
+    <message>
+        <source>Graph:</source>
+        <translation>Gráfica:</translation>
+    </message>
+    <message>
+        <source>ELRS channels:</source>
+        <translation>Canales de ELRS:</translation>
+    </message>
+    <message>
+        <source>average level</source>
+        <translation>nivel medio</translation>
+    </message>
+    <message>
+        <source>peaks</source>
+        <translation>picos</translation>
+    </message>
+    <message>
+        <source>bursts</source>
+        <translation>ráfagas</translation>
+    </message>
+    <message>
+        <source>WiFi network</source>
+        <translation>red WiFi</translation>
+    </message>
+    <message>
+        <source>sweep</source>
+        <translation>barrido</translation>
+    </message>
+    <message>
+        <source>clean</source>
+        <translation>limpio</translation>
+    </message>
+    <message>
+        <source>busy at times</source>
+        <translation>ocupado a ratos</translation>
+    </message>
+    <message>
+        <source>busy often</source>
+        <translation>ocupado a menudo</translation>
+    </message>
+    <message>
+        <source>not measured</source>
+        <translation>sin medir</translation>
+    </message>
+    <message>
+        <source>dB over the adapter&apos;s noise floor, measured where the adapter is (the drone&apos;s receiver in flight may hear more or less). The adapter does not reach below 2402 MHz: the two lowest ELRS channels (2400.4 and 2401.4) are not measured, and near the band edges signals read a few dB low.</source>
+        <translation>dB sobre el suelo de ruido del adaptador, medidos donde está el adaptador (el receptor del dron en vuelo puede oír más o menos). El adaptador no llega por debajo de 2402 MHz: los dos canales de ELRS más bajos (2400,4 y 2401,4) no se miden, y cerca de los bordes de la banda las señales salen unos dB más débiles.</translation>
+    </message>
+    <message>
+        <source>Analysing %1-%2 MHz...</source>
+        <translation>Analizando %1-%2 MHz...</translation>
+    </message>
+    <message numerus="yes">
+        <source>Stopped after %n sweep(s).</source>
+        <translation>
+            <numerusform>Parado tras %n barrido.</numerusform>
+            <numerusform>Parado tras %n barridos.</numerusform>
+        </translation>
+    </message>
+    <message>
+        <source>Stopped: the receiver went back to scanning or watching.</source>
+        <translation>Parado: el receptor ha vuelto a escanear o a ver un canal.</translation>
+    </message>
+    <message numerus="yes">
+        <source>Analysing %1-%2 MHz: %n sweep(s) so far.</source>
+        <translation>
+            <numerusform>Analizando %1-%2 MHz: %n barrido hasta ahora.</numerusform>
+            <numerusform>Analizando %1-%2 MHz: %n barridos hasta ahora.</numerusform>
+        </translation>
+    </message>
+    <message>
+        <source>Measuring...</source>
+        <translation>Midiendo...</translation>
+    </message>
+    <message>
+        <source>%1 of 80 ELRS channels measured: %2 clean, %3 busy at times, %4 busy often. About %5 of the hops land on a busy moment.</source>
+        <translation>%1 de 80 canales de ELRS medidos: %2 limpios, %3 ocupados a ratos, %4 ocupados a menudo. Más o menos el %5 de los saltos cae en un momento ocupado.</translation>
+    </message>
+    <message numerus="yes">
+        <source>Other pilots would meet about %1 more.</source>
+        <translation>
+            <numerusform>Los otros pilotos pisarían más o menos un %1 más.</numerusform>
+            <numerusform>Los otros pilotos pisarían más o menos un %1 más.</numerusform>
+        </translation>
+    </message>
+    <message>
+        <source>Clean band</source>
+        <translation>Banda limpia</translation>
+    </message>
+    <message>
+        <source>Some interference</source>
+        <translation>Algo de interferencia</translation>
+    </message>
+    <message>
+        <source>Heavy interference</source>
+        <translation>Mucha interferencia</translation>
+    </message>
+    <message>
+        <source>Still measuring</source>
+        <translation>Aún midiendo</translation>
+    </message>
+    <message>
+        <source>WiFi channel %1</source>
+        <translation>Canal WiFi %1</translation>
+    </message>
+    <message>
+        <source>traffic, %1 of the time</source>
+        <translation>tráfico, el %1 del tiempo</translation>
+    </message>
+    <message>
+        <source>beacons only (idle)</source>
+        <translation>solo beacons (sin tráfico)</translation>
+    </message>
+    <message>
+        <source>whole band</source>
+        <translation>toda la banda</translation>
+    </message>
+    <message>
+        <source>short bursts in %1 of the channels</source>
+        <translation>ráfagas cortas en el %1 de los canales</translation>
+    </message>
+    <message>
+        <source>Continuous signal</source>
+        <translation>Señal continua</translation>
+    </message>
+    <message>
+        <source>always on</source>
+        <translation>siempre encendida</translation>
+    </message>
+    <message>
+        <source>Very strong signal nearby</source>
+        <translation>Señal muy fuerte cerca</translation>
+    </message>
+    <message>
+        <source>Nothing besides noise</source>
+        <translation>Nada aparte del ruido</translation>
+    </message>
+    <message>
+        <source>&lt;b&gt;Packet rate:&lt;/b&gt; the band is clean: &lt;b&gt;F1000&lt;/b&gt; or &lt;b&gt;F500&lt;/b&gt; (FLRC, lowest latency) or &lt;b&gt;500 Hz&lt;/b&gt; (LoRa). The ELRS documentation recommends 500 Hz or faster for racing.</source>
+        <translation>&lt;b&gt;Tasa de paquetes:&lt;/b&gt; la banda está limpia: &lt;b&gt;F1000&lt;/b&gt; o &lt;b&gt;F500&lt;/b&gt; (FLRC, la menor latencia) o &lt;b&gt;500 Hz&lt;/b&gt; (LoRa). La documentación de ELRS recomienda 500 Hz o más para carreras.</translation>
+    </message>
+    <message>
+        <source>&lt;b&gt;Packet rate:&lt;/b&gt; &lt;b&gt;500 Hz&lt;/b&gt; (LoRa: the ELRS documentation notes that 2.4 GHz LoRa handles WiFi noise very well) or &lt;b&gt;D500&lt;/b&gt;, which sends every packet twice on 2 different frequencies (higher LQ, a little more latency).</source>
+        <translation>&lt;b&gt;Tasa de paquetes:&lt;/b&gt; &lt;b&gt;500 Hz&lt;/b&gt; (LoRa: la documentación de ELRS dice que LoRa en 2,4 GHz aguanta muy bien el ruido de las WiFi) o &lt;b&gt;D500&lt;/b&gt;, que manda cada paquete dos veces en 2 frecuencias distintas (más LQ, algo más de latencia).</translation>
+    </message>
+    <message>
+        <source>&lt;b&gt;Packet rate:&lt;/b&gt; &lt;b&gt;D250&lt;/b&gt; (every packet 4 times across 3 frequencies) or &lt;b&gt;D500&lt;/b&gt; (twice on 2 frequencies): higher LQ, a little more latency. Avoid F1000/F500 without repeats.</source>
+        <translation>&lt;b&gt;Tasa de paquetes:&lt;/b&gt; &lt;b&gt;D250&lt;/b&gt; (cada paquete 4 veces repartidas en 3 frecuencias) o &lt;b&gt;D500&lt;/b&gt; (dos veces en 2 frecuencias): más LQ, algo más de latencia. Evita F1000/F500 sin repeticiones.</translation>
+    </message>
+    <message>
+        <source>&lt;b&gt;Packet rate:&lt;/b&gt; &lt;b&gt;250 Hz&lt;/b&gt; (LoRa, more sensitive) or &lt;b&gt;D500&lt;/b&gt; (every packet twice on 2 different frequencies). Avoid F1000.</source>
+        <translation>&lt;b&gt;Tasa de paquetes:&lt;/b&gt; &lt;b&gt;250 Hz&lt;/b&gt; (LoRa, más sensible) o &lt;b&gt;D500&lt;/b&gt; (cada paquete dos veces en 2 frecuencias distintas). Evita F1000.</translation>
+    </message>
+    <message>
+        <source>&lt;b&gt;Packet rate:&lt;/b&gt; &lt;b&gt;D250&lt;/b&gt; (every packet 4 times across 3 frequencies) or &lt;b&gt;150 Hz&lt;/b&gt; / &lt;b&gt;100 Hz Full&lt;/b&gt; (LoRa, more sensitive).</source>
+        <translation>&lt;b&gt;Tasa de paquetes:&lt;/b&gt; &lt;b&gt;D250&lt;/b&gt; (cada paquete 4 veces repartidas en 3 frecuencias) o &lt;b&gt;150 Hz&lt;/b&gt; / &lt;b&gt;100 Hz Full&lt;/b&gt; (LoRa, más sensibles).</translation>
+    </message>
+    <message>
+        <source>&lt;b&gt;Packet rate:&lt;/b&gt; &lt;b&gt;150 Hz&lt;/b&gt; or &lt;b&gt;100 Hz Full&lt;/b&gt; for range with good response; &lt;b&gt;50 Hz&lt;/b&gt; for the most range (the best sensitivity).</source>
+        <translation>&lt;b&gt;Tasa de paquetes:&lt;/b&gt; &lt;b&gt;150 Hz&lt;/b&gt; o &lt;b&gt;100 Hz Full&lt;/b&gt; para alcance con buena respuesta; &lt;b&gt;50 Hz&lt;/b&gt; para el máximo alcance (la mejor sensibilidad).</translation>
+    </message>
+    <message numerus="yes">
+        <source>Estimate from what was measured and %n other pilot(s) flying the same mode. A packet that meets another pilot&apos;s is often still received if it arrives stronger: take it as an upper bound.</source>
+        <translation>
+            <numerusform>Estimación a partir de lo medido y de %n piloto más volando el mismo modo. Un paquete que coincide con el de otro piloto a menudo llega igual si llega más fuerte: tómalo como un máximo.</numerusform>
+            <numerusform>Estimación a partir de lo medido y de %n pilotos más volando el mismo modo. Un paquete que coincide con el de otro piloto a menudo llega igual si llega más fuerte: tómalo como un máximo.</numerusform>
+        </translation>
+    </message>
+    <message>
+        <source>Estimate from what was measured: with repeats (D250, D500) a packet is lost only if every frequency it goes out on is busy.</source>
+        <translation>Estimación a partir de lo medido: con repeticiones (D250, D500) un paquete solo se pierde si están ocupadas todas las frecuencias en las que sale.</translation>
+    </message>
+    <message>
+        <source>Mode</source>
+        <translation>Modo</translation>
+    </message>
+    <message>
+        <source>Modulation</source>
+        <translation>Modulación</translation>
+    </message>
+    <message>
+        <source>Sensitivity</source>
+        <translation>Sensibilidad</translation>
+    </message>
+    <message>
+        <source>Packets lost (estimate)</source>
+        <translation>Paquetes perdidos (estimación)</translation>
+    </message>
+    <message>
+        <source>&lt;b&gt;Gemini:&lt;/b&gt; with a Gemini TX module and a true-diversity receiver, every packet goes out at once on two frequencies 40 MHz apart: a hop that lands on a WiFi burst or on another pilot&apos;s packet is not lost. It raises LQ, not range. The ELRS documentation recommends it for events with 6-8 pilots. With a single-antenna receiver, leave the TX in Switch mode.</source>
+        <translation>&lt;b&gt;Gemini:&lt;/b&gt; con un módulo TX Gemini y un receptor true diversity, cada paquete sale a la vez en dos frecuencias separadas 40 MHz: un salto que cae en una ráfaga de WiFi o en el paquete de otro piloto no se pierde. Sube el LQ, no el alcance. La documentación de ELRS lo recomienda para eventos de 6-8 pilotos. Con un receptor de una sola antena, deja el TX en modo Switch.</translation>
+    </message>
+    <message numerus="yes">
+        <source>&lt;b&gt;%n other pilot(s):&lt;/b&gt; about %1 of your packets would meet one of theirs on the same channel at the same moment (all on 500 Hz; less with F500, which is on the air for less time). Use your own binding phrase, never a common one: it sets your hop sequence. Turn off the radios of pilots who are not flying: a handset left on in the pits still transmits.</source>
+        <translation>
+            <numerusform>&lt;b&gt;%n piloto más:&lt;/b&gt; más o menos el %1 de tus paquetes coincidiría con uno suyo en el mismo canal y en el mismo momento (todos a 500 Hz; menos con F500, que está menos tiempo en el aire). Usa tu propia frase de enlace, nunca una común: de ella sale tu secuencia de saltos. Que apaguen la emisora los pilotos que no vuelan: una emisora encendida en boxes sigue transmitiendo.</numerusform>
+            <numerusform>&lt;b&gt;%n pilotos más:&lt;/b&gt; más o menos el %1 de tus paquetes coincidiría con uno suyo en el mismo canal y en el mismo momento (todos a 500 Hz; menos con F500, que está menos tiempo en el aire). Usa tu propia frase de enlace, nunca una común: de ella sale tu secuencia de saltos. Que apaguen la emisora los pilotos que no vuelan: una emisora encendida en boxes sigue transmitiendo.</numerusform>
+        </translation>
+    </message>
+    <message>
+        <source>&lt;b&gt;Dynamic Power:&lt;/b&gt; set Max Power with some headroom (within your legal limit) and Dynamic to Dyn: the TX lowers power while the link is good and jumps to the maximum when LQ drops. It needs telemetry (not with Telem Ratio Off or Race); with an AUX switch, switch low forces Max Power.</source>
+        <translation>&lt;b&gt;Potencia dinámica:&lt;/b&gt; pon Max Power con margen (sin pasar del límite legal) y Dynamic en Dyn: el TX baja la potencia mientras el enlace va bien y salta al máximo cuando cae el LQ. Necesita telemetría (no con Telem Ratio en Off ni en Race); con un interruptor AUX, el interruptor abajo fuerza Max Power.</translation>
+    </message>
+    <message>
+        <source>&lt;b&gt;EU LBT (CE_LBT):&lt;/b&gt; above 10 mW the radios listen before transmitting and skip the packet when the channel is busy (EN 300 328). With this much activity more packets are skipped: fly closer, or remove the sources nearby.</source>
+        <translation>&lt;b&gt;UE LBT (CE_LBT):&lt;/b&gt; por encima de 10 mW las radios escuchan antes de transmitir y se saltan el paquete si el canal está ocupado (EN 300 328). Con tanta actividad se saltan más paquetes: vuela más cerca o quita las fuentes cercanas.</translation>
+    </message>
+    <message numerus="yes">
+        <source>&lt;b&gt;WiFi:&lt;/b&gt; strong network on channel %1 (%n network(s)). If it is yours (router, phone hotspot, goggles&apos; or DVR WiFi, a laptop), turn its 2.4 GHz off or move it to 5 GHz. If not, move away from it: distance helps more than any setting. ELRS hops over the whole band, so a WiFi channel cannot be avoided by choosing ELRS channels.</source>
+        <translation>
+            <numerusform>&lt;b&gt;WiFi:&lt;/b&gt; red fuerte en el canal %1. Si es tuya (router, punto de acceso del móvil, la WiFi de las gafas o del DVR, un portátil), apaga su 2,4 GHz o pásala a 5 GHz. Si no, aléjate de ella: la distancia ayuda más que cualquier ajuste. ELRS salta por toda la banda, así que un canal WiFi no se puede esquivar eligiendo canales de ELRS.</numerusform>
+            <numerusform>&lt;b&gt;WiFi:&lt;/b&gt; redes fuertes en los canales %1. Si alguna es tuya (router, punto de acceso del móvil, la WiFi de las gafas o del DVR, un portátil), apaga su 2,4 GHz o pásala a 5 GHz. Si no, aléjate de ellas: la distancia ayuda más que cualquier ajuste. ELRS salta por toda la banda, así que un canal WiFi no se puede esquivar eligiendo canales de ELRS.</numerusform>
+        </translation>
+    </message>
+    <message>
+        <source>&lt;b&gt;ELRS&apos;s own WiFi:&lt;/b&gt; the TX module (Enable WiFi), the VRx backpack (Enable VRX WiFi) and the receiver use 2.4 GHz WiFi for updates. The receiver turns its WiFi on by itself if it gets no link for a while (60 s with the default options): power the receiver with the TX already on, and do not leave any of them in WiFi mode while flying.</source>
+        <translation>&lt;b&gt;La WiFi del propio ELRS:&lt;/b&gt; el módulo TX (Enable WiFi), el backpack del VRx (Enable VRX WiFi) y el receptor usan WiFi de 2,4 GHz para actualizar. El receptor enciende su WiFi solo si pasa un rato sin enlace (60 s con las opciones por defecto): conecta la batería con el TX ya encendido, y no dejes ninguno en modo WiFi mientras vuelas.</translation>
+    </message>
+    <message>
+        <source>&lt;b&gt;Antennas&lt;/b&gt; (common practice, not from the ELRS documentation): the receiver&apos;s at 90° to each other, out of the carbon frame and away from the VTX antenna and the power wires; the TX antenna not hidden behind your body.</source>
+        <translation>&lt;b&gt;Antenas&lt;/b&gt; (práctica habitual, no de la documentación de ELRS): las del receptor a 90° entre sí, fuera del chasis de carbono y lejos de la antena del VTX y de los cables de potencia; la del TX sin taparla con el cuerpo.</translation>
+    </message>
+    <message>
+        <source>&lt;b&gt;Telemetry ratio:&lt;/b&gt; the ELRS documentation recommends &lt;b&gt;Race&lt;/b&gt; for racing: while armed, every packet goes to your sticks (without telemetry there is no Dynamic Power).</source>
+        <translation>&lt;b&gt;Ratio de telemetría:&lt;/b&gt; la documentación de ELRS recomienda &lt;b&gt;Race&lt;/b&gt; para carreras: mientras está armado, todos los paquetes van a tus sticks (sin telemetría no hay potencia dinámica).</translation>
+    </message>
+    <message>
+        <source>&lt;b&gt;Telemetry ratio:&lt;/b&gt; &lt;b&gt;Std&lt;/b&gt; (it follows the packet rate). Every telemetry packet is one your sticks do not get (1:64 = one in 64), so do not raise it in a busy band.</source>
+        <translation>&lt;b&gt;Ratio de telemetría:&lt;/b&gt; &lt;b&gt;Std&lt;/b&gt; (se ajusta a la tasa de paquetes). Cada paquete de telemetría es uno que no van a tener tus sticks (1:64 = uno de cada 64), así que no lo subas con la banda ocupada.</translation>
+    </message>
+    <message>
+        <source>&lt;b&gt;Another band:&lt;/b&gt; 2.4 GHz is very busy here. If you always fly at this spot, ELRS on 900 MHz (868/915) does not share the band with WiFi; with LR1121 hardware, GemX sends on 900 MHz and 2.4 GHz at once.</source>
+        <translation>&lt;b&gt;Otra banda:&lt;/b&gt; aquí los 2,4 GHz están muy ocupados. Si siempre vuelas en este sitio, ELRS de 900 MHz (868/915) no comparte banda con la WiFi; con hardware LR1121, GemX transmite a la vez en 900 MHz y en 2,4 GHz.</translation>
+    </message>
+    <message>
+        <source>From the ExpressLRS documentation:</source>
+        <translation>De la documentación de ExpressLRS:</translation>
+    </message>
+    <message>
+        <source>&lt;b&gt;Packet rate:&lt;/b&gt; &lt;b&gt;250 Hz&lt;/b&gt; or &lt;b&gt;500 Hz&lt;/b&gt; (LoRa): good range and response. F500 also works in a clean band.</source>
+        <translation>&lt;b&gt;Tasa de paquetes:&lt;/b&gt; &lt;b&gt;250 Hz&lt;/b&gt; o &lt;b&gt;500 Hz&lt;/b&gt; (LoRa): buen alcance y buena respuesta. Con la banda limpia, F500 también va bien.</translation>
+    </message>
+    <message numerus="yes">
+        <source>Stop the analysis by itself once the average holds %n sweeps, it has run for at least %1 s and the verdict and the suggestions have not changed for %2 s; and after %3 s in any case.</source>
+        <translation>
+            <numerusform>Para el análisis solo cuando la media ya tiene %n barrido, ha medido al menos %1 s y el veredicto y las sugerencias no han cambiado en %2 s; y a los %3 s en cualquier caso.</numerusform>
+            <numerusform>Para el análisis solo cuando la media ya tiene %n barridos, ha medido al menos %1 s y el veredicto y las sugerencias no han cambiado en %2 s; y a los %3 s en cualquier caso.</numerusform>
+        </translation>
+    </message>
+    <message>
+        <source>the verdict</source>
+        <translation>el veredicto</translation>
+    </message>
+    <message>
+        <source>which suggestions apply</source>
+        <translation>qué sugerencias salen</translation>
+    </message>
+    <message numerus="yes">
+        <source>Stopped by itself after %n sweep(s): the suggestions had not changed for %1 s. Start again to measure anew.</source>
+        <translation>
+            <numerusform>Parado solo tras %n barrido: las sugerencias no habían cambiado en %1 s. Empieza otra vez para volver a medir.</numerusform>
+            <numerusform>Parado solo tras %n barridos: las sugerencias no habían cambiado en %1 s. Empieza otra vez para volver a medir.</numerusform>
+        </translation>
+    </message>
+    <message>
+        <source>Stopped by itself after %1 s: the band keeps changing (last change: %2), so the suggestions cover what was seen in that time. Start again to measure anew.</source>
+        <translation>Parado solo tras %1 s: la banda no deja de cambiar (lo último que cambió: %2), así que las sugerencias recogen lo visto en ese tiempo. Empieza otra vez para volver a medir.</translation>
+    </message>
+    <message>
+        <source>Hopping signals (ELRS, Bluetooth, other radios)</source>
+        <translation>Señales que saltan (ELRS, Bluetooth, otras emisoras)</translation>
+    </message>
+    <message>
+        <source>&lt;b&gt;Packet rate:&lt;/b&gt; &lt;b&gt;50 Hz&lt;/b&gt; or &lt;b&gt;100 Hz Full&lt;/b&gt; (LoRa, the most sensitive): the link margin is what keeps you flying through the interference.</source>
+        <translation>&lt;b&gt;Tasa de paquetes:&lt;/b&gt; &lt;b&gt;50 Hz&lt;/b&gt; o &lt;b&gt;100 Hz Full&lt;/b&gt; (LoRa, las más sensibles): el margen del enlace es lo que te mantiene volando a pesar de la interferencia.</translation>
+    </message>
+    <message>
+        <source>&lt;b&gt;Packet rate:&lt;/b&gt; &lt;b&gt;50 Hz&lt;/b&gt;. For long range here, consider ELRS on 900 MHz instead.</source>
+        <translation>&lt;b&gt;Tasa de paquetes:&lt;/b&gt; &lt;b&gt;50 Hz&lt;/b&gt;. Para largo alcance aquí, plantéate ELRS de 900 MHz.</translation>
+    </message>
+    <message>
+        <source>&lt;b&gt;Other radios:&lt;/b&gt; short bursts all over the band: Bluetooth, other radio links or other pilots&apos; ELRS. ELRS hops past them; make sure every pilot uses their own binding phrase. If it is your own radio, turn it and the receiver off while measuring: your own link is not interference, but it hides what else is on the air (it hid two WiFi networks in a test).</source>
+        <translation>&lt;b&gt;Otras emisoras:&lt;/b&gt; ráfagas cortas por toda la banda: Bluetooth, otros enlaces de radio o el ELRS de otros pilotos. ELRS salta por encima de ellas; asegúrate de que cada piloto usa su propia frase de enlace. Si es tu propia emisora, apágala junto con el receptor mientras mides: tu propio enlace no es interferencia, pero tapa lo demás que hay en el aire (en una prueba tapó dos redes WiFi).</translation>
+    </message>
+    <message>
+        <source>&lt;b&gt;Continuous signal&lt;/b&gt; at %1-%2 MHz (not WiFi): it could be a 2.4 GHz analog video transmitter, a wireless camera or a baby monitor. ELRS loses every hop that lands there: find it and turn it off, or move away from it.</source>
+        <translation>&lt;b&gt;Señal continua&lt;/b&gt; en %1-%2 MHz (no es WiFi): puede ser un emisor de vídeo analógico de 2,4 GHz, una cámara inalámbrica o un vigilabebés. ELRS pierde cada salto que cae ahí: búscalo y apágalo, o aléjate de él.</translation>
+    </message>
+    <message>
+        <source>&lt;b&gt;Very strong signal&lt;/b&gt; (%1 dB over the noise) at %2 MHz: something transmits very close to the adapter. A transmitter that close can deafen a receiver even outside its own channel: keep the receiver&apos;s antennas away from the VTX and other radios, and the TX module away from phones and routers.</source>
+        <translation>&lt;b&gt;Señal muy fuerte&lt;/b&gt; (%1 dB sobre el ruido) en %2 MHz: algo transmite muy cerca del adaptador. Un emisor tan cerca puede ensordecer a un receptor aunque no esté en su canal: aleja las antenas del receptor del VTX y de otras radios, y el módulo TX de móviles y routers.</translation>
+    </message>
+    <message>
+        <source>Wait for a few sweeps: the suggestions need most of the band measured.</source>
+        <translation>Espera unos barridos: las sugerencias necesitan medida la mayor parte de la banda.</translation>
+    </message>
+    <message>
+        <source>Press Start analysis. In a couple of sweeps (a few seconds) you will see how busy each ELRS channel is and how to set up ELRS for it.</source>
+        <translation>Pulsa Empezar el análisis. En un par de barridos (unos segundos) verás lo ocupado que está cada canal de ELRS y cómo configurar ELRS para ello.</translation>
+    </message>
+    <message>
+        <source>ELRS hops over all 80 channels in an order set by the binding phrase, and no channel can be left out: what you can choose is how robust each packet is, the power and where the antennas go.</source>
+        <translation>ELRS salta por los 80 canales en un orden que sale de la frase de enlace, y no se puede quitar ninguno: lo que sí se puede elegir es lo robusto que es cada paquete, la potencia y dónde van las antenas.</translation>
+    </message>
+</context>
+<context>
     <name>MainWindow</name>
     <message>
         <source>Desktop shortcut created</source>
@@ -879,12 +1293,8 @@ S: captura   R: grabar vídeo</translation>
         <translation>Modo experimental: las señales digitales saldrán en la lista desde el próximo escaneo</translation>
     </message>
     <message>
-        <source>Channel analyzer running: no video until it stops</source>
-        <translation>Analizador de canales en marcha: sin vídeo hasta que pare</translation>
-    </message>
-    <message>
-        <source>Channel analyzer stopped</source>
-        <translation>Analizador de canales parado</translation>
+        <source>Stopped: the 2.4 GHz analyzer (ELRS) is using the adapter.</source>
+        <translation>Parado: el analizador de 2,4 GHz (ELRS) está usando el adaptador.</translation>
     </message>
     <message>
         <source>Scan 1 channel</source>
@@ -1055,12 +1465,16 @@ S: captura   R: grabar vídeo</translation>
         <translation>&amp;Herramientas</translation>
     </message>
     <message>
-        <source>Channel &amp;analyzer...</source>
-        <translation>&amp;Analizador de canales...</translation>
-    </message>
-    <message>
         <source>Find the cleanest channels for several analog and HDZero pilots flying together</source>
         <translation>Busca los canales más limpios para varios pilotos analógicos y HDZero que vuelan a la vez</translation>
+    </message>
+    <message>
+        <source>2.4 GHz analyzer (&amp;ELRS)...</source>
+        <translation>Analizador de 2,4 GHz (&amp;ELRS)...</translation>
+    </message>
+    <message>
+        <source>See how busy the 2.4 GHz band is (WiFi, Bluetooth...) and how to set up ELRS for it</source>
+        <translation>Mira lo ocupada que está la banda de 2,4 GHz (WiFi, Bluetooth...) y cómo configurar ELRS para ello</translation>
     </message>
     <message>
         <source>&amp;Help</source>
@@ -1331,6 +1745,22 @@ Lo grabado hasta entonces se ha guardado en %2</translation>
     <message>
         <source>DJI %1 MHz</source>
         <translation>DJI %1 MHz</translation>
+    </message>
+    <message>
+        <source>Stopped: the 5.8 GHz analyzer (video) is using the adapter.</source>
+        <translation>Parado: el analizador de 5,8 GHz (vídeo) está usando el adaptador.</translation>
+    </message>
+    <message>
+        <source>Analyzer running: no video until it stops</source>
+        <translation>Analizador en marcha: sin vídeo hasta que pare</translation>
+    </message>
+    <message>
+        <source>Analyzer stopped</source>
+        <translation>Analizador parado</translation>
+    </message>
+    <message>
+        <source>5.8 GHz analyzer (&amp;video)...</source>
+        <translation>Analizador de 5,8 GHz (&amp;vídeo)...</translation>
     </message>
     <message>
         <source>%1 MHz is between several standard channels (%2): from the frequency alone it is not possible to tell which one. Right-click to say which one is yours.</source>

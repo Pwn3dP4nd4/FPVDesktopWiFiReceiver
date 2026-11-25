@@ -34,6 +34,15 @@ std::vector<double> survey_plan_for(double lo, double hi) {
     return plan;
 }
 
+std::vector<double> survey_plan_24(double lo, double hi) {
+    constexpr double kFirst = 2422, kLast = 2462;  // centros sintonizables a 40 MHz de ancho
+    std::vector<double> plan;
+    for (double c = kFirst; c <= kLast; c += 20)
+        if (c + 20 > lo && c - 20 < hi) plan.push_back(c * 1e6);
+    if (plan.empty()) plan.push_back(std::clamp((lo + hi) / 2, kFirst, kLast) * 1e6);
+    return plan;
+}
+
 int full_scan_steps() {
     int n = 0;
     for (double c = 5652; c <= 5940; c += 20) n++;

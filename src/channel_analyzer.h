@@ -77,6 +77,9 @@ class ChannelAnalyzer : public QDialog {
 public:
     ChannelAnalyzer(Backend *backend, QWidget *parent = nullptr);
     void setAdapterOpen(bool open);
+    bool isRunning() const { return running_; }
+    // el analizador de 2,4 GHz se ha puesto en marcha (el barrido ya es suyo): parar sin pedirselo al backend
+    void abandon(const QString &why);
     // test/analyzer_shot.cpp: pilotos (< 0 = los guardados) y empezar sin clic
     void setCounts(int analog, int hdzero);
     void startForTest() { if (!running_) toggle(); }

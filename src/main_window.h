@@ -17,6 +17,7 @@ class QLabel;
 class QSettings;
 class QTimer;
 class ChannelAnalyzer;
+class ElrsAnalyzer;
 class QJsonObject;
 class VideoWidget;
 class VideoRecorder;
@@ -116,7 +117,12 @@ private:
     QAction *devModeAct_ = nullptr;
     QMenu *toolsMenu_ = nullptr;
     QAction *analyzerAct_ = nullptr;
+    QAction *elrsAct_ = nullptr;
     ChannelAnalyzer *analyzer_ = nullptr;  // se crea al abrirlo
+    ElrsAnalyzer *elrs_ = nullptr;         // analizador de 2,4 GHz (ELRS), se crea al abrirlo
+    void openElrsAnalyzer();
+    // uno de los dos analizadores ha empezado o parado: el otro deja el barrido; sin video mientras alguno barre
+    void analyzerRunning(QObject *who, bool on);
     bool analyzing_ = false;               // el analizador barre: sin escaneo ni video
     void openAnalyzer();
     QAction *expModeAct_ = nullptr;  // modo experimental (se guarda): senales digitales (HDZero) al escanear

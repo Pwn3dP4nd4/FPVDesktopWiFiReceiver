@@ -110,7 +110,7 @@ sudo cp packaging/linux/60-kepyur.rules /etc/udev/rules.d/ && sudo udevadm contr
 
 The kernel driver `rtw88_8822bu` is detached automatically when the adapter is opened.
 
-The menu bar (*File*, *View*, *Tools → Channel analyzer*...) is always drawn inside the window, also on desktops
+The menu bar (*File*, *View*, *Tools → 5.8 GHz analyzer (video)*...) is always drawn inside the window, also on desktops
 with a global menu on the top panel (KDE Plasma's *Global Menu*, as on Garuda): there Qt would otherwise move it to
 the panel and the window would show no menu. `KP_GLOBAL_MENU=1` keeps the global menu.
 
@@ -234,9 +234,9 @@ Command-line options (optional, for testing): `--demo` no hardware (colour bars)
 `--watch 5800` connect and watch that frequency · `--rate 20|40` sample rate when watching · `--fullscreen` start in full screen · `--no-connect` don't
 connect on startup · `--lang en|es|system` interface language (saved) · `--verbose` debug log.
 
-## Channel analyzer
+## 5.8 GHz analyzer (video)
 
-**Tools → Channel analyzer** recommends which channels to use when several pilots fly together:
+**Tools → 5.8 GHz analyzer (video)** (called *Channel analyzer* up to v0.12) recommends which channels to use when several pilots fly together:
 
 1. Choose the **bands** to analyse (A, B, E, F, R, L) and how many **analog** and **HDZero** pilots will fly (and
    whether the HDZero ones use narrow mode, about 17 MHz). The ▾ next to each band leaves out single channels
@@ -279,6 +279,29 @@ penalises going under the ideal (37, 40 and 37 MHz), avoids 3rd-order intermodul
 on another chosen channel, HDZero too) and, with a
 clean band, spreads them as far as possible (4 pilots on Raceband: R1, R3, R6, R8). If they don't fit with safe
 spacing, it says so. The maths is in `src/channel_advisor.cpp` (test bench: `channel_advisor_test`).
+
+## 2.4 GHz analyzer (ELRS)
+
+**Tools → 2.4 GHz analyzer (ELRS)** sweeps 2402–2482 MHz nonstop with the same adapter (the RTL8812BU is dual
+band) and shows how busy the band is for an ExpressLRS 2.4 GHz link: the spectrum, the WiFi networks on channels
+1–13 (with traffic or only beacons), other emissions (short hopping bursts such as Bluetooth or other pilots'
+radios, signals that never stop such as a 2.4 GHz analog video sender, and anything very strong close by) and the
+**80 ELRS channels** (2400.4–2479.4 MHz) coloured clean / busy at times / busy often. No video is shown while it runs,
+and it cannot run at the same time as the 5.8 GHz analyzer (starting one stops the other). With **Stop when the result
+is steady** (on by default) it stops by itself once the verdict and the suggestions have not changed for 15 s (after at
+least 30 s and a full average), and after 2 minutes in any case.
+
+ELRS hops over all 80 channels and none can be left out, so instead of channels it suggests **how to set up ELRS**
+for what it measured, according to what you fly (racing, freestyle, long range), your firmware's regulatory
+domain (ISM2G4 / CE_LBT) and **how many other ELRS pilots** will fly at the same time: packet rate (LoRa rather than
+FLRC when there is interference; DVDA D500/D250), Gemini, Dynamic Power, telemetry ratio, what to do about nearby WiFi
+(including ELRS's own WiFi on the TX, receiver and backpack), antennas, and when 900 MHz is worth it. For the modes
+that fit what you fly it shows a table with an **estimate of the packets lost**: what was measured plus, with other
+pilots, how often one of their packets lands on the same channel at the same moment as yours (from each mode's time on
+air; an upper bound, since the stronger packet usually still gets through). Modes, time on air, sensitivities, DVDA
+repeats and the rest come from the ExpressLRS documentation and source (`common.cpp`, `FHSS.cpp`, `LBT.cpp`).
+It measures where the adapter is, not on the drone; the two lowest ELRS channels (2400.4 and 2401.4 MHz) are below
+what the adapter can reach at 40 MS/s. The logic is in `src/elrs_advisor.cpp` (test bench: `elrs_advisor_test`).
 
 ## HDZero (experimental)
 

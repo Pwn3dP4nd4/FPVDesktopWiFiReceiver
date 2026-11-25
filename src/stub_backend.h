@@ -40,4 +40,5 @@ private:
     bool race_ = false;
     void surveyTick();
     void raceTick(SurveyData &d);
+    void elrsTick(SurveyData &d);  // analizador de 2,4 GHz
 };

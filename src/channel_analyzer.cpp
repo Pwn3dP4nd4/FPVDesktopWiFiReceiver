@@ -1026,7 +1026,7 @@ ChannelAnalyzer::ChannelAnalyzer(Backend *backend, QWidget *parent) : QDialog(pa
 }
 
 void ChannelAnalyzer::retranslate() {
-    setWindowTitle(tr("Channel analyzer"));
+    setWindowTitle(tr("5.8 GHz analyzer (video)"));
     bandsTitle_->setText(tr("Bands to analyse"));
     updateBandTexts();
     pilotsTitle_->setText(tr("Pilots flying together"));
@@ -1419,6 +1419,16 @@ void ChannelAnalyzer::onStopped() {
     emit runningChanged(false);
 }
 
+void ChannelAnalyzer::abandon(const QString &why) {
+    if (!running_) return;
+    running_ = false;
+    startBtn_->setText(tr("Start analysis"));
+    state_->setText(why);
+    setArmed(false);
+    setRace(false, why);
+    emit runningChanged(false);
+}
+
 void ChannelAnalyzer::updateAir() {
     // Se actualiza en el sitio: reconstruirla cada segundo perdia clics en la casilla y el desplazamiento
     QStringList keys, texts;
@@ -1475,6 +1485,8 @@ double ChannelAnalyzer::now() const {
 
 void ChannelAnalyzer::onSurvey(const SurveyData &d) {
     if (!running_) return;
+    // el barrido de 2,4 GHz (src/elrs_analyzer.h), de antes de empezar este: no es de aqui
+    if (!d.bins.isEmpty() && d.bins.front().mhz < 3000) return;
     last_ = d;
     // el mismo nombre que en la ventana principal (y la clave de "mio" no salta entre R5 y A4 de un barrido a otro)
     for (Pilot &p : last_.pilots) chnames::apply(p);

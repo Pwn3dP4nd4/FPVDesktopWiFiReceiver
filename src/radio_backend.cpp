@@ -170,7 +170,7 @@ void RadioBackend::recover(const QString &mode, double watchMHz) {
                         QString::fromLocal8Bit(e.what()) + hint(false));
         return;
     }
-    if (!surveyPlan_.empty()) radio_->survey();
+    if (!surveyPlan_.empty()) radioSurvey();
     else if (mode == QLatin1String("watch") && watchMHz > 0) radio_->watch(watchMHz * 1e6);
     else if (mode == QLatin1String("scan")) radio_->scan();
     poll_->start();
@@ -228,12 +228,22 @@ void RadioBackend::setDigitalScan(bool on) {
 }
 
 void RadioBackend::startSurvey(double loMHz, double hiMHz) {
-    surveyPlan_ = survey_plan_for(loMHz, hiMHz);
-    KP_LOGI("analizador: %.0f-%.0f MHz, %d paso(s)", loMHz, hiMHz, int(surveyPlan_.size()));
+    // 2,4 GHz (analizador ELRS): solo el espectro, en pasos que la radio puede sintonizar ahi (src/scan_plan.h)
+    surveyOnly_ = hiMHz < 3000;
+    surveyLoHz_ = surveyOnly_ ? loMHz * 1e6 : 0;
+    surveyHiHz_ = surveyOnly_ ? hiMHz * 1e6 : 0;
+    surveyPlan_ = surveyOnly_ ? survey_plan_24(loMHz, hiMHz) : survey_plan_for(loMHz, hiMHz);
+    KP_LOGI("analizador: %.0f-%.0f MHz, %d paso(s)%s", loMHz, hiMHz, int(surveyPlan_.size()),
+            surveyOnly_ ? ", solo espectro" : "");
     if (!radio_ || !radio_->is_open()) return;
     radio_->set_scan_plan(surveyPlan_);
     radio_->set_survey_memory(surveyMemory_);
-    radio_->survey();
+    radioSurvey();
+}
+
+void RadioBackend::radioSurvey() {
+    if (surveyOnly_) radio_->survey(surveyLoHz_, surveyHiHz_, true);
+    else radio_->survey();
 }
 
 void RadioBackend::setSurveyMemory(int sweeps) {
@@ -337,7 +347,8 @@ void RadioBackend::poll() {
     const QJsonArray pa = o.value("pilots").toArray();
     // Analizador: su propia vista (cada segundo); la lista de pilotos de la ventana principal no se toca
     if (!surveyPlan_.empty() && o.value("survey").toBool()) {
-        if (polls_ % 4 == 0) emitSurvey(pa);
+        // a 2,4 GHz un barrido son 3 pasos (~0.5 s): en cada consulta, para que la barra de barrido se vea avanzar
+        if (surveyOnly_ || polls_ % 4 == 0) emitSurvey(pa);
         return;
     }
     QVector<Pilot> ps;

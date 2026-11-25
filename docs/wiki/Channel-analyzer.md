@@ -1,13 +1,13 @@
-# Channel analyzer
+# 5.8 GHz analyzer (video)
 
 ***English** · [Español](Analizador-de-canales)*
 
-The analyzer (*Tools → Channel analyzer*) sweeps the 5.8 GHz band with the adapter and recommends which channels
+The analyzer (*Tools → 5.8 GHz analyzer (video)*; *Channel analyzer* up to v0.12) sweeps the 5.8 GHz band with the adapter and recommends which channels
 to use for several analog and HDZero pilots at once, so that they do not step on each other or on whatever is
 already on the air.
 
 > This page explains **what the recommendation is based on**. How to use the window is in the
-> [README](https://github.com/Pwn3dP4nd4/FPVDesktopWiFiReceiver#channel-analyzer).
+> [README](https://github.com/Pwn3dP4nd4/FPVDesktopWiFiReceiver#58-ghz-analyzer-video).
 
 ## What it measures
 
