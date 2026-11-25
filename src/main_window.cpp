@@ -584,8 +584,8 @@ void MainWindow::showAbout() {
     box.setIconPixmap(QPixmap(QStringLiteral(":/icons/app-128.png")));
     box.setTextFormat(Qt::RichText);
     box.setText(tr("<h3>%1 %2</h3>"
-                   "<p>Analog 5.8 GHz FPV video receiver with an RTL8812BU USB WiFi adapter, "
-                   "for Windows and Linux.</p>"
+                   "<p>Analog 5.8 GHz FPV video receiver and spectrum analyzer to pick video channels, with an "
+                   "RTL8812BU USB WiFi adapter, for Windows and Linux.</p>"
                    "<p>It uses the same core as the Android app "
                    "<a href='https://github.com/gilankpam/kepyur'>kepyur</a> (gilankpam), with "
                    "<a href='https://github.com/gilankpam/wifi-sdr'>wifi-sdr</a>, "
