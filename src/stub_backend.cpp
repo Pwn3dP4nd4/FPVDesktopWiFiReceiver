@@ -105,6 +105,7 @@ void StubBackend::raceTick(SurveyData &d) {
             const float db = v.snr - float(df) * 2 + float((qHash(qint64(k * 7 + v.mhz)) % 20) / 10.0);
             if (db > p.meanDb) p.meanDb = p.peakDb = db, p.duty = 1;
         }
+        p.seq = quint32(k + 1);  // un barrido por actualizacion: todo recien medido
         d.bins.push_back(p);
     }
     for (const Vtx &v : vtx) {
@@ -123,9 +124,16 @@ void StubBackend::surveyTick() {
         emit surveyUpdated(d);
         return;
     }
-    const double seen = std::min(1.0, 0.3 + 3.0 * sweeps_ / memory_);  // fraccion de rafagas captadas
+    // el barrido va por tercios de la zona, uno por actualizacion (como el de verdad: ~3 s, espectro cada s): seq de
+    // cada bin, la ultima actualizacion que paso por su tercio (0 = aun no); barridos completos, uno cada tres
+    const int t = sweeps_;
+    d.sweeps = t / 3;
+    const double seen = std::min(1.0, 0.3 + 3.0 * d.sweeps / memory_);  // fraccion de rafagas captadas
     for (double f = surveyLo_ + 0.078; f < surveyHi_; f += 0.15625) {
         SpectrumPoint p{f, 0.4f + float((qHash(qint64(f * 1000)) % 100) / 100.0), 3.f, 0.f};
+        const int third = std::clamp(int(3 * (f - surveyLo_) / (surveyHi_ - surveyLo_)), 0, 2);
+        const int last = t - 1 - (((t - 1 - third) % 3) + 3) % 3;
+        p.seq = last >= 0 ? quint32(last + 1) : 0;
         if (f > 5650 && f < 5690) {
             p.meanDb = float(3 + 2 * seen);
             p.peakDb = float(30 * seen);

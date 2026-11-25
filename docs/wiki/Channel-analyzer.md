@@ -18,6 +18,10 @@ With a fixed gain, for every 156 kHz of the band it keeps three things, averaged
 - **Strongest recent burst**, which fades over time: it gives away what comes and goes.
 - **Share of time on**: how much of the time something intermittent hits that slice of the band.
 
+A full sweep takes a few seconds and the graph is updated every second, mid-sweep. The **sweep bar**, above the
+graph, shows which part was just measured: bright when refreshed and fading until the next pass (grey if it has not
+been measured for a long time). On the graph, a faint trail marks where the sweep is.
+
 ## How it chooses
 
 Each candidate channel gets a score, and the lowest total wins:
@@ -116,8 +120,20 @@ itself when no pinned pilot has been seen for about a minute and a half (a VTX l
 **History** (*History* tab). Everything the race warned about is kept with the clock time and the race time: when
 it started and stopped (and why: by hand, by itself, analysis stopped...), every change in a channel's
 recommendation (*OK*, *→ F3*, *Weak video*...) with its figures at that moment, the moves applied and, when it
-stops, a summary of each channel (the worst video marked). It keeps every race, one after another, until you quit
-the program or press **Clear**; **Copy** puts it on the clipboard and **Save...** in a CSV (or text) file.
+stops, a summary of each channel (the worst video marked). There are two views:
+
+- **By pilot** (one pilot per pinned channel when the race started, with the channels it went through): a table from
+  most to least trouble, with its video and how many events of each kind it had, and next to it the chosen pilot's
+  events grouped as **Serious** (its channel gave it trouble: someone else on top of it or interference, with or
+  without a better channel), **Warnings** (weak video that is not the channel's fault, a signal that would not go
+  away), **Channel changes** applied and **Information** (OK, start, stop, summary). Above, who had the most trouble
+  and who had none.
+- **Timeline**: every event in order, like a log.
+
+Changing the pinned channels by hand mid-race closes what came before with its summary and goes on as another race.
+It keeps every race, one after another (choose which one to see at the top, or all of them), until you quit the
+program or press **Clear**; **Copy** puts it on the clipboard and **Save...** in a CSV (or text) file, with each
+event's race, pilot and category.
 
 What it cannot see:
 

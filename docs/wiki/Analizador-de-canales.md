@@ -18,6 +18,10 @@ Con ganancia fija, por cada 156 kHz de la banda guarda tres cosas, como media de
 - **Ráfaga más fuerte reciente**, que se va olvidando: delata lo que aparece a ratos.
 - **Parte del tiempo encendido**: cuánto pisa ese trozo de banda algo intermitente.
 
+Un barrido completo tarda unos segundos y la gráfica se actualiza cada segundo, a medio barrido. La **barra de
+barrido**, encima de la gráfica, muestra qué parte se acaba de medir: brillante al refrescarse y apagándose hasta la
+siguiente pasada (gris si hace mucho que no se mide). Sobre la gráfica, una estela tenue marca por dónde va.
+
 ## Cómo elige
 
 Cada canal candidato se puntúa, y gana el que menos suma:
@@ -116,8 +120,19 @@ ve a ningún piloto fijado durante cerca de minuto y medio (un VTX que se queda 
 **Historial** (pestaña *Historial*). Todo lo que ha ido avisando la carrera queda apuntado con la hora y el tiempo
 de carrera: cuándo empieza y para (y por qué: a mano, sola, al parar el análisis...), cada cambio de recomendación
 de un canal (*Bien*, *→ F3*, *Vídeo flojo*...) con sus números en ese momento, los cambios aplicados y, al parar, un
-resumen de cada canal (el de peor vídeo, marcado). Guarda todas las carreras, una tras otra, hasta que cierras el
-programa o pulsas **Borrar**; **Copiar** lo pasa al portapapeles y **Guardar...** a un CSV (o texto).
+resumen de cada canal (el de peor vídeo, marcado). Se ve de dos formas:
+
+- **Por piloto** (un piloto por canal fijado al empezar, con los canales por los que ha pasado): una tabla de más a
+  menos problemas, con su vídeo y cuántos eventos tiene de cada tipo, y al lado los eventos del piloto elegido
+  agrupados en **Graves** (su canal le da problemas: otro emitiendo encima o interferencia, con o sin canal mejor),
+  **Avisos** (vídeo flojo que no es del canal, una señal que no se va), **Cambios de canal** aplicados e
+  **Información** (bien, empezar, parar, resumen). Arriba dice quién ha tenido más problemas y quién ninguno.
+- **Cronológico**: todos los eventos seguidos, como un registro.
+
+Cambiar los fijados a mano en plena carrera cierra lo de hasta entonces con su resumen y sigue como otra carrera.
+Guarda todas las carreras, una tras otra (se elige cuál ver arriba, o todas), hasta que cierras el programa o pulsas
+**Borrar**; **Copiar** lo pasa al portapapeles y **Guardar...** a un CSV (o texto), con la carrera, el piloto y la
+categoría de cada evento.
 
 Lo que no puede ver:
 

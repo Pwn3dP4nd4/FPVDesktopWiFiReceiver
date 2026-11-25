@@ -262,7 +262,7 @@ void RadioBackend::emitSurvey(const QJsonArray &pilots) {
     SurveyData d;
     std::vector<fpv::SurveyBin> bins = radio_->survey_spectrum(&d.sweeps);
     d.bins.reserve(int(bins.size()));
-    for (const auto &b : bins) d.bins.push_back(SpectrumPoint{b.mhz, b.mean_db, b.peak_db, b.duty});
+    for (const auto &b : bins) d.bins.push_back(SpectrumPoint{b.mhz, b.mean_db, b.peak_db, b.duty, b.seq});
     for (const auto &e : pilots) d.pilots.push_back(pilotFromJson(e.toObject()));
     emit surveyUpdated(d);
 }

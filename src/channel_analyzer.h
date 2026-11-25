@@ -2,6 +2,7 @@
 #include <QDateTime>
 #include <QDialog>
 #include <QElapsedTimer>
+#include <QHash>
 #include <QVector>
 
 #include <optional>
@@ -16,12 +17,16 @@ class QListWidget;
 class QLabel;
 class QPushButton;
 class QSpinBox;
+class QStackedWidget;
 class QTabWidget;
+class QTimer;
 class QToolButton;
 class QTreeWidget;
 
 // Grafica del analizador: espectro medio y picos (dB sobre el suelo), zonas con rafagas, los canales candidatos
 // coloreados por interferencia, lo que ya hay en el aire y los canales recomendados (los fijados, distintos).
+// Arriba, la barra de barrido: que parte del espectro se acaba de medir (SpectrumPoint::seq), brillante al refrescarse
+// y apagandose hasta la siguiente pasada; donde va ahora el barrido, una franja tenue sobre la grafica.
 // Clic derecho sobre una marca de canal: fijarlo o desfijarlo (pinToggled).
 class SpectrumView : public QWidget {
     Q_OBJECT
@@ -30,6 +35,11 @@ public:
     void setData(const SurveyData &d, const advisor::Advice &a, double loMHz, double hiMHz,
                  const QStringList &mine = {});
     QSize sizeHint() const override { return {760, 300}; }
+    // analisis en marcha: la barra de barrido se anima; al empezar, lo de antes se olvida
+    void setScanning(bool on);
+    // test/analyzer_logic_test.cpp: MHz (de 1 en 1) refrescados en la ultima actualizacion y los ya medidos alguna vez
+    QVector<int> sweepHeadForTest() const { return head_; }
+    int sweepCellsForTest() const { return int(cellT_.size()); }
 
 signals:
     void pinToggled(const QString &name, bool hdzero);  // fijar si no lo estaba, desfijar si lo estaba
@@ -47,6 +57,17 @@ private:
     double lo_ = 5640, hi_ = 5950;
     // geometria del ultimo pintado (menu contextual): eje x y filas de canales
     double left_ = 0, right_ = 1, rowsTop_ = 0, rowH_ = 0, plotBottom_ = 0;
+
+    // ---- barra de barrido: por MHz (floor), el ultimo seq visto y cuando cambio (ms de sweepClock_) ----
+    void trackSweep();  // tras juntar data_.bins: que celdas se han medido desde la ultima vez
+    QHash<int, quint32> cellSeq_;
+    QHash<int, qint64> cellT_;
+    QVector<int> head_;         // las de la ultima actualizacion con algo nuevo (donde va el barrido)
+    qint64 headT_ = -1;
+    double periodS_ = 3;        // lo que tarda el barrido en volver a pasar por el mismo sitio (media)
+    QElapsedTimer sweepClock_;
+    QTimer *anim_ = nullptr;    // repinta mientras se barre (la barra se va apagando)
+    bool scanning_ = false;
 };
 
 // Analizador de canales (Herramientas): barre las bandas elegidas sin parar y recomienda canales para N pilotos
@@ -69,7 +90,10 @@ public:
     void setMineForTest(const QStringList &keys);
     // pulsar "Empezar al salir los pilotos" con este numero de pilotos (<= 0: todos los fijados)
     void armForTest(int pilots);
-    void showHistoryForTest();  // pestana Historial
+    void showHistoryForTest(bool timeline = false);  // pestana Historial (por piloto o cronologico)
+    // historial por piloto de la ultima carrera, de mas a menos problemas: "R3>R2: 2 serious, 1 warnings, 1 changes"
+    QStringList pilotSummaryForTest() const;
+    SpectrumView *viewForTest() const { return view_; }
     // test/analyzer_logic_test.cpp: reloj del analisis (s) en lugar del real (< 0: el real) y estado interno
     void setTimeForTest(double s) { testTimeS_ = s; }
     bool runningForTest() const { return running_; }
@@ -170,21 +194,58 @@ private:
     QCheckBox *autoStop_ = nullptr;
 
     // ---- historial de la carrera: avisos, recomendaciones, cambios aplicados y el resumen final ----
-    enum class Ev { Info, Ok, Warn, Move, Applied, Summary };
+    // Problem: su canal tiene un problema y no hay otro libre mejor (sin canal mejor); Move: recomendado moverlo
+    enum class Ev { Info, Ok, Warn, Problem, Move, Applied, Summary };
+    // de un vistazo, por piloto: graves (su canal le da problemas: mover o sin canal mejor), avisos (video flojo que no
+    // es del canal, una senal que no se va), cambios de canal aplicados e informacion (OK, empezar, parar, resumen)
+    enum class Cat { Serious, Warning, Change, Info };
+    static Cat category(Ev k);
+    QString catName(Cat c) const;
     struct RaceEvent {
         QDateTime when;
         double raceS = 0;  // s desde que empezo el seguimiento
         int sweep = 0;
         Ev kind = Ev::Info;
         QString channel, what, detail;
+        int race = 0;    // numero de carrera (races_), 0 = fuera de ninguna
+        int pilot = -1;  // indice del piloto en esa carrera (= fijado, race_.health()); -1 = de toda la carrera
     };
-    void addEvent(Ev kind, const QString &channel, const QString &what, const QString &detail = QString());
+    void addEvent(Ev kind, const QString &channel, const QString &what, const QString &detail = QString(),
+                  int pilot = -1);
     void addSummary();  // al parar: como ha ido cada canal
     QString historyText(bool csv) const;
     void saveHistory();
     void updateHistoryTab();
     QVector<RaceEvent> events_;   // de todas las carreras de esta ventana (Borrar las quita)
     QElapsedTimer raceClock_;
+    // las carreras de esta ventana: un piloto por canal fijado al empezar (por orden), los canales por los que ha
+    // pasado (Aplicar) y como le ha ido (lo ultimo de race_.health(); tras moverlo, solo lo de su canal nuevo)
+    struct PilotRec {
+        QStringList channels;
+        race::ChannelHealth health;
+    };
+    struct RaceRec {
+        int no = 0;
+        QDateTime start;
+        QVector<PilotRec> pilots;
+    };
+    QVector<RaceRec> races_;
+    void beginRaceRec();     // empieza el seguimiento (o vuelve a empezar con otros fijados)
+    void syncRaceHealth();   // race_.health() -> races_.back()
+    const RaceRec *raceRec(int no) const;
+    QString pilotLabel(int race, int pilot, bool withRace) const;  // "Pilot 2 (R3 → R2)"
+    int histRace() const;    // la carrera elegida arriba; 0 = todas
+    bool histShows(const RaceEvent &e) const;
+    void addHistRow(const RaceEvent &e);  // a la vista cronologica
+    void rebuildHistory();   // las dos vistas (cambia la carrera elegida, Borrar, idioma)
+    void rebuildPilotView();
+    void showPilotEvents();  // eventos del piloto elegido, por categoria
+    QComboBox *histRace_ = nullptr, *histView_ = nullptr;
+    QLabel *histRaceLbl_ = nullptr, *histVerdict_ = nullptr, *pilotInfo_ = nullptr;
+    QStackedWidget *histStack_ = nullptr;
+    QTreeWidget *pilotTable_ = nullptr, *pilotEvents_ = nullptr;
+    bool pilotPicked_ = false;  // el usuario ha elegido un piloto (si no, se muestra el de mas problemas)
+    int shownRace_ = -1, shownPilot_ = -2;  // el piloto de pilotEvents_ (al rehacerlo, conservar lo abierto)
     QTreeWidget *histTable_ = nullptr;
     QLabel *histHint_ = nullptr;
     QPushButton *histCopy_ = nullptr, *histSave_ = nullptr, *histClear_ = nullptr;
