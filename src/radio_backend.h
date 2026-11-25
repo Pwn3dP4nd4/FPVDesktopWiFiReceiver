@@ -61,5 +61,9 @@ private:
     bool digitalScan_ = false;      // modo experimental (se aplica tambien a una radio creada despues)
     int surveyMemory_ = 20;            // analizador: barridos en la media (setSurveyMemory)
     std::vector<double> surveyPlan_;  // analizador de canales en marcha: sus pasos; vacio = no
+    // analizador de 2,4 GHz (ELRS): la banda (Hz) y solo espectro (sin buscar video ni senales digitales)
+    double surveyLoHz_ = 0, surveyHiHz_ = 0;
+    bool surveyOnly_ = false;
+    void radioSurvey();  // fpv::Radio::survey() con la banda del analizador en marcha
     void emitSurvey(const QJsonArray &pilots);
 };

@@ -10,5 +10,10 @@ std::vector<double> scan_plan_for(std::vector<double> channelsMHz);
 // Analizador de canales: pasos que cubren sin huecos lo..hi MHz (cada paso ve +-16.5 MHz; van cada 30 MHz).
 std::vector<double> survey_plan_for(double loMHz, double hiMHz);
 
+// Analizador de 2,4 GHz (ELRS): a 40 MHz de ancho el chip solo sintoniza centros de 2422 a 2462 MHz (wifi-sdr,
+// Receiver::channel_for), asi que los pasos van ahi cada 20 MHz y los de los extremos miden hasta +-20 MHz de su centro
+// (fpv::Radio::survey(lo, hi)): 2422/2442/2462 cubren 2402..2482 MHz.
+std::vector<double> survey_plan_24(double loMHz, double hiMHz);
+
 // Pasos del plan completo de kepyur (radio.cpp, scan_plan(): 5652..5940 y 5370..5630 cada 20 MHz).
 int full_scan_steps();

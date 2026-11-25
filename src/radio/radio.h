@@ -76,7 +76,9 @@ public:
   void set_digital_scan(bool on);
   // Channel survey: sweep the scan plan (set_scan_plan) over and over, listing pilots (digital ones too) and
   // accumulating the spectrum (survey_spectrum) until another mode is set. Never tunes to a pilot.
-  void survey();
+  // lo_hz..hi_hz (0: the 5.8 GHz default grid): the band the spectrum covers; the first and last steps measure out
+  // to its edges (up to +-fs/2 of their centre). spectrum_only: no video or digital checks, no pilots (2.4 GHz).
+  void survey(double lo_hz = 0, double hi_hz = 0, bool spectrum_only = false);
   // Survey: sweeps in the sliding average (src/radio/survey.h); applies at once, data kept
   void set_survey_memory(int sweeps);
   std::vector<SurveyBin> survey_spectrum(int *sweeps = nullptr);
@@ -203,6 +205,8 @@ private:
   bool _digital_on = false;                    // set_digital_scan() (under _m)
   // survey (accumulators under _m)
   bool _survey = false;
+  bool _survey_spectrum_only = false;   // survey(): only the spectrum (under _m)
+  double _survey_lo = 0, _survey_hi = 0;  // survey(): the band (Hz; 0 = the default grid) (under _m)
   SurveyGrid _grid;
   bool _survey_cont = false;  // survey: this step taken again streaming, to check a candidate (under _m)
   bool _digital_only_recheck = false;  // survey: taken again only for the digital scan's timing (no new humps)

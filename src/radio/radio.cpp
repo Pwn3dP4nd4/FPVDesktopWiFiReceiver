@@ -64,6 +64,9 @@ constexpr double kSurveyGainStepDown = 10, kSurveyGainStepUp = 5, kSurveyGainMin
 constexpr float kSurveyRaiseUnder = 0.12f;
 // survey: each step measures [-reach, +reach) of its centre; src/scan_plan.cpp puts steps 2 x reach apart
 constexpr double kSurveyReach = 10e6;
+// survey of a band (survey(lo, hi)): the first and last steps measure out to the band's edges, at most this far from
+// their centre (the 40 MHz RX filter passes +-20 MHz; the 2.4 GHz synthesizer at 40 MHz width only tunes 2422..2462)
+constexpr double kSurveyEdgeReach = 20e6;
 // survey: a pilot not seen for this many sweeps has left
 constexpr int kSurveyLostSweeps = 3;
 // survey: an analog pilot this close to a stronger one is its sideband copy (see scan_step_done)
@@ -240,13 +243,22 @@ void Radio::scan(double prefer_hz) {
   _mode_epoch++;
 }
 
-void Radio::survey() {
+void Radio::survey(double lo_hz, double hi_hz, bool spectrum_only) {
   std::lock_guard<std::mutex> l(_m);
   _survey = true;
+  _survey_spectrum_only = spectrum_only;
+  _survey_lo = lo_hz;
+  _survey_hi = hi_hz;
   _resume_hz = 0;
   {
     const int m = _grid.memory();
-    _grid.reset();
+    // a band outside the default grid (5300..6000 MHz) gets a grid of its own, with kSurveyEdgeReach to spare
+    if (hi_hz > lo_hz && (lo_hz < SurveyGrid::kLo || hi_hz > SurveyGrid::kLo + SurveyGrid::kBins * SurveyGrid::kBin)) {
+      const double glo = std::floor((lo_hz - kSurveyEdgeReach) / 1e6) * 1e6;
+      _grid.reset(glo, static_cast<int>(std::ceil((hi_hz - glo + kSurveyEdgeReach) / SurveyGrid::kBin)));
+    } else {
+      _grid.reset();
+    }
     _grid.set_memory(m);
   }
   _sweep_start_ms = now_ms();
@@ -417,7 +429,8 @@ void Radio::dsp_loop() {
         _scan_start_ms = now_ms();
         {
           std::lock_guard<std::mutex> l(_m);
-          if (!_digital_on && !_survey) _digital.reset();  // the survey always lists digital signals
+          // the survey always lists digital signals (not the spectrum-only one: 2.4 GHz)
+          if ((!_digital_on && !_survey) || (_survey && _survey_spectrum_only)) _digital.reset();
           else if (!_digital) _digital = std::make_unique<kpx::DigitalScan>();
         }
         if (_digital) _digital->reset();
@@ -719,8 +732,15 @@ void Radio::handle_scan(Bank &b) {
     // again streaming, as for the video sync check, and that capture replaces this one. Measured with a real DJI
     // in R2: gapped, its 2.5 ms frame read as 1.28 ms (every burst and gap half as long) and it was never listed.
     const bool gapped = survey && !_survey_cont;
-    if (_digital) _digital->analyse(psd_db, x.data(), x.size(), kFs, kEdge);
-    const bool digital_timing = gapped && _digital && _digital->wants_timing();
+    bool spectrum_only;
+    {
+      std::lock_guard<std::mutex> l(_m);
+      spectrum_only = survey && _survey_spectrum_only;
+    }
+    // spectrum only (2.4 GHz): no video sync or digital checks, just the spectrum of every step
+    if (spectrum_only) _humps.clear();
+    if (_digital && !spectrum_only) _digital->analyse(psd_db, x.data(), x.size(), kFs, kEdge);
+    const bool digital_timing = gapped && !spectrum_only && _digital && _digital->wants_timing();
     if (digital_timing) KP_LOGI("survey: %.1f MHz taken again streaming, for the digital scan", req / 1e6);
     if (_survey_cont && _digital_only_recheck) _humps.clear();  // already checked: no second sync check
     if (!survey) {  // the survey keeps its fixed steps: they tile its spectrum
@@ -736,7 +756,17 @@ void Radio::handle_scan(Bank &b) {
       }
       // measured gain dB under the survey's: back to its scale (the hint comes in that scale)
       const double corr = kSurveyGainDb - gain;
-      SurveyStep st = survey_measure(x.data(), x.size(), _cap_centre, kFs, kSurveyReach,
+      // [-reach, +reach) of the centre; with a band (survey(lo, hi)), the end steps out to its edges
+      double from = -kSurveyReach, to = kSurveyReach, grid_lo;
+      {
+        std::lock_guard<std::mutex> l(_m);
+        grid_lo = _grid.lo_hz();
+        if (_survey_hi > _survey_lo) {
+          if (_step == 0) from = std::min(from, std::max(-kSurveyEdgeReach, _survey_lo - _cap_centre));
+          if (_step + 1 == _plan.size()) to = std::max(to, std::min(kSurveyEdgeReach, _survey_hi - _cap_centre));
+        }
+      }
+      SurveyStep st = survey_measure(x.data(), x.size(), _cap_centre, kFs, from, to, grid_lo,
                                      floor_hint > 0 ? floor_hint / std::pow(10.0, corr / 10) : 0);
       survey_scale(st, corr);
       const bool clipped = st.clip > kSurveyClipMax;

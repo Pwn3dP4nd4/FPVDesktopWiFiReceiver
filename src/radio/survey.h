@@ -53,7 +53,9 @@ class SurveyGrid {
   static constexpr double kSlopeDbPerMhz = 0.065;       // the chip's floor changes at most this (measured ~0.026)
   static constexpr double kFloorWeight = 0.25;          // sliding average of each step's floor
 
-  void reset();
+  // lo_hz/bins: the band the grid holds (default 5300..6000 MHz); another band (2.4 GHz) passes its own
+  void reset(double lo_hz = kLo, int bins = kBins);
+  double lo_hz() const { return _lo; }
   void set_memory(int sweeps) { _memory = sweeps < 1 ? 1 : sweeps; }
   int memory() const { return _memory; }
   // Floor to judge levels by at a step (the step's own, capped by its neighbours'), 0 = not seen yet
@@ -79,6 +81,8 @@ class SurveyGrid {
   int _sweeps = 0;
   unsigned _merges = 0;
   int _memory = kMemory;
+  double _lo = kLo;
+  int _bins = kBins;
 };
 
 // One capture: 0.1 ms slices (16 FFTs of 256, Hann). Only bins in [-reach_hz, +reach_hz) of the centre go into
@@ -88,5 +92,9 @@ class SurveyGrid {
 // full_scale: the ADC's (12 bits: 2048), for clip and peak_abs.
 SurveyStep survey_measure(const cfs *x, size_t n, double centre_hz, double fs, double reach_hz, double floor_hint,
                           float full_scale = 2048);
+// The same, measuring [from_hz, to_hz) of the centre (from_hz < 0 < to_hz; at most +-fs/2), into a grid starting at
+// grid_lo_hz (SurveyGrid::lo_hz): the 2.4 GHz survey's end steps reach further out to cover the band's edges
+SurveyStep survey_measure(const cfs *x, size_t n, double centre_hz, double fs, double from_hz, double to_hz,
+                          double grid_lo_hz, double floor_hint, float full_scale = 2048);
 
 }  // namespace fpv

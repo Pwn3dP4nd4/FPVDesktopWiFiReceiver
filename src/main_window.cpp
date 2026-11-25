@@ -1,4 +1,5 @@
 #include "channel_analyzer.h"
+#include "elrs_analyzer.h"
 #include "main_window.h"
 
 #include <QActionGroup>
@@ -373,6 +374,7 @@ void MainWindow::buildMenus() {
 
     toolsMenu_ = menuBar()->addMenu(QString());
     analyzerAct_ = toolsMenu_->addAction(QString(), this, &MainWindow::openAnalyzer);
+    elrsAct_ = toolsMenu_->addAction(QString(), this, &MainWindow::openElrsAnalyzer);
 
     helpMenu_ = menuBar()->addMenu(QString());
     manualAct_ = helpMenu_->addAction(QString(), this, [] { QDesktopServices::openUrl(QUrl(QString::fromLatin1(kRepoUrl))); });
@@ -382,21 +384,42 @@ void MainWindow::buildMenus() {
 void MainWindow::openAnalyzer() {
     if (!analyzer_) {
         analyzer_ = new ChannelAnalyzer(backend_, this);
-        connect(analyzer_, &ChannelAnalyzer::runningChanged, this, [this](bool on) {
-            analyzing_ = on;
-            if (on) {
-                video_->clear();
-                statusBar()->showMessage(tr("Channel analyzer running: no video until it stops"));
-            } else {
-                statusBar()->showMessage(tr("Channel analyzer stopped"), 5000);
-            }
-            side_->setEnabled(!on);
-        });
+        connect(analyzer_, &ChannelAnalyzer::runningChanged, this,
+                [this](bool on) { analyzerRunning(analyzer_, on); });
     }
     analyzer_->setAdapterOpen(open_);
     analyzer_->show();
     analyzer_->raise();
     analyzer_->activateWindow();
+}
+
+void MainWindow::openElrsAnalyzer() {
+    if (!elrs_) {
+        elrs_ = new ElrsAnalyzer(backend_, this);
+        connect(elrs_, &ElrsAnalyzer::runningChanged, this, [this](bool on) { analyzerRunning(elrs_, on); });
+    }
+    elrs_->show();
+    elrs_->raise();
+    elrs_->activateWindow();
+}
+
+void MainWindow::analyzerRunning(QObject *who, bool on) {
+    // los dos usan el mismo barrido del backend: el que empieza se lo queda (el otro para sin pedir nada: el
+    // startSurvey nuevo ya cambia la banda)
+    if (on && who == analyzer_ && elrs_)
+        elrs_->abandon(tr("Stopped: the 5.8 GHz analyzer (video) is using the adapter."));
+    if (on && who == elrs_ && analyzer_)
+        analyzer_->abandon(tr("Stopped: the 2.4 GHz analyzer (ELRS) is using the adapter."));
+    const bool any = (analyzer_ && analyzer_->isRunning()) || (elrs_ && elrs_->isRunning());
+    if (any == analyzing_) return;
+    analyzing_ = any;
+    if (any) {
+        video_->clear();
+        statusBar()->showMessage(tr("Analyzer running: no video until it stops"));
+    } else {
+        statusBar()->showMessage(tr("Analyzer stopped"), 5000);
+    }
+    side_->setEnabled(!any);
 }
 
 void MainWindow::chooseScanChannels() {
@@ -465,8 +488,10 @@ void MainWindow::retranslate() {
     langMenu_->setTitle(tr("&Language"));
     langSystemAct_->setText(tr("&System default"));
     toolsMenu_->setTitle(tr("&Tools"));
-    analyzerAct_->setText(tr("Channel &analyzer..."));
+    analyzerAct_->setText(tr("5.8 GHz analyzer (&video)..."));
     analyzerAct_->setToolTip(tr("Find the cleanest channels for several analog and HDZero pilots flying together"));
+    elrsAct_->setText(tr("2.4 GHz analyzer (&ELRS)..."));
+    elrsAct_->setToolTip(tr("See how busy the 2.4 GHz band is (WiFi, Bluetooth...) and how to set up ELRS for it"));
     helpMenu_->setTitle(tr("&Help"));
     manualAct_->setText(tr("&Manual and source code (GitHub)"));
     aboutAct_->setText(tr("&About %1").arg(kAppName));

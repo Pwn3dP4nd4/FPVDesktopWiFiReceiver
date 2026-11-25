@@ -112,7 +112,7 @@ sudo cp packaging/linux/60-kepyur.rules /etc/udev/rules.d/ && sudo udevadm contr
 
 El driver del kernel `rtw88_8822bu` se desconecta solo al abrir el adaptador.
 
-La barra de menú (*Archivo*, *Ver*, *Herramientas → Analizador de canales*...) se dibuja siempre dentro de la
+La barra de menú (*Archivo*, *Ver*, *Herramientas → Analizador de 5,8 GHz (vídeo)*...) se dibuja siempre dentro de la
 ventana, también en escritorios con menú global en el panel superior (el *Menú global* de KDE Plasma, como en
 Garuda): ahí Qt la llevaría al panel y la ventana se quedaría sin menú. `KP_GLOBAL_MENU=1` deja el menú global.
 
@@ -240,9 +240,9 @@ Opciones de línea de comandos (opcionales, para pruebas): `--demo` sin hardware
 `--no-connect` no conectar al abrir · `--lang en|es|system` idioma de la interfaz (se guarda) ·
 `--verbose` log de depuración.
 
-## Analizador de canales
+## Analizador de 5,8 GHz (vídeo)
 
-**Herramientas → Analizador de canales** recomienda qué canales usar cuando varios pilotos vuelan a la vez:
+**Herramientas → Analizador de 5,8 GHz (vídeo)** (hasta la v0.12, *Analizador de canales*) recomienda qué canales usar cuando varios pilotos vuelan a la vez:
 
 1. Elige las **bandas** a analizar (A, B, E, F, R, L) y cuántos pilotos **analógicos** y **HDZero** van a volar
    (y si los HDZero van en modo estrecho, unos 17 MHz). El ▾ junto a cada banda deja fuera canales sueltos
@@ -285,6 +285,31 @@ los bordes), penaliza quedar por debajo de la ideal (37, 40 y 37 MHz), evita la 
 (2·f1 − f2 de dos analógicos sobre otro canal elegido, también HDZero) y,
 con la banda limpia, los separa todo lo posible (4 pilotos en Raceband: R1, R3, R6, R8). Si no caben con
 separación segura, lo dice. El cálculo está en `src/channel_advisor.cpp` (banco: `channel_advisor_test`).
+
+## Analizador de 2,4 GHz (ELRS)
+
+**Herramientas → Analizador de 2,4 GHz (ELRS)** barre 2402–2482 MHz sin parar con el mismo adaptador (el RTL8812BU
+es de doble banda) y muestra lo ocupada que está la banda para un enlace ExpressLRS de 2,4 GHz: el espectro, las redes
+WiFi de los canales 1–13 (con tráfico o solo beacons), otras emisiones (ráfagas cortas que saltan, como Bluetooth o
+las emisoras de otros pilotos; señales que no paran nunca, como un emisor de vídeo analógico de 2,4 GHz; y cualquier
+cosa muy fuerte cerca) y los **80 canales de ELRS** (2400,4–2479,4 MHz) coloreados como limpio / ocupado a ratos /
+ocupado a menudo. Mientras está en marcha no se ve vídeo, y no puede ir a la vez que el analizador de 5,8 GHz (al
+empezar uno se para el otro). Con **Parar cuando el resultado no cambie** (marcado por defecto) se para solo cuando el
+veredicto y las sugerencias llevan 15 s sin cambiar (tras al menos 30 s y la media completa), y a los 2 minutos en
+cualquier caso.
+
+ELRS salta por los 80 canales y no se puede quitar ninguno, así que en vez de canales sugiere **cómo configurar
+ELRS** para lo que ha medido, según lo que vuelas (carreras, freestyle, largo alcance), el dominio regulatorio de tu
+firmware (ISM2G4 / CE_LBT) y **cuántos pilotos más con ELRS** van a volar a la vez: tasa de paquetes (LoRa antes que
+FLRC si hay interferencia; DVDA D500/D250), Gemini, potencia dinámica, ratio de telemetría, qué hacer con las WiFi
+cercanas (también la del propio ELRS en el TX, el receptor y el backpack), antenas, y cuándo compensa 900 MHz. Para los
+modos que encajan con lo que vuelas muestra una tabla con una **estimación de los paquetes perdidos**: lo medido y, con
+más pilotos, cuántas veces uno de sus paquetes cae en el mismo canal y en el mismo momento que el tuyo (según el tiempo
+en el aire de cada modo; es un máximo, porque el paquete más fuerte suele llegar igual). Los modos, tiempos en el aire,
+sensibilidades, repeticiones de DVDA y lo demás salen de la documentación y del código de ExpressLRS (`common.cpp`,
+`FHSS.cpp`, `LBT.cpp`).
+Mide donde está el adaptador, no en el dron; los dos canales de ELRS más bajos (2400,4 y 2401,4 MHz) quedan por debajo
+de lo que alcanza el adaptador a 40 MS/s. La lógica está en `src/elrs_advisor.cpp` (banco: `elrs_advisor_test`).
 
 ## HDZero (experimental)
 

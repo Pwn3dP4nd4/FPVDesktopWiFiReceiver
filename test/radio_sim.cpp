@@ -7,6 +7,7 @@
 //             [--record S PREFIX] [--seconds S] [--frames] [--dump FILE] [--plan MHZ,MHZ...] [--usb2] [-v]
 //   --plan: escanear solo esos centros de paso (MHz), p. ej. para dejar una senal entre dos pasos
 //   radio_live pasa el adaptador a USB 3 antes de abrirlo, como la app; --usb2: dejarlo como este
+//   --survey 2402 2482: el analizador de 2,4 GHz (ELRS, solo espectro): al acabar, lo que dice src/elrs_advisor.cpp
 //   --dump FILE: survey, al acabar escribe cada bin (mhz,mean_db,peak_db,duty) en FILE (CSV), para probar el
 //                recomendador sin adaptador
 //   ... --frames | ffplay -f rawvideo -pixel_format rgb0 -video_size 720x480 -framerate 60 -fflags nobuffer -i -
@@ -25,6 +26,7 @@
 #include "radio.h"
 #include "scan_plan.h"
 #include "channel_advisor.h"
+#include "elrs_advisor.h"
 #ifdef KP_LIVE_ADAPTER
 #include "usb3_switch.h"
 #endif
@@ -105,8 +107,13 @@ int main(int argc, char **argv) {
   radio.set_comb(comb);
   if (watch_rate) radio.set_watch_rate(watch_rate);
   if (mode == "survey") {
-    radio.set_scan_plan(survey_plan_for(survey_lo, survey_hi));  // el mismo plan que la app
-    radio.survey();
+    if (survey_hi < 3000) {  // 2,4 GHz: como RadioBackend::startSurvey
+      radio.set_scan_plan(survey_plan_24(survey_lo, survey_hi));
+      radio.survey(survey_lo * 1e6, survey_hi * 1e6, true);
+    } else {
+      radio.set_scan_plan(survey_plan_for(survey_lo, survey_hi));  // el mismo plan que la app
+      radio.survey();
+    }
   } else if (mode == "scan") {
     if (!plan.empty()) radio.set_scan_plan(plan);
     radio.scan();
@@ -124,7 +131,16 @@ int main(int argc, char **argv) {
     if (mode == "watch" && rec_s > 0 && ++loops == 2) radio.record(rec_s, rec_prefix);
     const std::string st = radio.status_json();
     std::fprintf(stderr, "%s\n", st.c_str());
-    if (mode == "survey") {
+    if (mode == "survey" && survey_hi < 3000) {
+      int sw = 0;
+      std::vector<elrs::Bin> eb;
+      for (const auto &b : radio.survey_spectrum(&sw)) eb.push_back(elrs::Bin{b.mhz, b.mean_db, b.peak_db, b.duty});
+      const auto r = elrs::analyse(eb, elrs::Use::Racing, elrs::Region::Fcc);
+      std::string w;
+      for (const auto &x : r.wifi) w += " " + std::to_string(x.ch);
+      std::fprintf(stderr, "elrs @ sweep %d: %d measured, %d clean %d busy %d bad, hit %.1f %%, wifi:%s\n", sw,
+                   r.measured, r.clean, r.busy, r.bad, r.hit * 100, w.empty() ? " (none)" : w.c_str());
+    } else if (mode == "survey") {
       int sw = 0;
       std::vector<advisor::Bin> ab;
       for (const auto &b : radio.survey_spectrum(&sw)) ab.push_back(advisor::Bin{b.mhz, b.mean_db, b.peak_db, b.duty});
@@ -153,6 +169,30 @@ int main(int argc, char **argv) {
         std::fclose(f);
         std::fprintf(stderr, "survey: %zu bins -> %s\n", bins.size(), dump.c_str());
       }
+    }
+    if (survey_hi < 3000) {
+      std::vector<elrs::Bin> eb;
+      for (const auto &b : bins) eb.push_back(elrs::Bin{b.mhz, b.mean_db, b.peak_db, b.duty});
+      const auto r = elrs::analyse(eb, elrs::Use::Racing, elrs::Region::Fcc);
+      std::fprintf(stderr, "elrs: verdict %d, %d measured, %d clean %d busy %d bad, hit %.1f %%, worst peak %.1f dB\n",
+                   static_cast<int>(r.verdict), r.measured, r.clean, r.busy, r.bad, r.hit * 100, r.worst_peak);
+      for (const auto &w : r.wifi)
+        std::fprintf(stderr, "  wifi ch %d (%.0f MHz): mean %.1f dB, peak %.1f dB, duty %.3f%s\n", w.ch, w.mhz, w.mean_db,
+                     w.peak_db, w.duty, w.traffic ? ", traffic" : "");
+      for (const auto &e : r.other)
+        std::fprintf(stderr, "  other %d: %.1f-%.1f MHz, peak %.1f dB, share %.2f\n", static_cast<int>(e.kind), e.lo_mhz,
+                     e.hi_mhz, e.peak_db, e.share);
+      std::string row;
+      for (const auto &c : r.channels)
+        row += !c.measured ? '.' : c.level == elrs::Level::Clean ? '-' : c.level == elrs::Level::Busy ? 'o' : 'X';
+      std::fprintf(stderr, "  ELRS 2400.4..2479.4: %s\n", row.c_str());
+      for (const auto &c : r.channels)
+        if (c.measured && c.level != elrs::Level::Clean)
+          std::fprintf(stderr, "    %.1f MHz: mean %.1f peak %.1f duty %.3f\n", c.mhz, c.mean_db, c.peak_db, c.duty);
+      std::string tips;
+      for (const auto t : r.tips) tips += " " + std::to_string(static_cast<int>(t));
+      std::fprintf(stderr, "  tips:%s\n", tips.c_str());
+      return 0;
     }
     for (double f = std::floor(survey_lo / 10) * 10; f < survey_hi; f += 10) {  // cada 10 MHz: media, pico, duty
       double m = -1e9, pk = -1e9, du = 0;

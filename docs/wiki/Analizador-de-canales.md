@@ -1,13 +1,13 @@
-# Analizador de canales
+# Analizador de 5,8 GHz (vídeo)
 
 *[English](Channel-analyzer) · **Español***
 
-El analizador (*Herramientas → Analizador de canales*) barre la banda de 5,8 GHz con el adaptador y recomienda
+El analizador (*Herramientas → Analizador de 5,8 GHz (vídeo)*; hasta la v0.12, *Analizador de canales*) barre la banda de 5,8 GHz con el adaptador y recomienda
 qué canales usar para varios pilotos analógicos y HDZero a la vez, de forma que no se pisen entre sí ni con lo que
 ya hay en el aire.
 
 > Esta página explica **en qué se basa** la recomendación. Los pasos para usar la ventana están en el
-> [README](https://github.com/Pwn3dP4nd4/FPVDesktopWiFiReceiver/blob/main/README.es.md#analizador-de-canales).
+> [README](https://github.com/Pwn3dP4nd4/FPVDesktopWiFiReceiver/blob/main/README.es.md#analizador-de-58-ghz-vídeo).
 
 ## Qué mide
 

@@ -1,0 +1,146 @@
+#pragma once
+#include <QDialog>
+#include <QElapsedTimer>
+#include <QHash>
+#include <QMap>
+
+#include "backend.h"
+#include "elrs_advisor.h"
+
+class QCheckBox;
+class QComboBox;
+class QLabel;
+class QPushButton;
+class QSpinBox;
+class QTextBrowser;
+class QTimer;
+class QTreeWidget;
+
+// Grafica del analizador de 2,4 GHz: espectro medio y picos (dB sobre el suelo), los canales WiFi detectados (sus
+// 16.6 MHz) y, debajo, los 80 canales de ELRS coloreados por lo ocupados que estan. Arriba, la barra de barrido: cada MHz
+// se ilumina al volver a medirse (SpectrumPoint::seq) y se va apagando; donde va el barrido, una franja tenue.
+class ElrsView : public QWidget {
+    Q_OBJECT
+public:
+    explicit ElrsView(QWidget *parent = nullptr);
+    void setData(const QVector<SpectrumPoint> &bins, const elrs::Report &r);
+    // analisis en marcha: la barra de barrido se anima; al empezar, lo de antes se olvida
+    void setScanning(bool on);
+    QSize sizeHint() const override { return {760, 300}; }
+    static constexpr double kLo = 2398, kHi = 2484;
+    static constexpr int kFadeMs = 900;  // lo que tarda un MHz recien medido en apagarse en la barra
+
+protected:
+    void paintEvent(QPaintEvent *) override;
+
+private:
+    QVector<SpectrumPoint> bins_;
+    elrs::Report report_;
+    QHash<int, quint32> cellSeq_;  // por MHz: el ultimo seq visto
+    QHash<int, qint64> cellT_;     // y cuando cambio (ms de clock_)
+    QElapsedTimer clock_;
+    QTimer *anim_ = nullptr;
+    bool scanning_ = false;
+};
+
+// Analizador de 2,4 GHz (Herramientas): barre 2402-2482 MHz sin parar y dice que canales de ELRS estan ocupados, que
+// redes WiFi y otras emisiones hay, y como configurar ELRS para aguantarlo (src/elrs_advisor.h). No se ve video
+// mientras esta en marcha. Usa el mismo barrido que el analizador de canales de 5,8 GHz: no pueden ir a la vez.
+class ElrsAnalyzer : public QDialog {
+    Q_OBJECT
+public:
+    ElrsAnalyzer(Backend *backend, QWidget *parent = nullptr);
+    bool isRunning() const { return running_; }
+    void setAdapterOpen(bool open);  // tambien llega solo, con el estado del backend
+    // el otro analizador se ha puesto en marcha (el barrido ya es suyo): parar sin pedirselo al backend
+    void abandon(const QString &why);
+    void startForTest() { if (!running_) toggle(); }
+    const elrs::Report &reportForTest() const { return report_; }
+    void setPilotsForTest(int n);
+    void setTimeForTest(double s) { testTimeS_ = s; }
+    elrs::Verdict shownVerdictForTest() const { return shownVerdict_; }
+    void feedForTest(const SurveyData &d) { onSurvey(d); }
+    bool runningForTest() const { return running_; }
+    void setAutoStopForTest(bool on);
+    QString tipsTextForTest() const;
+
+signals:
+    void requestStart(double loMHz, double hiMHz);
+    void requestMemory(int sweeps);
+    void requestStop();
+    void runningChanged(bool running);
+
+protected:
+    void closeEvent(QCloseEvent *e) override;
+    void changeEvent(QEvent *e) override;
+
+private:
+    void retranslate();
+    void toggle();
+    void stop();
+    void onSurvey(const SurveyData &d);
+    void onStopped();
+    void recompute();
+    void updateDetected();
+    void updateTips();
+    QString tipText(elrs::Tip t) const;
+    QString rateAdvice(elrs::Verdict v) const;
+    QString modeTable() const;  // perdida estimada de los modos del uso elegido
+    QString verdictText() const;
+    double now() const;  // s desde que empezo el analisis
+    // El veredicto que se muestra: cambia solo si el nuevo dura kHoldS (no salta a cada barrido). immediate: ya
+    // (al cambiar un ajuste, o el primero)
+    void settleVerdict(bool immediate);
+    void buildLegend();
+    void updateAutoStopTip();  // la ayuda de "parar solo" (dice cuantos barridos de media)
+    void checkSteady();  // parar solo (autoStop_) cuando lo que se ve lleva kSteadyS sin cambiar
+    elrs::Use use() const;
+    elrs::Region region() const;
+
+    QComboBox *use_ = nullptr, *region_ = nullptr, *memory_ = nullptr;
+    QSpinBox *pilots_ = nullptr;  // otros pilotos con ELRS de 2,4 GHz a la vez
+    QLabel *useLbl_ = nullptr, *regionLbl_ = nullptr, *memoryLbl_ = nullptr, *pilotsLbl_ = nullptr;
+    QPushButton *startBtn_ = nullptr;
+    QCheckBox *autoStop_ = nullptr;  // parar solo cuando el resultado ya no cambia
+    QLabel *state_ = nullptr, *summary_ = nullptr, *detectedTitle_ = nullptr, *tipsTitle_ = nullptr;
+    // leyenda: muestras de color con su texto (dos filas) y una nota debajo
+    QVector<QLabel *> legendText_;
+    QLabel *legendGraph_ = nullptr, *legendElrs_ = nullptr, *legendNote_ = nullptr;
+    ElrsView *view_ = nullptr;
+    QTreeWidget *detected_ = nullptr;
+    QTextBrowser *tips_ = nullptr;
+    SurveyData last_;
+    elrs::Report report_;
+    bool running_ = false, open_ = false;
+    bool awaitingData_ = false;
+    double testTimeS_ = -1;  // pedido el barrido: un surveyStopped de antes (de otra ventana) no es para este
+    int pendingStops_ = 0;
+    QElapsedTimer clock_;
+    // ---- lo que se muestra no salta a cada barrido ----
+    static constexpr double kHoldS = 8;      // un veredicto nuevo tiene que durar esto para mostrarse
+    static constexpr double kKeepS = 12;     // una sugerencia o algo "en el aire" sigue a la vista esto tras dejar de verse
+    static constexpr double kRenderS = 5;    // las sugerencias (sus cifras) se rehacen como mucho cada esto
+    static constexpr double kDimS = 5;       // una fila de "En el aire" sin verse esto: mas tenue
+    elrs::Report shownReport_;               // el informe de las cifras del resumen y la tira (= veredicto mostrado)
+    int shownSweep_ = -1;                    // el barrido de shownReport_
+    static constexpr double kMinRunS = 30;   // parar solo: al menos esto midiendo (un AP callado se pilla a ratos)
+    static constexpr double kSteadyS = 15;   // y el veredicto y las sugerencias no han cambiado en esto
+    static constexpr double kMaxRunS = 120;  // y, cambie o no, como mucho esto
+    QString lastChange_;                     // lo ultimo que cambio (para decirlo al parar a los kMaxRunS)
+    QString currentTipsKey_;                 // la estructura de las sugerencias de ahora (updateTips)
+    QString steadyKey_;                      // lo que se ve (veredicto, sugerencias, en el aire) y desde cuando
+    double steadySince_ = 0;
+    elrs::Verdict shownVerdict_ = elrs::Verdict::Unknown, candVerdict_ = elrs::Verdict::Unknown;
+    double candSince_ = 0;
+    QHash<int, double> tipSeen_;             // por sugerencia: la ultima vez que salio
+    struct Held {                            // una fila de "En el aire"
+        QStringList cols;
+        QColor colour;
+        double seen = 0;
+    };
+    QMap<QString, Held> held_;               // por clave ("wifi:06", "other:1:2450"): ordenadas
+    QStringList shownKeys_;
+    QString tipsKey_, tipsHtml_;              // lo ultimo dibujado en las sugerencias (y su estructura)
+    double tipsT_ = -1e9;
+    int sweeps_ = 0;
+};

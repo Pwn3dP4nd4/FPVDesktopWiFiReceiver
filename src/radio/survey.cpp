@@ -8,8 +8,10 @@
 
 namespace fpv {
 
-void SurveyGrid::reset() {
-  _acc.assign(kBins, Acc{});
+void SurveyGrid::reset(double lo_hz, int bins) {
+  _lo = lo_hz;
+  _bins = bins < 1 ? 1 : bins;
+  _acc.assign(static_cast<size_t>(_bins), Acc{});
   _step_floor.clear();
   _step_ref.clear();
   _sweeps = 0;
@@ -62,7 +64,7 @@ void survey_scale(SurveyStep &s, double db) {
 }
 
 void SurveyGrid::merge(const SurveyStep &s) {
-  if (_acc.size() != static_cast<size_t>(kBins)) _acc.assign(kBins, Acc{});
+  if (_acc.size() != static_cast<size_t>(_bins)) _acc.assign(static_cast<size_t>(_bins), Acc{});
   const long key = std::lround(s.centre_hz / 1e3);
   if (s.floor <= 0) return;
   _merges++;
@@ -72,7 +74,7 @@ void SurveyGrid::merge(const SurveyStep &s) {
   update_refs();
   const double decay = std::pow(10.0, -kPeakFadeDb / _memory / 10);
   for (const auto &b : s.bins) {
-    if (b.index < 0 || b.index >= kBins) continue;
+    if (b.index < 0 || b.index >= _bins) continue;
     auto &a = _acc[static_cast<size_t>(b.index)];
     // plain average for the first memory() updates, then exponential with the same weight
     a.n = std::min(a.n + 1, _memory);
@@ -94,7 +96,7 @@ std::vector<SurveyBin> SurveyGrid::spectrum() const {
     if (r == _step_ref.end() || r->second <= 0) continue;
     const double f = r->second;
     SurveyBin b;
-    b.mhz = (kLo + (static_cast<double>(i) + 0.5) * kBin) / 1e6;
+    b.mhz = (_lo + (static_cast<double>(i) + 0.5) * kBin) / 1e6;
     b.mean_db = static_cast<float>(10 * std::log10(std::max(a.mean, 1e-30) / f));
     b.peak_db = static_cast<float>(10 * std::log10(std::max(a.peak, 1e-30) / f));
     b.duty = static_cast<float>(a.duty);
@@ -106,6 +108,12 @@ std::vector<SurveyBin> SurveyGrid::spectrum() const {
 
 SurveyStep survey_measure(const cfs *x, size_t n, double centre_hz, double fs, double reach_hz, double floor_hint,
                           float full_scale) {
+  return survey_measure(x, n, centre_hz, fs, -reach_hz, reach_hz, SurveyGrid::kLo, floor_hint, full_scale);
+}
+
+SurveyStep survey_measure(const cfs *x, size_t n, double centre_hz, double fs, double from_hz, double to_hz,
+                          double grid_lo_hz, double floor_hint, float full_scale) {
+  constexpr double kFloorReach = 10e6;
   constexpr int kN = 256, kFrames = 16, kSlice = kN * kFrames;
   SurveyStep out;
   out.centre_hz = centre_hz;
@@ -137,15 +145,20 @@ SurveyStep survey_measure(const cfs *x, size_t n, double centre_hz, double fs, d
   const auto freq = [&](int k) { return (k < kN / 2 ? k : k - kN) * fs / kN; };
   std::vector<int> use;
   for (int k = 0; k < kN; k++)
-    if (freq(k) >= -reach_hz && freq(k) < reach_hz && std::fabs(freq(k)) > 0.3e6) use.push_back(k);
+    if (freq(k) >= from_hz && freq(k) < to_hz && std::fabs(freq(k)) > 0.3e6) use.push_back(k);
   if (use.empty()) return out;
   std::vector<double> mean(kN, 0);
   for (int k : use) {
     for (size_t s = 0; s < slices; s++) mean[k] += p[s][k];
     mean[k] /= static_cast<double>(slices);
   }
+  // the floor from the step's middle only: the 2.4 GHz end steps measure out to +-20 MHz, where the RX filter
+  // already attenuates (measured: -1..-2 dB there against +2..+3 dB in the quiet middle of the band)
   std::vector<double> m;
-  for (int k : use) m.push_back(mean[k]);
+  for (int k : use)
+    if (std::fabs(freq(k)) <= kFloorReach) m.push_back(mean[k]);
+  if (m.empty())
+    for (int k : use) m.push_back(mean[k]);
   std::nth_element(m.begin(), m.begin() + m.size() / 10, m.end());
   out.floor = std::max(m[m.size() / 10], 1e-30);
   const double thr = SurveyGrid::kDutyOver * (floor_hint > 0 ? std::min(floor_hint, out.floor) : out.floor);
@@ -156,7 +169,7 @@ SurveyStep survey_measure(const cfs *x, size_t n, double centre_hz, double fs, d
       pk = std::max(pk, p[s][k]);
       on += p[s][k] > thr;
     }
-    const long i = static_cast<long>(std::floor((centre_hz + freq(k) - SurveyGrid::kLo) / SurveyGrid::kBin));
+    const long i = static_cast<long>(std::floor((centre_hz + freq(k) - grid_lo_hz) / SurveyGrid::kBin));
     out.bins.push_back({i, mean[k], pk, static_cast<float>(on) / static_cast<float>(slices)});
   }
   return out;

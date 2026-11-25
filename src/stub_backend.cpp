@@ -69,7 +69,7 @@ void StubBackend::startSurvey(double lo, double hi) {
     surveyLo_ = lo;
     surveyHi_ = hi;
     sweeps_ = 0;
-    survey_->start(race_ ? 200 : 1000);
+    survey_->start(race_ ? 200 : hi < 3000 ? 250 : 1000);  // 2,4 GHz: un tercio de la banda cada 250 ms, como el de verdad
     surveyTick();
 }
 
@@ -116,9 +116,45 @@ void StubBackend::raceTick(SurveyData &d) {
     }
 }
 
+// Banda de 2,4 GHz simulada (analizador ELRS): un AP con trafico en el canal WiFi 1, otro mas fuerte en el 6, uno
+// callado (solo beacons) en el 11, rafagas cortas de Bluetooth por toda la banda y ruido. Un barrido por actualizacion.
+void StubBackend::elrsTick(SurveyData &d) {
+    // un tercio de la banda por actualizacion (seq de cada bin: la ultima que paso por su tercio), un barrido cada tres
+    const int tick = d.sweeps;
+    const int k = tick / 3;
+    d.sweeps = k;
+    const double seen = std::min(1.0, 0.4 + 0.2 * k);
+    for (double f = surveyLo_ + 0.078; f < surveyHi_; f += 0.15625) {
+        const quint32 h = qHash(qint64(f * 1000) + k * 7919);
+        SpectrumPoint p{f, 0.3f + float((h % 100) / 120.0), 4.f + float((h % 50) / 10.0), 0.f};
+        struct Ap {
+            double mhz;
+            float mean, peak, duty;
+        };
+        const Ap aps[] = {{2412, 6, 24, 0.22f}, {2437, 12, 32, 0.45f}, {2462, 0.5f, 18, 0.004f}};
+        for (const Ap &a : aps)
+            if (std::abs(f - a.mhz) < 8.3) {
+                p.meanDb = std::max(p.meanDb, a.mean * float(seen));
+                p.peakDb = std::max(p.peakDb, a.peak * float(seen));
+                p.duty = std::max(p.duty, a.duty);
+            }
+        const quint32 hb = qHash(qint64(std::floor(f)) * 31 + 5);  // Bluetooth: un MHz entero de cada tres
+        if (hb % 3 == 0) p.peakDb = std::max(p.peakDb, 15.f + float(hb % 6)), p.duty = std::max(p.duty, 0.01f);
+        const int third = std::clamp(int(3 * (f - surveyLo_) / (surveyHi_ - surveyLo_)), 0, 2);
+        const int last = tick - (((tick - third) % 3) + 3) % 3;
+        p.seq = last >= 0 ? quint32(last + 1) : 0;
+        d.bins.push_back(p);
+    }
+}
+
 void StubBackend::surveyTick() {
     SurveyData d;
     d.sweeps = sweeps_++;
+    if (surveyHi_ < 3000) {
+        elrsTick(d);
+        emit surveyUpdated(d);
+        return;
+    }
     if (race_) {
         raceTick(d);
         emit surveyUpdated(d);

@@ -89,7 +89,7 @@ if(KP_WITH_RADIO)
   # da todos los simbolos de wsdr::Receiver, asi que el receiver.o de wsdrcore no se enlaza.
   #   cmake --build build/msys2 --target radio_sim  ->  radio_sim --scan [--digital] (ver test/radio_sim.cpp)
   find_package(Threads REQUIRED)
-  add_executable(radio_sim EXCLUDE_FROM_ALL test/radio_sim.cpp src/scan_plan.cpp src/channel_advisor.cpp ${_fpv_radio_src} "${KEPYUR_DIR}/native/tools/sim_receiver.cpp")
+  add_executable(radio_sim EXCLUDE_FROM_ALL test/radio_sim.cpp src/scan_plan.cpp src/channel_advisor.cpp src/elrs_advisor.cpp ${_fpv_radio_src} "${KEPYUR_DIR}/native/tools/sim_receiver.cpp")
   target_include_directories(radio_sim PRIVATE src src/radio src/kp_ext)
   target_link_libraries(radio_sim PRIVATE kepyur_dsp wsdrcore Threads::Threads)
   target_compile_options(radio_sim PRIVATE -O2 -Wall -Wextra)
@@ -99,7 +99,7 @@ if(KP_WITH_RADIO)
   # radio_live: lo mismo con el adaptador de verdad (p.ej. grabar IQ desde la consola)
   #   radio_live --watch 5658 --rate 1 --record 5 rec/hdzero --seconds 12
   add_executable(radio_live EXCLUDE_FROM_ALL test/radio_sim.cpp src/scan_plan.cpp src/channel_advisor.cpp
-                 src/usb3_switch.cpp)
+                 src/elrs_advisor.cpp src/usb3_switch.cpp)
   target_include_directories(radio_live PRIVATE src)
   target_compile_definitions(radio_live PRIVATE KP_LIVE_ADAPTER)  # pasa el adaptador a USB 3 antes de abrir
   target_link_libraries(radio_live PRIVATE fpv_radio Threads::Threads)
@@ -130,6 +130,7 @@ add_executable(FPVDesktopWiFiReceiver
   src/scan_plan.cpp src/scan_plan.h
   src/scan_channels_dialog.cpp src/scan_channels_dialog.h
   src/channel_analyzer.cpp src/channel_analyzer.h src/channel_advisor.cpp src/channel_advisor.h
+  src/elrs_analyzer.cpp src/elrs_analyzer.h src/elrs_advisor.cpp src/elrs_advisor.h
   src/race_monitor.cpp src/race_monitor.h
   src/channel_names.cpp src/channel_names.h
   src/i18n.cpp src/i18n.h
@@ -222,6 +223,18 @@ add_executable(analyzer_shot test/analyzer_shot.cpp src/channel_analyzer.cpp src
 target_include_directories(analyzer_shot PRIVATE src)
 target_link_libraries(analyzer_shot PRIVATE Qt6::Widgets kepyur_dsp)
 
+# Ventana del analizador de 2,4 GHz sin adaptador ni pantalla (que no salte a cada barrido): --target elrs_window_test
+add_executable(elrs_window_test EXCLUDE_FROM_ALL test/elrs_window_test.cpp src/elrs_analyzer.cpp src/elrs_analyzer.h
+               src/elrs_advisor.cpp src/backend.h)
+target_include_directories(elrs_window_test PRIVATE src)
+target_link_libraries(elrs_window_test PRIVATE Qt6::Widgets kepyur_dsp)  # log.h (KP_LOGI)
+
+# Captura del analizador de 2,4 GHz (ELRS) con el backend de demo: QT_QPA_PLATFORM=offscreen elrs_shot salida.png [s]
+add_executable(elrs_shot EXCLUDE_FROM_ALL test/elrs_shot.cpp src/elrs_analyzer.cpp src/elrs_analyzer.h src/elrs_advisor.cpp
+               src/stub_backend.cpp src/stub_backend.h src/backend.h src/video_widget.cpp)
+target_include_directories(elrs_shot PRIVATE src)
+target_link_libraries(elrs_shot PRIVATE Qt6::Widgets kepyur_dsp)
+
 # Logica de la ventana del analizador (ritmo de barridos, parar/empezar, auto-inicio y fin de la carrera) con un
 # backend falso y sin pantalla: cmake --build <dir> --target analyzer_logic_test
 add_executable(analyzer_logic_test EXCLUDE_FROM_ALL test/analyzer_logic_test.cpp src/channel_analyzer.cpp
@@ -246,6 +259,15 @@ target_link_libraries(channel_advisor_test PRIVATE kepyur_dsp)
 target_compile_options(channel_advisor_test PRIVATE -Wall -Wextra)
 if(WIN32)
   target_link_options(channel_advisor_test PRIVATE -static-libgcc -static-libstdc++)
+endif()
+
+# Analizador de 2,4 GHz para ELRS con espectros sinteticos: cmake --build <dir> --target elrs_advisor_test
+add_executable(elrs_advisor_test EXCLUDE_FROM_ALL test/elrs_advisor_test.cpp src/elrs_advisor.cpp)
+target_include_directories(elrs_advisor_test PRIVATE src)
+target_compile_definitions(elrs_advisor_test PRIVATE KP_TEST_DATA="${CMAKE_CURRENT_SOURCE_DIR}/test/data")
+target_compile_options(elrs_advisor_test PRIVATE -Wall -Wextra)
+if(WIN32)
+  target_link_options(elrs_advisor_test PRIVATE -static-libgcc -static-libstdc++)
 endif()
 
 # Seguimiento de carrera (canales fijados) con espectros sinteticos: cmake --build <dir> --target race_monitor_test
