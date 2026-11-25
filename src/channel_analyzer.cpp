@@ -31,7 +31,10 @@
 #include <QPushButton>
 #include <QSettings>
 
+#include <QScrollBar>
 #include <QSpinBox>
+#include <QSplitter>
+#include <QStackedWidget>
 #include <QTabWidget>
 #include <QTimer>
 #include <QToolButton>
@@ -83,6 +86,8 @@ QString chName(const advisor::Candidate &c) {
 
 // colores de los recomendados (franja) por sistema
 const QColor kAnalogColour(0x2f, 0x80, 0xed), kHdzColour(0x7b, 0x5c, 0xd6);
+// barra de barrido
+const QColor kSweepColour(0x1e, 0x90, 0xff);
 // seguimiento de carrera: por debajo de esta SNR (dB) el video de un piloto se tiene por flojo
 constexpr float kLowSnrDb = 12;
 
@@ -174,6 +179,54 @@ QSettings &settings() {
 SpectrumView::SpectrumView(QWidget *parent) : QWidget(parent) {
     setMinimumHeight(240);
     setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+    sweepClock_.start();
+    anim_ = new QTimer(this);
+    anim_->setInterval(150);
+    connect(anim_, &QTimer::timeout, this, [this] {
+        if (isVisible()) update();
+    });
+}
+
+void SpectrumView::setScanning(bool on) {
+    if (on && !scanning_) {
+        cellSeq_.clear();
+        cellT_.clear();
+        head_.clear();
+        headT_ = -1;
+        periodS_ = 3;
+    }
+    scanning_ = on;
+    if (on) anim_->start();
+    else anim_->stop();
+    update();
+}
+
+void SpectrumView::trackSweep() {
+    // seq crece con cada paso medido: una celda cuyo seq ha cambiado se ha vuelto a medir desde la actualizacion
+    // anterior (setData tambien llega sin espectro nuevo, al recalcular: ahi no cambia ninguna)
+    const qint64 t = sweepClock_.elapsed();
+    QVector<int> fresh;
+    std::vector<double> gaps;
+    for (const auto &b : data_.bins) {
+        if (b.seq == 0) continue;
+        const int c = int(std::floor(b.mhz));
+        const auto it = cellSeq_.find(c);
+        if (it != cellSeq_.end() && it.value() == b.seq) continue;
+        if (it != cellSeq_.end()) {
+            const auto ot = cellT_.find(c);
+            if (ot != cellT_.end()) gaps.push_back((t - ot.value()) / 1000.0);
+        }
+        cellSeq_[c] = b.seq;
+        cellT_[c] = t;
+        fresh << c;
+    }
+    if (fresh.isEmpty()) return;
+    head_ = fresh;
+    headT_ = t;
+    if (!gaps.empty()) {  // mediana de lo que han tardado en volver a medirse
+        std::nth_element(gaps.begin(), gaps.begin() + gaps.size() / 2, gaps.end());
+        periodS_ = std::clamp(0.7 * periodS_ + 0.3 * gaps[gaps.size() / 2], 0.5, 30.0);
+    }
 }
 
 void SpectrumView::setData(const SurveyData &d, const advisor::Advice &a, double lo, double hi,
@@ -202,11 +255,13 @@ void SpectrumView::setData(const SurveyData &d, const advisor::Advice &a, double
         }
         lin += std::pow(10.0, b.meanDb / 10.0);
         acc.peakDb = std::max(acc.peakDb, b.peakDb);
+        acc.seq = std::max(acc.seq, b.seq);
         // rafaga: intermitente (pico muy sobre su media); se guarda la parte del tiempo
         if (b.peakDb - b.meanDb > advisor::kBurstPeakOverMean) acc.duty = std::max(acc.duty, b.duty);
         n++;
     }
     flush();
+    trackSweep();
     mine_ = mine;
     advice_ = a;
     lo_ = lo;
@@ -223,7 +278,9 @@ void SpectrumView::paintEvent(QPaintEvent *) {
     const int rowH = fm.height() + 4;
     const int left = std::max({fm.horizontalAdvance(QStringLiteral("40 dB")), fm.horizontalAdvance(tr("Analog")),
                                fm.horizontalAdvance(QStringLiteral("HDZero"))}) + 10,
-              right = width() - 8, top = 8;
+              right = width() - 8;
+    // barra de barrido arriba del todo; la grafica, debajo
+    const int barTop = 7, barH = 7, top = barTop + barH + 14;
     const int plotBottom = height() - 2 * rowH - fm.height() - 10;
     const double dbMax = 40;
     const auto X = [&](double mhz) { return left + (mhz - lo_) / (hi_ - lo_) * (right - left); };
@@ -333,6 +390,77 @@ void SpectrumView::paintEvent(QPaintEvent *) {
             const double cx = X((g.lo + g.hi) / 2);
             p.drawText(QRectF(cx - 60, y + 3, 120, fm.height()), Qt::AlignHCenter | Qt::AlignTop, t);
         }
+    }
+
+    // barra de barrido: cada MHz, del color de la seleccion recien medido y apagandose hasta que vuelve a pasar el
+    // barrido (periodS_); gris lo que no se mide desde hace mas de 2 pasadas. Donde va ahora, una franja tenue sobre
+    // la grafica y una raya en la barra por el borde que avanza
+    {
+        QColor track = pal.color(QPalette::Text);
+        track.setAlpha(28);
+        p.fillRect(QRectF(left, barTop, right - left, barH), track);
+        const qint64 t = sweepClock_.elapsed();
+        const QColor hl = kSweepColour;  // azul fijo: el de la seleccion depende del tema (gris o el de acento)
+        if (scanning_) {
+            for (auto it = cellT_.constBegin(); it != cellT_.constEnd(); ++it) {
+                const double mhz = it.key();
+                if (mhz + 1 < lo_ || mhz > hi_) continue;
+                const double age = (t - it.value()) / 1000.0 / periodS_;
+                QColor c = hl;
+                if (age > 2) {
+                    c = pal.color(QPalette::Text);
+                    c.setAlpha(60);
+                } else {
+                    c.setAlpha(int(255 * std::clamp(1.0 - 0.8 * age, 0.25, 1.0)));
+                }
+                p.fillRect(QRectF(QPointF(X(std::max(lo_, mhz)), barTop),
+                                  QPointF(X(std::min(hi_, mhz + 1)), barTop + barH)),
+                           c);
+            }
+            const double fade = headT_ < 0 ? 0 : std::clamp(1.0 - (t - headT_) / 1000.0 / periodS_, 0.0, 1.0);
+            if (!head_.isEmpty() && fade > 0) {
+                QColor band = hl, edge = hl;
+                band.setAlpha(int(60 * fade));
+                edge.setAlpha(int(200 * fade));
+                // solo el tramo de head_ que acaba en lo ultimo medido (el seq mas alto), y su borde ahi: una
+                // actualizacion puede cubrir el final de un barrido y el principio del siguiente
+                QVector<int> h = head_;
+                std::sort(h.begin(), h.end());
+                int newest = 0;
+                for (int k = 1; k < h.size(); k++)
+                    if (cellSeq_.value(h[k]) > cellSeq_.value(h[newest])) newest = k;
+                {
+                    int i = newest;
+                    while (i > 0 && h[i] - h[i - 1] <= 2) i--;
+                    const double a = std::max(lo_, double(h[i])), b = std::min(hi_, double(h[newest] + 1));
+                    if (b > a) {
+                        // estela: transparente por detras y mas intensa hacia el borde que avanza (los pasos van de
+                        // menos a mas MHz, src/scan_plan.cpp); una franja plana se confundia con un canal recomendado
+                        QLinearGradient g(X(a), 0, X(b), 0);
+                        QColor clear = band;
+                        clear.setAlpha(0);
+                        g.setColorAt(0, clear);
+                        g.setColorAt(1, band);
+                        p.fillRect(QRectF(QPointF(X(a), top), QPointF(X(b), plotBottom)), g);
+                        QColor line = edge;
+                        line.setAlpha(int(110 * fade));
+                        p.setPen(QPen(line, 1, Qt::DotLine));
+                        p.drawLine(QPointF(X(b), top), QPointF(X(b), plotBottom));
+                        p.setPen(QPen(edge, 2));
+                        p.drawLine(QPointF(X(b), barTop - 2), QPointF(X(b), barTop + barH + 2));
+                    }
+                }
+            }
+        }
+        // titulo a la izquierda, si cabe
+        QFont sf = font();
+        sf.setPointSizeF(std::max(6.0, sf.pointSizeF() * 0.8));
+        const QFontMetrics sfm(sf);
+        p.setFont(sf);
+        p.setPen(pal.color(QPalette::Text));
+        p.drawText(QRectF(0, barTop - 4, left - 4, barH + 8), Qt::AlignRight | Qt::AlignVCenter,
+                   sfm.elidedText(tr("Sweep"), Qt::ElideRight, left - 6));
+        p.setFont(font());
     }
 
     // lo que hay en el aire
@@ -609,6 +737,15 @@ ChannelAnalyzer::ChannelAnalyzer(Backend *backend, QWidget *parent) : QDialog(pa
                 p.setPen(QPen(c, 1, Qt::DashLine));
                 p.drawLine(0, 6, 22, 6);
                 p.fillRect(7, 4, 8, 4, c);
+            } else if (kind == 7) {  // barra de barrido: recien medido a la derecha, apagandose hacia atras
+                QLinearGradient g(0, 0, 20, 0);
+                QColor a = c;
+                a.setAlpha(50);
+                g.setColorAt(0, a);
+                g.setColorAt(1, c);
+                p.fillRect(0, 4, 20, 5, g);
+                p.setPen(QPen(c, 2));
+                p.drawLine(QPointF(20.5, 2), QPointF(20.5, 11));
             } else {  // marca de canal
                 p.fillRect(9, 1, 5, 10, c);
             }
@@ -644,6 +781,7 @@ ChannelAnalyzer::ChannelAnalyzer(Backend *backend, QWidget *parent) : QDialog(pa
         add(5, 3, swatch(3, recH));
         add(5, 0, swatch(5, QColor(0xc0, 0x60, 0x00)));
         add(6, 3, swatch(6, kAnalogColour));
+        add(6, 0, swatch(7, kSweepColour));
         lg->setColumnMinimumWidth(2, 24);
         lg->setColumnStretch(5, 1);
         main->addWidget(box);
@@ -774,17 +912,70 @@ ChannelAnalyzer::ChannelAnalyzer(Backend *backend, QWidget *parent) : QDialog(pa
         tabs_->addTab(page, QString());
     }
     {
-        // historial: lo que ha ido avisando y recomendando la carrera, para verlo al final
+        // historial: lo que ha ido avisando y recomendando la carrera, para verlo al final. Por piloto (cual ha tenido
+        // mas problemas y cuales, por categoria) o todo seguido
         auto *page = new QWidget;
         auto *v = new QVBoxLayout(page);
         v->setContentsMargins(4, 4, 4, 4);
+        auto *top = new QHBoxLayout;
+        histRaceLbl_ = new QLabel;
+        top->addWidget(histRaceLbl_);
+        histRace_ = new QComboBox;
+        histRace_->setSizeAdjustPolicy(QComboBox::AdjustToContents);
+        connect(histRace_, &QComboBox::activated, this, [this] {
+            pilotPicked_ = false;
+            rebuildHistory();
+        });
+        top->addWidget(histRace_);
+        histView_ = new QComboBox;
+        histView_->addItem(QString());  // por piloto
+        histView_->addItem(QString());  // cronologico
+        connect(histView_, &QComboBox::currentIndexChanged, this,
+                [this](int i) { histStack_->setCurrentIndex(i); });
+        top->addWidget(histView_);
+        histVerdict_ = new QLabel;
+        histVerdict_->setWordWrap(true);
+        histVerdict_->setTextFormat(Qt::RichText);
+        top->addWidget(histVerdict_, 1);
+        v->addLayout(top);
+        histStack_ = new QStackedWidget;
+        {
+            auto *split = new QSplitter(Qt::Horizontal);
+            pilotTable_ = new QTreeWidget;
+            pilotTable_->setRootIsDecorated(false);
+            pilotTable_->setColumnCount(7);
+            pilotTable_->header()->setStretchLastSection(false);
+            // rebuildPilotView bloquea las senales: lo que llega aqui lo ha elegido el usuario
+            connect(pilotTable_, &QTreeWidget::currentItemChanged, this, [this] {
+                pilotPicked_ = true;
+                showPilotEvents();
+            });
+            split->addWidget(pilotTable_);
+            auto *right = new QWidget;
+            auto *rv = new QVBoxLayout(right);
+            rv->setContentsMargins(0, 0, 0, 0);
+            pilotInfo_ = new QLabel;
+            pilotInfo_->setWordWrap(true);
+            pilotInfo_->setTextFormat(Qt::RichText);
+            rv->addWidget(pilotInfo_);
+            pilotEvents_ = new QTreeWidget;
+            pilotEvents_->setColumnCount(3);
+            pilotEvents_->header()->setStretchLastSection(true);
+            pilotEvents_->setWordWrap(true);
+            rv->addWidget(pilotEvents_, 1);
+            split->addWidget(right);
+            split->setStretchFactor(0, 5);
+            split->setStretchFactor(1, 6);
+            histStack_->addWidget(split);
+        }
         histTable_ = new QTreeWidget;
         histTable_->setRootIsDecorated(false);
         histTable_->setColumnCount(5);
         histTable_->header()->setStretchLastSection(true);
         histTable_->setSelectionMode(QAbstractItemView::ExtendedSelection);
         histTable_->setWordWrap(true);
-        v->addWidget(histTable_, 1);
+        histStack_->addWidget(histTable_);
+        v->addWidget(histStack_, 1);
         auto *r = new QHBoxLayout;
         histHint_ = new QLabel;
         histHint_->setWordWrap(true);
@@ -799,19 +990,26 @@ ChannelAnalyzer::ChannelAnalyzer(Backend *backend, QWidget *parent) : QDialog(pa
         histClear_ = new QPushButton;
         connect(histClear_, &QPushButton::clicked, this, [this] {
             events_.clear();
-            histTable_->clear();
-            updateHistoryTab();
+            // la carrera en marcha sigue (sus eventos nuevos van a la misma); las ya terminadas se olvidan
+            if (raceOn_ && !races_.isEmpty()) races_ = {races_.back()};
+            else races_.clear();
+            rebuildHistory();
         });
         r->addWidget(histClear_);
         v->addLayout(r);
         tabs_->addTab(page, QString());
     }
     main->addWidget(tabs_, 2);
+    // con la pestana oculta el video de cada piloto no se refresca (updateRace): al abrirla, lo de ahora
+    connect(tabs_, &QTabWidget::currentChanged, this, [this](int i) {
+        if (i == 2) rebuildPilotView();
+    });
     h->addLayout(main, 1);
 
     pinned_ = parsePins(settings().value("analyzer/pinned").toStringList());
     connect(view_, &SpectrumView::pinToggled, this, &ChannelAnalyzer::togglePin);
     connect(view_, &SpectrumView::unpinAllRequested, this, [this] { setPins({}); });
+    connect(this, &ChannelAnalyzer::runningChanged, view_, &SpectrumView::setScanning);
 
     connect(this, &ChannelAnalyzer::requestStart, backend, &Backend::startSurvey);
     connect(this, &ChannelAnalyzer::requestStop, backend, &Backend::stopSurvey);
@@ -864,7 +1062,8 @@ void ChannelAnalyzer::retranslate() {
                             tr("Clean"), tr("Some interference"), tr("Busy or noisy"),
                             tr("Recommended analog channel"), tr("Recommended HDZero channel"),
                             tr("WiFi seen (dashed: rest of its block while its width is unknown)"),
-                            tr("Pinned channel (right-click a mark to pin)")};
+                            tr("Pinned channel (right-click a mark to pin)"),
+                            tr("Sweep: just measured (bright), fading until the next pass")};
         for (int i = 0; i < legendText_.size() && i < t.size(); i++) legendText_[i]->setText(t[i]);
     }
     table_->setHeaderLabels({tr("Pin"), tr("System"), tr("Channel"), tr("MHz"), tr("Interference"), tr("Bursts"),
@@ -896,10 +1095,27 @@ void ChannelAnalyzer::retranslate() {
     histTable_->headerItem()->setToolTip(1, tr("Time since race tracking started (sweep number in the tooltip)."));
     histHint_->setText(tr("Warnings, recommendations and changes of every race since the program started, and a "
                           "summary of each channel when it stops."));
+    histRaceLbl_->setText(tr("Race:"));
+    histView_->setItemText(0, tr("By pilot"));
+    histView_->setItemText(1, tr("Timeline"));
+    histView_->setToolTip(tr("By pilot: who had the most trouble and which, grouped as serious, warnings, channel "
+                             "changes and information. Timeline: every event in order."));
+    pilotTable_->setHeaderLabels({tr("Pilot"), tr("Video"), tr("Serious"), tr("Warnings"), tr("Changes"), tr("Info"),
+                                  QString()});
+    pilotTable_->headerItem()->setToolTip(0, tr("One pilot per pinned channel when the race started, with the "
+                                                "channels it went through."));
+    pilotTable_->headerItem()->setToolTip(1, tr("Estimated video quality (dB, more is better) and its SNR in the "
+                                                "worst moments. After a move, only on its new channel."));
+    pilotTable_->headerItem()->setToolTip(2, tr("Its channel gave it trouble: someone else on top of it or "
+                                                "interference (move recommended, or no better free channel)."));
+    pilotTable_->headerItem()->setToolTip(3, tr("Weak video that is not the channel's fault (antennas, power, "
+                                                "distance), or a signal that would not go away."));
+    pilotTable_->headerItem()->setToolTip(4, tr("Channel changes applied."));
+    pilotEvents_->setHeaderLabels({tr("Event"), tr("Race"), tr("Details")});
     histCopy_->setText(tr("Copy"));
     histSave_->setText(tr("Save..."));
     histClear_->setText(tr("Clear"));
-    updateHistoryTab();
+    rebuildHistory();
     applyBtn_->setText(tr("Apply"));
     applyBtn_->setToolTip(tr("Pins the new channel instead of the old one (tell the pilot to change it). The other "
                              "channels keep their history."));
@@ -963,7 +1179,26 @@ void ChannelAnalyzer::armForTest(int pilots) {
     armBtn_->setChecked(true);
 }
 
-void ChannelAnalyzer::showHistoryForTest() { tabs_->setCurrentIndex(2); }
+void ChannelAnalyzer::showHistoryForTest(bool timeline) {
+    tabs_->setCurrentIndex(2);
+    histView_->setCurrentIndex(timeline ? 1 : 0);
+}
+
+QStringList ChannelAnalyzer::pilotSummaryForTest() const {
+    // la tabla por piloto tal cual (de mas a menos problemas), con la ultima carrera elegida
+    QStringList out;
+    for (int i = 0; i < pilotTable_->topLevelItemCount(); i++) {
+        const QTreeWidgetItem *it = pilotTable_->topLevelItem(i);
+        const int race = it->data(0, Qt::UserRole).toInt(), pilot = it->data(0, Qt::UserRole + 1).toInt();
+        const RaceRec *rr = raceRec(race);
+        const QString who = pilot < 0 ? QStringLiteral("race")
+                                      : rr && pilot < rr->pilots.size() ? rr->pilots[pilot].channels.join(QLatin1Char('>'))
+                                                                        : QString::number(pilot);
+        out << QStringLiteral("%1: %2 serious, %3 warnings, %4 changes (race %5)")
+                   .arg(who, it->text(2), it->text(3), it->text(4), QString::number(race));
+    }
+    return out;
+}
 
 void ChannelAnalyzer::setRaceForTest(bool on) {
     tabs_->setCurrentIndex(on ? 1 : 0);
@@ -1661,9 +1896,13 @@ void ChannelAnalyzer::setPins(const QVector<Pin> &pins) {
     // cambio a mano: el seguimiento vuelve a empezar (sin fijados, se apaga); parado, lo de la ultima carrera ya
     // no casa con los fijados
     if (raceOn_ && !pinned_.isEmpty()) {
+        // otros pilotos: lo de hasta ahora se cierra con su resumen y sigue como otra carrera
+        addSummary();
+        race_.start(pinnedCandidates());
+        raceClock_.start();  // sus tiempos, desde aqui
+        beginRaceRec();
         addEvent(Ev::Info, QString(), tr("Pinned channels changed by hand"),
                  tr("Tracking starts again with %1.").arg(pinsText()));
-        race_.start(pinnedCandidates());
     } else if (raceOn_) setRace(false, tr("No pinned channels left"));
     else race_.start({});
     if (pinned_.isEmpty()) setArmed(false);
@@ -1708,6 +1947,7 @@ void ChannelAnalyzer::setRace(bool on, const QString &why) {
             armed_ = false;  // empezada (a mano o sola): ya no se espera a nadie
             race_.start(pinnedCandidates());  // apagado: lo apuntado se queda a la vista
             raceClock_.start();
+            beginRaceRec();
             raceSeenAny_ = false;
             lastPresentT_ = surveyT_;
             pinLastT_.clear();
@@ -1812,9 +2052,12 @@ void ChannelAnalyzer::checkLanded(const std::vector<advisor::Signal> &now) {
         // ajeno (o encendido en la mesa) junto a un canal fijado impide que pare sola. Si los demas ya han
         // aterrizado (vistos en esta carrera y no desde hace kLandedS) y quedan solo unos pocos, se avisa una vez.
         QStringList still;
-        int landed = 0;
+        int landed = 0, stillIdx = -1;
         for (int i = 0; i < n; i++) {
-            if (here[i]) still << chName(pinned[i]);
+            if (here[i]) {
+                still << chName(pinned[i]);
+                stillIdx = i;
+            }
             else if (pinLastT_[i] >= 0 && surveyT_ - pinLastT_[i] >= kLandedS) landed++;
         }
         if (autoStop_->isChecked() && !lingerWarned_ && !still.isEmpty() && landed > 0 &&
@@ -1824,7 +2067,8 @@ void ChannelAnalyzer::checkLanded(const std::vector<advisor::Signal> &now) {
             KP_LOGI("carrera: solo queda en el aire %s; no para sola mientras siga", qUtf8Printable(l));
             addEvent(Ev::Warn, l, tr("Still on the air: the race will not stop by itself"),
                      tr("The other pilots are no longer seen. If this is not one of your pilots (someone else's VTX "
-                        "near its channel), stop the race by hand."));
+                        "near its channel), stop the race by hand."),
+                     still.size() == 1 ? stillIdx : -1);
         }
         return;
     }
@@ -1844,7 +2088,88 @@ QString raceTime(double s) {
 }
 }  // namespace
 
-void ChannelAnalyzer::addEvent(Ev kind, const QString &channel, const QString &what, const QString &detail) {
+ChannelAnalyzer::Cat ChannelAnalyzer::category(Ev k) {
+    switch (k) {
+    case Ev::Problem:
+    case Ev::Move: return Cat::Serious;
+    case Ev::Warn: return Cat::Warning;
+    case Ev::Applied: return Cat::Change;
+    case Ev::Info:
+    case Ev::Ok:
+    case Ev::Summary: break;
+    }
+    return Cat::Info;
+}
+
+QString ChannelAnalyzer::catName(Cat c) const {
+    switch (c) {
+    case Cat::Serious: return tr("Serious");
+    case Cat::Warning: return tr("Warnings");
+    case Cat::Change: return tr("Channel changes");
+    case Cat::Info: break;
+    }
+    return tr("Information");
+}
+
+namespace {
+QColor catColour(int c) {  // Cat: graves, avisos, cambios, informacion
+    static const QColor cs[] = {QColor(0xd9, 0x48, 0x3b), QColor(0xe0, 0xa0, 0x20), QColor(0x2f, 0x80, 0xed),
+                                QColor(0x80, 0x80, 0x80)};
+    return cs[std::clamp(c, 0, 3)];
+}
+}  // namespace
+
+void ChannelAnalyzer::beginRaceRec() {
+    RaceRec r;
+    r.no = races_.isEmpty() ? 1 : races_.back().no + 1;
+    r.start = QDateTime::currentDateTime();
+    for (const auto &h : race_.health()) {
+        PilotRec p;
+        p.channels << chName(h.ch);
+        p.health = h;
+        r.pilots.push_back(p);
+    }
+    races_.push_back(r);
+    pilotPicked_ = false;
+    rebuildHistory();
+    // la nueva, elegida (si se estaba viendo una concreta)
+    if (histRace_ && histRace_->currentIndex() > 0) {
+        histRace_->setCurrentIndex(1);
+        rebuildHistory();
+    }
+}
+
+void ChannelAnalyzer::syncRaceHealth() {
+    if (races_.isEmpty()) return;
+    const auto &hs = race_.health();
+    auto &ps = races_.back().pilots;
+    for (int i = 0; i < static_cast<int>(hs.size()) && i < ps.size(); i++) ps[i].health = hs[i];
+}
+
+const ChannelAnalyzer::RaceRec *ChannelAnalyzer::raceRec(int no) const {
+    for (const auto &r : races_)
+        if (r.no == no) return &r;
+    return nullptr;
+}
+
+QString ChannelAnalyzer::pilotLabel(int race, int pilot, bool withRace) const {
+    const QString pre = withRace ? tr("Race %1").arg(race) + QStringLiteral(" · ") : QString();
+    const RaceRec *r = raceRec(race);
+    if (pilot < 0) return pre + tr("Whole race");
+    QString chs;
+    if (r && pilot < r->pilots.size()) chs = r->pilots[pilot].channels.join(QStringLiteral(" → "));
+    return pre + tr("Pilot %1").arg(pilot + 1) + (chs.isEmpty() ? QString() : QStringLiteral(" (%1)").arg(chs));
+}
+
+int ChannelAnalyzer::histRace() const { return histRace_ ? histRace_->currentData().toInt() : 0; }
+
+bool ChannelAnalyzer::histShows(const RaceEvent &e) const {
+    const int r = histRace();
+    return r == 0 || e.race == r;
+}
+
+void ChannelAnalyzer::addEvent(Ev kind, const QString &channel, const QString &what, const QString &detail,
+                               int pilot) {
     RaceEvent e;
     e.when = QDateTime::currentDateTime();
     e.raceS = raceClock_.isValid() ? raceClock_.elapsed() / 1000.0 : 0;
@@ -1853,21 +2178,36 @@ void ChannelAnalyzer::addEvent(Ev kind, const QString &channel, const QString &w
     e.channel = channel;
     e.what = what;
     e.detail = detail;
+    e.race = races_.isEmpty() ? 0 : races_.back().no;
+    e.pilot = pilot;
     events_.push_back(e);
     if (!histTable_) return;
+    if (histShows(e)) {
+        addHistRow(e);
+        histTable_->scrollToItem(histTable_->topLevelItem(histTable_->topLevelItemCount() - 1));
+    }
+    rebuildPilotView();
+    updateHistoryTab();
+}
+
+void ChannelAnalyzer::addHistRow(const RaceEvent &e) {
+    const Ev kind = e.kind;
+    const QString &what = e.what;
     auto *it = new QTreeWidgetItem(histTable_);
     it->setText(0, e.when.toString(QStringLiteral("HH:mm:ss")));
     it->setText(1, QStringLiteral("+") + raceTime(e.raceS));
     it->setToolTip(1, tr("Sweep %1").arg(e.sweep));
-    it->setText(2, channel);
+    it->setText(2, e.channel);
     it->setText(3, what);
-    it->setText(4, detail);
-    it->setToolTip(4, detail);
+    it->setText(4, e.detail);
+    it->setToolTip(4, e.detail);
+    it->setToolTip(2, pilotLabel(e.race, e.pilot, true));
     const QColor red(0xd9, 0x48, 0x3b), orange(0xe0, 0xa0, 0x20), green(0x3a, 0xa8, 0x5a), blue(0x2f, 0x80, 0xed);
     QColor col;
     switch (kind) {
     case Ev::Ok: col = green; break;
     case Ev::Warn: col = orange; break;
+    case Ev::Problem:
     case Ev::Move: col = red; break;
     case Ev::Applied: col = blue; break;
     case Ev::Info:
@@ -1879,11 +2219,217 @@ void ChannelAnalyzer::addEvent(Ev kind, const QString &channel, const QString &w
         bold.setBold(true);
         it->setFont(3, bold);
     }
-    if (kind == Ev::Info && what == tr("Race started"))
+    // donde empieza cada carrera (tambien la que sigue a cambiar los fijados a mano)
+    if (kind == Ev::Info && (what == tr("Race started") || what == tr("Pinned channels changed by hand")))
         for (int c = 0; c < histTable_->columnCount(); c++) it->setBackground(c, QColor(0x80, 0x80, 0x80, 40));
     for (int c = 0; c < 4; c++) histTable_->resizeColumnToContents(c);
-    histTable_->scrollToItem(it);
+}
+
+void ChannelAnalyzer::rebuildHistory() {
+    if (!histTable_) return;
+    // carreras para elegir: todas y cada una (la ultima primero)
+    const int want = histRace();
+    {
+        const QSignalBlocker b(histRace_);
+        histRace_->clear();
+        histRace_->addItem(tr("All"), 0);
+        for (int i = races_.size() - 1; i >= 0; i--) {
+            const RaceRec &r = races_[i];
+            histRace_->addItem(tr("Race %1 (%2, %n pilot(s))", nullptr, int(r.pilots.size()))
+                                   .arg(r.no).arg(r.start.toString(QStringLiteral("HH:mm"))),
+                               r.no);
+        }
+        const int at = histRace_->findData(want);
+        histRace_->setCurrentIndex(at >= 0 ? at : 0);
+    }
+    histTable_->clear();
+    for (const RaceEvent &e : events_)
+        if (histShows(e)) addHistRow(e);
+    rebuildPilotView();
     updateHistoryTab();
+}
+
+void ChannelAnalyzer::rebuildPilotView() {
+    if (!pilotTable_) return;
+    // cuenta por piloto (carrera, indice) de cada categoria
+    struct Row {
+        int race = 0, pilot = -1;
+        int n[4] = {0, 0, 0, 0};
+        const PilotRec *rec = nullptr;
+    };
+    QVector<Row> rows;
+    const auto rowOf = [&](int race, int pilot) -> Row & {
+        for (Row &r : rows)
+            if (r.race == race && r.pilot == pilot) return r;
+        Row r;
+        r.race = race;
+        r.pilot = pilot;
+        const RaceRec *rr = raceRec(race);
+        if (rr && pilot >= 0 && pilot < rr->pilots.size()) r.rec = &rr->pilots[pilot];
+        rows.push_back(r);
+        return rows.back();
+    };
+    const int sel = histRace();
+    for (const RaceRec &r : races_)
+        if (sel == 0 || r.no == sel)
+            for (int i = 0; i < r.pilots.size(); i++) rowOf(r.no, i);
+    for (const RaceEvent &e : events_)
+        if (e.race > 0 && histShows(e)) rowOf(e.race, e.pilot).n[static_cast<int>(category(e.kind))]++;
+    // de mas a menos problemas: graves, avisos, peor video; lo de toda la carrera al final
+    // un piloto al que no se ha visto nunca (VTX apagado o roto) no ha tenido video: cuenta como un grave
+    const auto neverSeen = [](const Row &r) { return r.rec && r.rec->health.sweeps > 0 && r.rec->health.seen == 0; };
+    const auto score = [&](const Row &r) { return r.n[0] * 3 + r.n[1] + (neverSeen(r) ? 3 : 0); };
+    std::stable_sort(rows.begin(), rows.end(), [&](const Row &a, const Row &b) {
+        if ((a.pilot < 0) != (b.pilot < 0)) return b.pilot < 0;
+        if (score(a) != score(b)) return score(a) > score(b);
+        const float qa = a.rec && a.rec->health.seen > 0 ? a.rec->health.quality : 1e9f;
+        const float qb = b.rec && b.rec->health.seen > 0 ? b.rec->health.quality : 1e9f;
+        if (qa != qb) return qa < qb;
+        return a.race != b.race ? a.race > b.race : a.pilot < b.pilot;
+    });
+
+    // lo elegido a mano se conserva al rehacer; si no, el que mas problemas ha tenido (el primero)
+    int keepRace = -1, keepPilot = -2;
+    if (auto *cur = pilotTable_->currentItem(); cur && pilotPicked_) {
+        keepRace = cur->data(0, Qt::UserRole).toInt();
+        keepPilot = cur->data(0, Qt::UserRole + 1).toInt();
+    }
+    const QSignalBlocker b(pilotTable_);
+    const int tableScroll = pilotTable_->verticalScrollBar()->value();  // rehecha en cada barrido: no salta arriba
+    pilotTable_->clear();
+    QFont bold = pilotTable_->font();
+    bold.setBold(true);
+    QTreeWidgetItem *keep = nullptr;
+    const bool withRace = sel == 0 && races_.size() > 1;
+    for (const Row &r : rows) {
+        auto *it = new QTreeWidgetItem(pilotTable_);
+        it->setData(0, Qt::UserRole, r.race);
+        it->setData(0, Qt::UserRole + 1, r.pilot);
+        it->setText(0, pilotLabel(r.race, r.pilot, withRace));
+        if (r.rec && !r.rec->channels.isEmpty() && r.rec->health.ch.mhz > 0)
+            it->setIcon(0, pinIcon(r.rec->health.ch.hdzero ? kHdzColour : kAnalogColour));
+        if (r.rec) {
+            const race::ChannelHealth &h = r.rec->health;
+            if (h.seen > 0) {
+                it->setText(1, QStringLiteral("%1 dB (SNR %2)").arg(h.quality, 0, 'f', 0).arg(h.snr_low, 0, 'f', 0));
+                if (h.snr_low < kLowSnrDb) it->setForeground(1, catColour(1));
+            } else {
+                it->setText(1, h.sweeps > 0 ? tr("not seen") : QStringLiteral("-"));
+            }
+            it->setToolTip(1, healthText(h, true));
+        }
+        for (int c = 0; c < 4; c++) {
+            it->setText(2 + c, QString::number(r.n[c]));
+            it->setTextAlignment(2 + c, Qt::AlignCenter);
+            if (r.n[c] > 0 && c < 3) {
+                it->setForeground(2 + c, catColour(c));
+                it->setFont(2 + c, bold);
+            }
+        }
+        if (r.race == keepRace && r.pilot == keepPilot) keep = it;
+    }
+    // el que mas problemas ha tenido, resaltado (si alguno ha tenido)
+    const Row *worst = nullptr;
+    int pilots = 0;
+    QStringList clean;  // los que no han tenido ninguno
+    for (const Row &r : rows) {
+        if (r.pilot < 0) continue;
+        pilots++;
+        if (!worst) worst = &r;
+        if (score(r) == 0) clean << pilotLabel(r.race, r.pilot, withRace).toHtmlEscaped();
+    }
+    if (worst && score(*worst) > 0) {
+        QTreeWidgetItem *w = pilotTable_->topLevelItem(0);
+        for (int c = 0; c < pilotTable_->columnCount(); c++) w->setBackground(c, QColor(0xd9, 0x48, 0x3b, 50));
+        w->setFont(0, bold);
+        w->setToolTip(0, tr("The most trouble"));
+        const QString who = pilotLabel(worst->race, worst->pilot, withRace).toHtmlEscaped();
+        QString v = neverSeen(*worst) ? tr("Most trouble: <b>%1</b>: its pilot was never seen.").arg(who)
+                                      : tr("Most trouble: <b>%1</b>: %2 serious, %3 warning(s).")
+                                            .arg(who).arg(worst->n[0]).arg(worst->n[1]);
+        if (!clean.isEmpty()) v += QLatin1Char(' ') + tr("No trouble: %1.").arg(clean.join(QStringLiteral(", ")));
+        histVerdict_->setText(v);
+    } else {
+        histVerdict_->setText(pilots > 0 ? tr("No pilot had any trouble.") : QString());
+    }
+    for (int c = 0; c < pilotTable_->columnCount(); c++) pilotTable_->resizeColumnToContents(c);
+    if (!keep) keep = pilotTable_->topLevelItem(0);
+    if (keep) pilotTable_->setCurrentItem(keep);
+    pilotTable_->verticalScrollBar()->setValue(tableScroll);
+    showPilotEvents();
+}
+
+void ChannelAnalyzer::showPilotEvents() {
+    // el mismo piloto que ya se mostraba (rehecho en cada barrido o evento): sus grupos abiertos o cerrados a mano y
+    // el desplazamiento se conservan
+    QTreeWidgetItem *now = pilotTable_->currentItem();
+    const int nowRace = now ? now->data(0, Qt::UserRole).toInt() : -1;
+    const int nowPilot = now ? now->data(0, Qt::UserRole + 1).toInt() : -2;
+    const bool same = now && nowRace == shownRace_ && nowPilot == shownPilot_ &&
+                      pilotEvents_->topLevelItemCount() == 4;
+    bool wasOpen[4] = {}, wasEmpty[4] = {};
+    const int eventsScroll = pilotEvents_->verticalScrollBar()->value();
+    if (same)
+        for (int c = 0; c < 4; c++) {
+            wasOpen[c] = pilotEvents_->topLevelItem(c)->isExpanded();
+            wasEmpty[c] = pilotEvents_->topLevelItem(c)->childCount() == 0;
+        }
+    shownRace_ = nowRace;
+    shownPilot_ = nowPilot;
+    pilotEvents_->clear();
+    pilotInfo_->clear();
+    QTreeWidgetItem *cur = pilotTable_->currentItem();
+    if (!cur) return;
+    const int race = cur->data(0, Qt::UserRole).toInt(), pilot = cur->data(0, Qt::UserRole + 1).toInt();
+    const RaceRec *rr = raceRec(race);
+    QString info = QStringLiteral("<b>%1</b>").arg(pilotLabel(race, pilot, true).toHtmlEscaped());
+    if (rr && pilot >= 0 && pilot < rr->pilots.size())
+        info += QStringLiteral(": ") + healthText(rr->pilots[pilot].health, true).toHtmlEscaped();
+    pilotInfo_->setText(info);
+    QFont bold = pilotEvents_->font();
+    bold.setBold(true);
+    QTreeWidgetItem *cats[4] = {};
+    int count[4] = {0, 0, 0, 0};
+    for (int c = 0; c < 4; c++) {
+        cats[c] = new QTreeWidgetItem(pilotEvents_);
+        cats[c]->setFont(0, bold);
+        cats[c]->setForeground(0, catColour(c));
+        cats[c]->setFirstColumnSpanned(true);
+    }
+    for (const RaceEvent &e : events_) {
+        if (e.race != race || e.pilot != pilot) continue;
+        const int c = static_cast<int>(category(e.kind));
+        count[c]++;
+        auto *it = new QTreeWidgetItem(cats[c]);
+        it->setText(0, e.what);
+        it->setText(1, QStringLiteral("+") + raceTime(e.raceS));
+        it->setToolTip(1, e.when.toString(QStringLiteral("HH:mm:ss")) + QStringLiteral(" · ") +
+                              tr("Sweep %1").arg(e.sweep));
+        it->setText(2, e.detail);
+        it->setToolTip(2, e.detail);
+        if (e.kind == Ev::Ok) it->setForeground(0, QColor(0x3a, 0xa8, 0x5a));
+    }
+    for (int c = 0; c < 4; c++) {
+        cats[c]->setText(0, QStringLiteral("%1 (%2)").arg(catName(Cat(c))).arg(count[c]));
+        if (count[c] == 0) {
+            QColor dim = pilotEvents_->palette().color(QPalette::Text);  // Disabled no siempre se distingue (oscuro)
+            dim.setAlpha(110);
+            cats[c]->setForeground(0, dim);
+            cats[c]->setFont(0, pilotEvents_->font());
+            cats[c]->setFlags(cats[c]->flags() & ~Qt::ItemIsSelectable);
+        }
+        // los problemas abiertos; la informacion (OK, resumenes), cerrada
+        // un grupo que estaba vacio y ahora tiene algo, como si fuera nuevo
+        const bool byDefault = count[c] > 0 && c != static_cast<int>(Cat::Info);
+        cats[c]->setExpanded(same && !wasEmpty[c] ? wasOpen[c] : byDefault);
+    }
+    // con los grupos cerrados no se mide lo de dentro: un minimo para que no salga estrecha
+    const QFontMetrics fm(pilotEvents_->font());
+    pilotEvents_->resizeColumnToContents(0);
+    pilotEvents_->setColumnWidth(0, std::max(pilotEvents_->columnWidth(0), fm.horizontalAdvance(QLatin1Char('M')) * 18));
+    pilotEvents_->resizeColumnToContents(1);
+    pilotEvents_->setColumnWidth(1, std::max(pilotEvents_->columnWidth(1), fm.horizontalAdvance(QStringLiteral("+00:00  "))));
+    if (same) pilotEvents_->verticalScrollBar()->setValue(eventsScroll);
 }
 
 QString ChannelAnalyzer::healthText(const race::ChannelHealth &h, bool summary) const {
@@ -1901,10 +2447,12 @@ QString ChannelAnalyzer::healthText(const race::ChannelHealth &h, bool summary) 
 void ChannelAnalyzer::addSummary() {
     const auto &hs = race_.health();
     if (race_.sweeps() == 0) return;
+    syncRaceHealth();
     const int worst = race_.worst();
     for (int i = 0; i < static_cast<int>(hs.size()); i++)
         addEvent(Ev::Summary, chName(hs[i].ch),
-                 i == worst && hs.size() > 1 ? tr("Summary (worst video)") : tr("Summary"), healthText(hs[i], true));
+                 i == worst && hs.size() > 1 ? tr("Summary (worst video)") : tr("Summary"), healthText(hs[i], true),
+                 i);
 }
 
 void ChannelAnalyzer::updateHistoryTab() {
@@ -1921,18 +2469,21 @@ QString ChannelAnalyzer::historyText(bool csv) const {
     };
     QStringList out;
     if (csv)
-        out << QStringList{tr("Date"), tr("Time"), tr("Race"), tr("Sweep"), tr("Channel"), tr("Event"), tr("Details")}
+        out << QStringList{tr("Date"), tr("Time"), tr("Race"), tr("Sweep"), tr("Race no."), tr("Pilot"),
+                           tr("Category"), tr("Channel"), tr("Event"), tr("Details")}
                    .join(QLatin1Char(','));
     for (const RaceEvent &e : events_) {
         const QString race = QStringLiteral("+") + raceTime(e.raceS);
+        const QString cat = catName(category(e.kind));
         if (csv)
             out << QStringList{e.when.toString(QStringLiteral("yyyy-MM-dd")),
                                e.when.toString(QStringLiteral("HH:mm:ss")), race, QString::number(e.sweep),
-                               q(e.channel), q(e.what), q(e.detail)}
+                               QString::number(e.race), e.pilot >= 0 ? QString::number(e.pilot + 1) : QString(),
+                               q(cat), q(e.channel), q(e.what), q(e.detail)}
                        .join(QLatin1Char(','));
         else
-            out << QStringLiteral("%1  %2  %3%4%5")
-                       .arg(e.when.toString(QStringLiteral("HH:mm:ss")), race.leftJustified(7),
+            out << QStringLiteral("%1  %2  [%3] %4%5%6")
+                       .arg(e.when.toString(QStringLiteral("HH:mm:ss")), race.leftJustified(7), cat,
                             e.channel.isEmpty() ? QString() : e.channel + QStringLiteral(": "), e.what,
                             e.detail.isEmpty() ? QString() : QStringLiteral(" - ") + e.detail);
     }
@@ -2026,8 +2577,9 @@ void ChannelAnalyzer::logRaceRow(int i, const QString &rec, const QString &tip, 
             qUtf8Printable(tip), qUtf8Printable(seenTxt), h.lost,
             h.sweeps > 0 ? qRound(100.0 * h.intruders / h.sweeps) : 0, h.channel_cost, h.sweeps);
     const QString stats = healthText(h, false);
-    addEvent(mv ? Ev::Move : col == QColor(0x3a, 0xa8, 0x5a) ? Ev::Ok : Ev::Warn, chName(h.ch), rec,
-             tip.isEmpty() ? stats : tip + QLatin1Char(' ') + stats);
+    const bool noBetter = i < noBetter_.size() && noBetter_[i];
+    addEvent(mv ? Ev::Move : col == QColor(0x3a, 0xa8, 0x5a) ? Ev::Ok : noBetter ? Ev::Problem : Ev::Warn,
+             chName(h.ch), rec, tip.isEmpty() ? stats : tip + QLatin1Char(' ') + stats, i);
 }
 
 QString ChannelAnalyzer::raceStateText() const {
@@ -2113,6 +2665,10 @@ void ChannelAnalyzer::updateRace() {
         adv = tr("No change needed: no pilot would clearly do better on another free channel.");
     }
     raceAdvice_->setText(adv);
+    if (raceOn_) {
+        syncRaceHealth();
+        if (tabs_->currentIndex() == 2) rebuildPilotView();  // su video, en vivo
+    }
     raceAdvice_->setStyleSheet(moves_.empty() ? QString() : QStringLiteral("color:#d9483b;"));
     applyBtn_->setText(moves_.size() > 1 ? tr("Apply all (%1)").arg(moves_.size()) : tr("Apply"));
     applyBtn_->setVisible(!moves_.empty());
@@ -2145,9 +2701,11 @@ void ChannelAnalyzer::applyMoves(const std::vector<race::Move> &moves) {
         if (m.from < 0 || m.from >= pinned_.size() || m.from >= static_cast<int>(race_.health().size())) continue;
         // solo cambia ese fijado: lo de los demas sigue (moved, no start)
         const advisor::Candidate &old = race_.health()[m.from].ch;
+        if (raceOn_ && !races_.isEmpty() && m.from < races_.back().pilots.size())
+            races_.back().pilots[m.from].channels << chName(m.to);
         addEvent(Ev::Applied, chName(old),
                  tr("Moved to %1 (%2 MHz)").arg(QString::fromStdString(m.to.name)).arg(m.to.mhz, 0, 'f', 0),
-                 tr("Applied: its tracking starts again on the new channel."));
+                 tr("Applied: its tracking starts again on the new channel."), m.from);
         pinned_[m.from] = Pin{QString::fromStdString(m.to.name), m.to.hdzero};
         race_.moved(m.from, m.to);
         any = true;

@@ -58,6 +58,9 @@ struct RadioStatus {
 struct SpectrumPoint {
     double mhz = 0;
     float meanDb = 0, peakDb = 0, duty = 0;
+    // cuando se midio por ultima vez (fpv::SurveyBin::seq): crece con cada paso del barrido; el analizador lo usa
+    // para mostrar que parte del espectro se acaba de refrescar
+    quint32 seq = 0;
 };
 struct SurveyData {
     QVector<SpectrumPoint> bins;  // por frecuencia, cada 156.25 kHz

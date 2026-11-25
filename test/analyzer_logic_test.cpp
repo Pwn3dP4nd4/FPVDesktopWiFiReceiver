@@ -8,6 +8,7 @@
 #include <QTemporaryDir>
 #include <QTimer>
 
+#include <algorithm>
 #include <cstdio>
 #include <string>
 
@@ -153,6 +154,69 @@ int main(int argc, char **argv) {
         feed({}, 70);
         check(!w.raceOnForTest() && w.historyForTest().contains(QStringLiteral("Race stopped")),
               "nadie en el aire durante mas de un minuto: para sola");
+    }
+
+    {
+        // barra de barrido: lo que se ha vuelto a medir desde la actualizacion anterior (seq cambia) es donde va
+        FakeBackend b;
+        ChannelAnalyzer w(&b);
+        open(b);
+        w.startForTest();
+        const auto part = [](int sweeps, double lo, double hi, quint32 seqIn, quint32 seqOut) {
+            SurveyData d = survey(sweeps, {});
+            for (auto &x : d.bins) x.seq = x.mhz >= lo && x.mhz < hi ? seqIn : seqOut;
+            return d;
+        };
+        emit b.surveyUpdated(part(0, 5600, 5700, 1, 0));  // primer tercio medido, el resto aun no
+        const QVector<int> h1 = w.viewForTest()->sweepHeadForTest();
+        check(!h1.isEmpty() && *std::min_element(h1.begin(), h1.end()) >= 5600 &&
+                  *std::max_element(h1.begin(), h1.end()) < 5700 && w.viewForTest()->sweepCellsForTest() == 100,
+              "barrido: lo recien medido (5600-5700) y nada mas");
+        SurveyData d2 = part(0, 5700, 5800, 2, 1);
+        for (auto &x : d2.bins)
+            if (x.mhz >= 5800) x.seq = 0;
+        emit b.surveyUpdated(d2);
+        const QVector<int> h2 = w.viewForTest()->sweepHeadForTest();
+        check(!h2.isEmpty() && *std::min_element(h2.begin(), h2.end()) >= 5700 &&
+                  *std::max_element(h2.begin(), h2.end()) < 5800,
+              "barrido: avanza a 5700-5800 (lo de antes no cuenta como nuevo)");
+        w.close();
+        w.startForTest();
+        check(w.viewForTest()->sweepCellsForTest() == 0, "barrido: al volver a empezar se olvida lo de antes");
+    }
+    {
+        // historial por piloto: un intruso encima de R3 durante la carrera; R1 limpio. R3 sale el primero, con graves
+        FakeBackend b;
+        ChannelAnalyzer w(&b);
+        open(b);
+        w.setCounts(2, 0);
+        w.setPinnedForTest({QStringLiteral("R1"), QStringLiteral("R3")});
+        w.startForTest();
+        w.setRaceForTest(true);
+        for (int k = 0; k < 20; k++) {
+            QVector<Pilot> ps{pilot(kR1), pilot(kR3)};
+            if (k >= 2) ps.push_back(pilot(5748, 18));  // ajeno, encima de R3
+            emit b.surveyUpdated(survey(k, ps));
+        }
+        w.setRaceForTest(false);
+        const QStringList s = w.pilotSummaryForTest();
+        for (const QString &l : s) std::printf("    %s\n", qUtf8Printable(l));
+        check(s.size() >= 2 && s[0].startsWith(QStringLiteral("R3:")) && !s[0].startsWith(QStringLiteral("R3: 0 ")),
+              "por piloto: R3 (intruso) el primero y con graves");
+        check(s.size() >= 2 && s[1].startsWith(QStringLiteral("R1: 0 serious, 0 warnings")),
+              "por piloto: R1 sin problemas");
+        check(!s.isEmpty() && s.back().startsWith(QStringLiteral("race:")), "lo de toda la carrera, al final");
+        check(s.filter(QStringLiteral("(race 1)")).size() == s.size(), "primera carrera: todo en la carrera 1");
+        w.setRaceForTest(true);  // otra carrera, numerada aparte; en esta R3 no sale nunca (VTX apagado)
+        for (int k = 20; k < 24; k++) emit b.surveyUpdated(survey(k, {pilot(kR1)}));
+        w.showHistoryForTest();  // la tabla en vivo (como se ve al abrir la pestaña)
+        const QStringList s2 = w.pilotSummaryForTest();
+        for (const QString &l : s2) std::printf("    %s\n", qUtf8Printable(l));
+        const QStringList r2 = s2.filter(QStringLiteral("(race 2)"));
+        check(r2.size() == 3 && r2[0].startsWith(QStringLiteral("R3:")) && r2[1].startsWith(QStringLiteral("R1:")) &&
+                  r2[2].startsWith(QStringLiteral("race:")),
+              "segunda carrera: sus dos pilotos y lo general, aparte de la primera");
+        check(s2.filter(QStringLiteral("(race 1)")).size() == s.size(), "la primera carrera sigue igual");
     }
 
     std::printf("\n%s\n", failures ? "HAY FALLOS" : "todo bien");

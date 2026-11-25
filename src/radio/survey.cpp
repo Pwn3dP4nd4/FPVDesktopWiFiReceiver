@@ -65,6 +65,7 @@ void SurveyGrid::merge(const SurveyStep &s) {
   if (_acc.size() != static_cast<size_t>(kBins)) _acc.assign(kBins, Acc{});
   const long key = std::lround(s.centre_hz / 1e3);
   if (s.floor <= 0) return;
+  _merges++;
   auto f = _step_floor.find(key);
   if (f == _step_floor.end()) _step_floor[key] = s.floor;
   else f->second += kFloorWeight * (s.floor - f->second);
@@ -80,6 +81,7 @@ void SurveyGrid::merge(const SurveyStep &s) {
     a.duty += w * (b.duty - a.duty);
     a.peak = std::max(b.peak, a.peak * decay);
     a.step = key;
+    a.seq = _merges;
   }
 }
 
@@ -96,6 +98,7 @@ std::vector<SurveyBin> SurveyGrid::spectrum() const {
     b.mean_db = static_cast<float>(10 * std::log10(std::max(a.mean, 1e-30) / f));
     b.peak_db = static_cast<float>(10 * std::log10(std::max(a.peak, 1e-30) / f));
     b.duty = static_cast<float>(a.duty);
+    b.seq = a.seq;
     out.push_back(b);
   }
   return out;

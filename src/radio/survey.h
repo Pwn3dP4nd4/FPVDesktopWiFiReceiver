@@ -22,6 +22,7 @@ struct SurveyBin {
   float mean_db = 0;   // average power, dB over the floor
   float peak_db = 0;   // strongest 0.1 ms slice recently seen, dB over the floor (fades)
   float duty = 0;      // fraction of 0.1 ms slices more than 6 dB over the floor
+  unsigned seq = 0;    // SurveyGrid::merges() when this bin was last measured (which part of the band is fresh)
 };
 
 // One step of the sweep, measured outside any lock (survey_measure), merged into the grid later
@@ -60,6 +61,8 @@ class SurveyGrid {
   void merge(const SurveyStep &s);
   void end_sweep() { _sweeps++; }
   int sweeps() const { return _sweeps; }
+  // Steps merged so far (grows by one each merge): a bin's SurveyBin::seq says how recently it was measured
+  unsigned merges() const { return _merges; }
   std::vector<SurveyBin> spectrum() const;
 
  private:
@@ -67,12 +70,14 @@ class SurveyGrid {
     double mean = 0, peak = 0, duty = 0;
     int n = 0;
     long step = 0;  // the step that last saw it (kHz)
+    unsigned seq = 0;  // _merges when it was last updated
   };
   void update_refs();
   std::vector<Acc> _acc;
   std::map<long, double> _step_floor;  // by step centre (kHz)
   std::map<long, double> _step_ref;    // _step_floor capped by the neighbours (update_refs)
   int _sweeps = 0;
+  unsigned _merges = 0;
   int _memory = kMemory;
 };
 
