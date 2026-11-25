@@ -15,10 +15,16 @@ constexpr double kMinVisible = 6e6;    // un trozo menor no se considera (ni par
 constexpr double kJoinGap = 0.5e6;     // huecos estrechos dentro del bloque (portadora nula en DC, etc.)
 constexpr double kClipMargin = 0.3e6;  // a menos de esto del borde del margen util: cortado
 constexpr float kMinFlat = 0.8f;       // OFDM ~0.95; FM con imagen, menos
+constexpr float kMinFlatTdd = 0.3f;    // con la trama de DJI (ver step_done)
 constexpr float kMinDuty = 0.9f;       // HDZero emite sin parar; el WiFi va a rafagas
 constexpr double kMinWidth = 12e6, kMaxWidth = 31e6;
 constexpr double kHdzWideMin = 22e6, kHdzNarrowMin = 14e6;  // 27 y 17 MHz nominales
 constexpr double kHdzMaxOffMHz = 2;    // centro medido frente al canal (cristales del VTX y del adaptador)
+// tramas TDD (tdd_frame)
+constexpr double kTddMinFrame = 1e-3, kTddMaxFrame = 4e-3;  // al menos 3 tramas en los 12 ms de un paso
+constexpr double kTddOnMin = 0.15, kTddOnMax = 0.95;        // ni casi callado ni continuo (HDZero)
+constexpr double kTddMinRepeat = 0.7;  // cuanto se repite el patron un periodo despues, descontado el azar (0..1)
+constexpr double kDjiFrame = 2.5e-3, kDjiFrameTol = 0.1e-3;
 
 std::vector<float> median_smooth(const std::vector<float> &db, double bin) {
     // como el suavizado de kepyur (spectrum.cpp): mediana en +-0.3 MHz, quita espurias estrechas
@@ -127,6 +133,84 @@ float band_duty(const cf *x, size_t n, double fs, double f0_hz, double f1_hz) {
     return static_cast<float>(on) / static_cast<float>(slices);
 }
 
+double tdd_frame(const cf *x, size_t n, double fs, double f0_hz, double f1_hz) {
+    // potencia en la banda (sin el 10 % de cada lado) en rodajas de 2 FFT de 256 (12.8 us a 40 MS/s)
+    constexpr int kN = 256, kFrames = 2, kSlice = kN * kFrames;
+    const size_t slices = n / kSlice;
+    const double sliceS = kSlice / fs;
+    if (slices * sliceS < 3 * kTddMinFrame) return 0;
+    const double w = f1_hz - f0_hz;
+    const double a = f0_hz + 0.1 * w, b = f1_hz - 0.1 * w;
+    std::vector<int> bins;
+    for (int k = 0; k < kN; k++) {
+        const double f = (k < kN / 2 ? k : k - kN) * fs / kN;  // sin fftshift
+        if (f >= a && f <= b) bins.push_back(k);
+    }
+    if (bins.empty()) return 0;
+    std::vector<float> win(kN);
+    for (int i = 0; i < kN; i++) win[i] = static_cast<float>(0.5 - 0.5 * std::cos(2 * M_PI * i / kN));
+    std::vector<kp::cf> buf(kN);
+    std::vector<float> p(slices);
+    for (size_t s = 0; s < slices; s++) {
+        double acc = 0;
+        for (int fr = 0; fr < kFrames; fr++) {
+            const cf *src = x + s * kSlice + static_cast<size_t>(fr) * kN;
+            for (int i = 0; i < kN; i++) buf[i] = src[i] * win[i];
+            kp::fft_inplace(buf.data(), kN);
+            for (int k : bins) acc += std::norm(buf[k]);
+        }
+        p[s] = static_cast<float>(10 * std::log10(acc + 1e-9));
+    }
+    // emitiendo / hueco: a medio camino (en dB) entre el ruido (percentil 5: los huecos) y el nivel (percentil 90)
+    std::vector<float> sorted = p;
+    std::sort(sorted.begin(), sorted.end());
+    const float lo = sorted[slices * 5 / 100], hi = sorted[slices * 90 / 100];
+    if (hi - lo < kMinSnrDb) return 0;
+    const float thr = (lo + hi) / 2;
+    std::vector<char> up(slices);
+    for (size_t i = 0; i < slices; i++) up[i] = p[i] > thr;
+    // con poca SNR alguna rodaja de ruido cae bajo el umbral en mitad de una rafaga: huecos de menos de 3 rodajas
+    // (~38 us; los de la trama, 80 us o mas) se rellenan
+    for (size_t i = 1; i < slices;) {
+        if (up[i]) {
+            i++;
+            continue;
+        }
+        size_t j = i;
+        while (j < slices && !up[j]) j++;
+        if (j < slices && up[i - 1] && j - i < 3)
+            for (size_t k = i; k < j; k++) up[k] = 1;
+        i = j;
+    }
+    size_t on = 0;
+    for (char u : up) on += u;
+    const double q = static_cast<double>(on) / static_cast<double>(slices);
+    if (q < kTddOnMin || q > kTddOnMax) return 0;
+    // el patron emitir/callar se repite igual un periodo despues, sea como sea la trama (DJI con video: 1.73 + 0.37
+    // ms emitiendo; sin enlace con las gafas: 0.41 + 0.43 ms y un hueco de 1.53 ms). repeat: coincidencias con el
+    // desfase descontando las que habria por azar (q^2 + (1-q)^2): 1 = identico, 0 = como el WiFi, sin ritmo
+    const double chance = q * q + (1 - q) * (1 - q);
+    const size_t lagLo = static_cast<size_t>(std::ceil(kTddMinFrame / sliceS));
+    const size_t lagHi = std::min(slices / 2, static_cast<size_t>(kTddMaxFrame / sliceS));
+    std::vector<double> repeat(lagHi + 1, -1);
+    double best = -1;
+    for (size_t lag = lagLo; lag <= lagHi; lag++) {
+        size_t same = 0;
+        for (size_t i = 0; i + lag < slices; i++) same += up[i] == up[i + lag];
+        const double m = static_cast<double>(same) / static_cast<double>(slices - lag);
+        repeat[lag] = (m - chance) / (1 - chance);
+        best = std::max(best, repeat[lag]);
+    }
+    if (best < kTddMinRepeat) return 0;
+    // el periodo: el primer maximo casi tan bueno como el mejor (2 y 3 periodos tambien coinciden)
+    for (size_t lag = lagLo; lag <= lagHi; lag++) {
+        if (repeat[lag] < best - 0.05) continue;
+        while (lag < lagHi && repeat[lag + 1] > repeat[lag]) lag++;
+        return static_cast<double>(lag) * sliceS;
+    }
+    return 0;
+}
+
 const std::vector<double> &hdzero_channels_mhz() {
     static const std::vector<double> ch = {5658, 5695, 5732, 5769, 5806, 5843, 5880, 5917,  // R1-R8
                                            5705, 5740, 5760, 5800,                          // E1 F1 F2 F4
@@ -134,8 +218,10 @@ const std::vector<double> &hdzero_channels_mhz() {
     return ch;
 }
 
-Kind classify(double centre_hz, double width_hz) {
+Kind classify(double centre_hz, double width_hz, double frame_s) {
     if (width_hz < kMinWidth || width_hz > kMaxWidth) return Kind::None;
+    if (std::fabs(frame_s - kDjiFrame) <= kDjiFrameTol) return Kind::DJI;
+    if (frame_s > 0) return Kind::Other;  // HDZero no tiene huecos
     bool onChannel = false;
     for (double c : hdzero_channels_mhz()) onChannel = onChannel || std::fabs(centre_hz / 1e6 - c) <= kHdzMaxOffMHz;
     if (onChannel && width_hz >= kHdzWideMin) return Kind::HDZero;
@@ -147,6 +233,7 @@ const char *kind_code(Kind k) {
     switch (k) {
     case Kind::HDZero: return "hdzero";
     case Kind::HDZeroNarrow: return "hdzero_narrow";
+    case Kind::DJI: return "dji";
     case Kind::Other: return "digital";
     case Kind::None: break;
     }
@@ -162,16 +249,30 @@ void DigitalScan::reset() {
 void DigitalScan::analyse(const std::vector<float> &db, const cf *x, size_t n, double fs, double edge_hz) {
     edge_ = edge_hz;
     cur_ = find_wide_regions(db, fs, edge_hz);
-    for (auto &r : cur_) r.duty = band_duty(x, n, fs, r.f0_hz, r.f1_hz);
+    for (auto &r : cur_) {
+        r.duty = band_duty(x, n, fs, r.f0_hz, r.f1_hz);
+        r.frame_s = tdd_frame(x, n, fs, r.f0_hz, r.f1_hz);
+    }
+}
+
+bool DigitalScan::wants_timing() const {
+    for (const auto &r : cur_) {
+        const double w = r.f1_hz - r.f0_hz;
+        const bool cut = r.clip_lo || r.clip_hi;  // la otra parte, en el paso vecino
+        if (r.snr_db >= kMinSnrDb && r.flat >= kMinFlatTdd && w <= kMaxWidth && (cut || w >= kMinWidth)) return true;
+    }
+    return false;
 }
 
 std::vector<DigitalSignal> DigitalScan::step_done(double centre_hz) {
     std::vector<Abs> now;
     for (const auto &r : cur_) {
-        now.push_back(Abs{centre_hz + r.f0_hz, centre_hz + r.f1_hz, r.clip_lo, r.clip_hi, r.snr_db, r.flat, r.duty});
-        KP_LOGI("digital: %.1f MHz step, block %.1f..%.1f MHz%s%s, %.1f dB, flat %.2f, duty %.2f", centre_hz / 1e6,
-                (centre_hz + r.f0_hz) / 1e6, (centre_hz + r.f1_hz) / 1e6, r.clip_lo ? " [cut low]" : "",
-                r.clip_hi ? " [cut high]" : "", r.snr_db, r.flat, r.duty);
+        now.push_back(Abs{centre_hz + r.f0_hz, centre_hz + r.f1_hz, r.clip_lo, r.clip_hi, r.snr_db, r.flat, r.duty,
+                          r.frame_s});
+        KP_LOGI("digital: %.1f MHz step, block %.1f..%.1f MHz%s%s, %.1f dB, flat %.2f, duty %.2f, frame %.3f ms",
+                centre_hz / 1e6, (centre_hz + r.f0_hz) / 1e6, (centre_hz + r.f1_hz) / 1e6,
+                r.clip_lo ? " [cut low]" : "", r.clip_hi ? " [cut high]" : "", r.snr_db, r.flat, r.duty,
+                r.frame_s * 1e3);
     }
     cur_.clear();
 
@@ -191,7 +292,7 @@ std::vector<DigitalSignal> DigitalScan::step_done(double centre_hz) {
                 // flat 0.6-0.8 y duty 0.5-0.9 y el de 5670 MHz 0.96 y 1.00 en cada escaneo. El WiFi sigue fuera:
                 // va a rafagas en las dos mitades.
                 whole.push_back(Abs{lo.f0, hi.f1, false, false, std::max(lo.snr, hi.snr), std::max(lo.flat, hi.flat),
-                                    std::max(lo.duty, hi.duty)});
+                                    std::max(lo.duty, hi.duty), lo.frame_s > 0 ? lo.frame_s : hi.frame_s});
             }
     }
     prev_ = now;
@@ -200,12 +301,19 @@ std::vector<DigitalSignal> DigitalScan::step_done(double centre_hz) {
 
     std::vector<DigitalSignal> out;
     for (const auto &a : whole) {
-        if (a.snr < kMinSnrDb || a.flat < kMinFlat || a.duty < kMinDuty) continue;
+        // con trama TDD regular, los huecos son de la trama (DJI: duty 0.15-0.9): no se exige continuidad, y la trama
+        // ya descarta el FM analogico y el WiFi, asi que basta con menos planitud (DJI real a 1-2 m: a 30-40 dB los
+        // flancos ocupan ~2 MHz por lado y el multitrayecto abomba el bloque ~11 dB; flat 0.34-0.99)
+        // Solo con la trama de DJI: el FM analogico tambien puede dar un "periodo" (el contenido de la imagen; un VTX
+        // real en R4 daba 1.0-1.3 ms con flat 0.14-0.38), asi que cualquier otra trama tiene que ser plana como siempre
+        const bool tdd = a.frame_s > 0;
+        const bool dji = std::fabs(a.frame_s - kDjiFrame) <= kDjiFrameTol;
+        if (a.snr < kMinSnrDb || a.flat < (dji ? kMinFlatTdd : kMinFlat) || (!tdd && a.duty < kMinDuty)) continue;
         DigitalSignal s;
         s.centre_hz = (a.f0 + a.f1) / 2;
         s.width_hz = a.f1 - a.f0;
         s.snr_db = a.snr;
-        s.kind = classify(s.centre_hz, s.width_hz);
+        s.kind = classify(s.centre_hz, s.width_hz, a.frame_s);
         if (s.kind == Kind::None) continue;
         KP_LOGI("digital: %s at %.1f MHz, %.1f MHz wide, %.1f dB", kind_code(s.kind), s.centre_hz / 1e6,
                 s.width_hz / 1e6, s.snr_db);

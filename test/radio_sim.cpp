@@ -117,13 +117,11 @@ int main(int argc, char **argv) {
   else radio.stream_test(rate, secs);
   const auto t0 = std::chrono::steady_clock::now();
   std::string wifi_last;  // survey: redes WiFi vistas (advisor::find_wifi), se imprime cuando cambia
+  int loops = 0;
   while (!g_stop) {
     std::this_thread::sleep_for(std::chrono::seconds(1));
-    // la grabacion se pide ya en watch: pedida justo tras watch(), el cambio de modo del hilo DSP la descartaba
-    if (mode == "watch" && rec_s > 0) {
-      radio.record(rec_s, rec_prefix);
-      rec_s = 0;
-    }
+    // --record: con el canal ya sintonizado (pedido junto con watch(), el cambio de modo lo descarta: abort_record)
+    if (mode == "watch" && rec_s > 0 && ++loops == 2) radio.record(rec_s, rec_prefix);
     const std::string st = radio.status_json();
     std::fprintf(stderr, "%s\n", st.c_str());
     if (mode == "survey") {

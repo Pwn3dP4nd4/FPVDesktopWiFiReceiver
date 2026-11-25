@@ -5,6 +5,7 @@
 #include <QApplication>
 #include <QCloseEvent>
 #include <QComboBox>
+#include <QCryptographicHash>
 #include <QDateTime>
 #include <QDesktopServices>
 #include <QDir>
@@ -517,6 +518,16 @@ void MainWindow::updatePlaceholder() {
 }
 
 #ifdef _WIN32
+namespace {
+// el SHA-256 de un fichero es este (hex en minusculas, como file(SHA256) de CMake)
+bool sameSha256(const QString &path, const char *hex) {
+    QFile f(path);
+    if (!f.open(QIODevice::ReadOnly)) return false;
+    QCryptographicHash h(QCryptographicHash::Sha256);
+    return h.addData(&f) && h.result().toHex() == QByteArray(hex);
+}
+}  // namespace
+
 void MainWindow::installDriver() {
     // scripts/windows-driver.ps1: en la version portable va en driver\, en una compilacion en el repositorio
     const QString dir = QApplication::applicationDirPath();
@@ -531,6 +542,24 @@ void MainWindow::installDriver() {
         QMessageBox::warning(this, kAppName, tr("The driver installer (driver\\windows-driver.ps1) was not found."));
         return;
     }
+    // Se ejecuta como administrador desde una carpeta que el usuario puede escribir (la de la app): solo si el script y
+    // el INF que va a instalar son los de esta version (CMakeLists.txt). El script vuelve a comprobar el INF despues
+    // de copiarlo a una carpeta que solo pueden escribir los administradores.
+    const QString scriptDir = QFileInfo(script).absolutePath();
+    QString inf;
+    for (const QString &c : {scriptDir + QStringLiteral("/fpvdesktopwifireceiver_winusb.inf"),
+                             scriptDir + QStringLiteral("/../packaging/windows/driver/fpvdesktopwifireceiver_winusb.inf")})
+        if (QFileInfo::exists(c)) {
+            inf = c;
+            break;
+        }
+    if (!sameSha256(script, KP_DRIVER_PS1_SHA256) || inf.isEmpty() || !sameSha256(inf, KP_DRIVER_INF_SHA256)) {
+        QMessageBox::warning(this, kAppName,
+                             tr("The driver installer next to the program (driver\\windows-driver.ps1 and its .inf) is "
+                                "not the one of this version, or it has been modified: it will not be run as "
+                                "administrator. Download the program again."));
+        return;
+    }
     const auto answer = QMessageBox::question(
         this, kAppName,
         tr("This installs the WinUSB driver for the adapter, once. Windows will ask for administrator permission.\n\n"
@@ -539,8 +568,9 @@ void MainWindow::installDriver() {
            "It can be removed with the same script and -Uninstall.\n\n"
            "Close this program after installing and unplug and replug the adapter. Continue?"));
     if (answer != QMessageBox::Yes) return;
-    const QString params = QStringLiteral("-NoProfile -ExecutionPolicy Bypass -NoExit -File \"%1\" -RemoveZadig")
-                               .arg(QDir::toNativeSeparators(script));
+    const QString params =
+        QStringLiteral("-NoProfile -ExecutionPolicy Bypass -NoExit -File \"%1\" -RemoveZadig -InfSha256 %2")
+            .arg(QDir::toNativeSeparators(script), QString::fromLatin1(KP_DRIVER_INF_SHA256));
     const auto r = reinterpret_cast<intptr_t>(ShellExecuteW(
         reinterpret_cast<HWND>(winId()), L"runas", L"powershell.exe", reinterpret_cast<const wchar_t *>(params.utf16()),
         nullptr, SW_SHOWNORMAL));
@@ -974,6 +1004,7 @@ void MainWindow::onLost(const QString &msg) {
 QString MainWindow::digitalKind(const Pilot &p) const {
     if (p.digital == QLatin1String("hdzero")) return tr("HDZero");
     if (p.digital == QLatin1String("hdzero_narrow")) return tr("HDZero narrow");
+    if (p.digital == QLatin1String("dji")) return tr("DJI %1 MHz").arg(p.bwMHz, 0, 'f', 0);
     return tr("digital %1 MHz").arg(p.bwMHz, 0, 'f', 0);
 }
 

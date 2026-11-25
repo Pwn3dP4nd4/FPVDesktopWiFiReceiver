@@ -106,6 +106,19 @@ is showing stays while it is still valid, unless another channel is at least 3 d
 two similar channels from one sweep to the next. Changing the pinned channels by hand restarts the tracking;
 toggling HDZero narrow mode only restarts the HDZero ones.
 
+**Starting by itself.** Instead of ticking the box at the start, press **Start when the pilots are up** (it starts
+the analysis if it was not running) and choose how many (**Pilots**: *all* = one per pinned channel). Tracking
+starts by itself as soon as that many pilots are on the air on their pinned channels; meanwhile it shows how many
+it has (*Waiting for the pilots: 3 of 4*). Press it again to cancel. A VTX powered on in the pits already counts:
+that is fine, nothing before take-off counts as dropouts. With **Stop when all have landed**, tracking stops by
+itself when no pinned pilot has been seen for about a minute and a half (a VTX left on after landing keeps it going).
+
+**History** (*History* tab). Everything the race warned about is kept with the clock time and the race time: when
+it started and stopped (and why: by hand, by itself, analysis stopped...), every change in a channel's
+recommendation (*OK*, *→ F3*, *Weak video*...) with its figures at that moment, the moves applied and, when it
+stops, a summary of each channel (the worst video marked). It keeps every race, one after another, until you quit
+the program or press **Clear**; **Copy** puts it on the clipboard and **Save...** in a CSV (or text) file.
+
 What it cannot see:
 
 - **Interference right under the carrier of a pilot that is transmitting**: it is removed together with its

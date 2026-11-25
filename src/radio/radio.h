@@ -46,7 +46,7 @@ struct Pilot {
   float snr_db = 0;
   float lock = 0;
   int64_t seen_ms = 0;   // steady-clock ms of the last scan that saw it
-  // a digital signal, not decoded: kpx::kind_code() ("hdzero", "hdzero_narrow", "digital"); "" = analog video
+  // a digital signal, not decoded: kpx::kind_code() ("hdzero", "hdzero_narrow", "dji", "digital"); "" = analog video
   std::string digital;
   float bw_mhz = 0;      // occupied width of a digital signal
 };
@@ -104,10 +104,12 @@ private:
     uint64_t seq;
     uint32_t gen;
     double fs, centre_hz, shift_hz;
+    bool gapped = false;  // wsdr::BankMeta::gapped: not contiguous with the bank before (survey)
   };
   void dsp_loop();
   void decode_loop();
-  void on_bank(const uint8_t *b, size_t n, uint64_t seq, uint32_t gen, double fs, double centre, double shift);
+  void on_bank(const uint8_t *b, size_t n, uint64_t seq, uint32_t gen, double fs, double centre, double shift,
+               bool gapped);
   void tune(double hz, int rate_sel);
   void handle_watch(Bank &b);
   bool watch_fault(double hz);
@@ -203,6 +205,7 @@ private:
   bool _survey = false;
   SurveyGrid _grid;
   bool _survey_cont = false;  // survey: this step taken again streaming, to check a candidate (under _m)
+  bool _digital_only_recheck = false;  // survey: taken again only for the digital scan's timing (no new humps)
   std::map<long, double> _survey_gain;  // survey: gain per step (kHz -> dB), lowered where it clips (under _m)
   struct SurveyKnown {  // survey: a hump already checked (video or not), not checked again for a few sweeps
     double mhz;

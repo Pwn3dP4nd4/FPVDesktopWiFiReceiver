@@ -106,6 +106,19 @@ otro. Un cambio que se está mostrando se mantiene mientras siga valiendo, salvo
 mejor: no salta entre dos canales parecidos de un barrido a otro. Cambiar los fijados a mano reinicia el
 seguimiento; cambiar el modo estrecho de HDZero solo reinicia los HDZero.
 
+**Empezar sola.** En vez de marcar la casilla en la salida, pulsa **Empezar al salir los pilotos** (arranca el
+análisis si no lo estaba) y elige cuántos (**Pilotos**: *todos* = uno por canal fijado). El seguimiento empieza solo
+en cuanto ese número de pilotos está en el aire en sus canales fijados; mientras, dice cuántos lleva (*Esperando a
+los pilotos: 3 de 4*). Vuelve a pulsarlo para cancelar. Un VTX encendido en boxes ya cuenta: no pasa nada, lo de
+antes de despegar no cuenta como cortes. Con **Parar cuando aterricen todos**, el seguimiento se para solo si no se
+ve a ningún piloto fijado durante cerca de minuto y medio (un VTX que se queda encendido al aterrizar lo mantiene).
+
+**Historial** (pestaña *Historial*). Todo lo que ha ido avisando la carrera queda apuntado con la hora y el tiempo
+de carrera: cuándo empieza y para (y por qué: a mano, sola, al parar el análisis...), cada cambio de recomendación
+de un canal (*Bien*, *→ F3*, *Vídeo flojo*...) con sus números en ese momento, los cambios aplicados y, al parar, un
+resumen de cada canal (el de peor vídeo, marcado). Guarda todas las carreras, una tras otra, hasta que cierras el
+programa o pulsas **Borrar**; **Copiar** lo pasa al portapapeles y **Guardar...** a un CSV (o texto).
+
 Lo que no puede ver:
 
 - **La interferencia que cae justo debajo de la portadora de un piloto que está emitiendo**: se quita con su

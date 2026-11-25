@@ -19,8 +19,6 @@ float percentile(const std::vector<float> &sorted, double p) {
     return static_cast<float>(sorted[lo] + (sorted[hi] - sorted[lo]) * t);
 }
 
-double sig_width(const advisor::Signal &s) { return s.digital && s.bw_mhz > 0 ? s.bw_mhz : advisor::kAnalogBw; }
-
 // Una senal es la del piloto de un fijado si es del mismo sistema y su centro esta cerca: un VTX analogico se
 // desvia unos MHz de su canal y un HDZero se mide con el error del barrido. Un analogico encima de un HDZero (o al
 // reves) no es su piloto aunque este en la misma frecuencia: es otro sistema, un intruso.
@@ -28,9 +26,11 @@ bool matches(const advisor::Signal &s, const advisor::Candidate &c) {
     return s.digital == c.hdzero && std::fabs(s.mhz - c.mhz) < kMatchMhz;
 }
 
-// Una senal ajena pisa el canal si sus anchos se solapan (el gap < 0 de advisor::rate)
+// Una senal ajena pisa el canal si sus anchos se solapan (el gap < 0 de advisor::rate); una digital junto a un canal
+// analogico, tambien si queda a menos de kDigitalGuardMhz de su borde
 bool overlaps(const advisor::Signal &s, const advisor::Candidate &c) {
-    return std::fabs(s.mhz - c.mhz) - (sig_width(s) + advisor::width(c)) / 2 < 0;
+    const double gap = std::fabs(s.mhz - c.mhz) - (advisor::width(s) + advisor::width(c)) / 2;
+    return gap < (s.digital && !c.hdzero ? kDigitalGuardMhz : 0);
 }
 }  // namespace
 
@@ -136,7 +136,9 @@ void Monitor::update(const std::vector<advisor::Bin> &bins, const std::vector<ad
         const int sw = h.sweeps++;  // indice local: desde start() o desde que se movio
         if (pilot[i] >= 0) {
             h.seen++;
-            snr_[i].push_back(now[pilot[i]].snr_db);
+            // la SNR, solo de una medida de este barrido: la de un piloto que sigue en el aire sin medirse de nuevo
+            // es la de antes (o 0, segun el backend) y contaria otra vez
+            if (now[pilot[i]].fresh) snr_[i].push_back(now[pilot[i]].snr_db);
             if (first_[i] < 0) first_[i] = sw;
             last_[i] = sw;
         }
@@ -179,6 +181,19 @@ void Monitor::moved(int i, const advisor::Candidate &c) {
     if (old.hdzero == c.hdzero && std::fabs(old.mhz - c.mhz) < kMatchMhz) return;  // el mismo canal (otro ancho)
     leaving_.push_back({old, sweeps_, sweeps_});
     leaving_ch_.push_back(old);
+}
+
+int present(const std::vector<advisor::Candidate> &pinned, const std::vector<advisor::Signal> &now) {
+    std::vector<bool> got(pinned.size(), false);
+    for (const auto &s : now) {
+        int best = -1;
+        for (size_t i = 0; i < pinned.size(); i++)
+            if (matches(s, pinned[i]) &&
+                (best < 0 || std::fabs(s.mhz - pinned[i].mhz) < std::fabs(s.mhz - pinned[best].mhz)))
+                best = static_cast<int>(i);
+        if (best >= 0) got[best] = true;
+    }
+    return static_cast<int>(std::count(got.begin(), got.end(), true));
 }
 
 int Monitor::worst() const {
@@ -237,6 +252,9 @@ std::vector<Move> Monitor::suggest_all(const std::vector<advisor::Candidate> &an
                 const advisor::Candidate fc{f.name, f.mhz, f.digital, f.digital ? f.bw_mhz : 0};
                 ok = ok && std::fabs(f.mhz - c.mhz) >= advisor::min_spacing(fc, c);
             }
+            // ni los que acaba de dejar un piloto movido: hasta que aterrice y cambie sigue emitiendo ahi (su senal
+            // cuenta como suya y esta quitada del espectro: el canal se veria libre y limpio)
+            for (const auto &l : leaving_ch_) ok = ok && std::fabs(l.mhz - c.mhz) >= advisor::min_spacing(l, c);
             if (ok) cand.push_back(c);
         }
         if (cand.empty()) continue;
@@ -263,7 +281,9 @@ std::vector<Move> Monitor::suggest_all(const std::vector<advisor::Candidate> &an
             to = best->r.ch;
             gain = h.penalty - best->r.cost;
         }
-        // la anterior se mantiene si sigue valiendo y la nueva no es claramente mejor
+        // la anterior se mantiene si sigue valiendo (con menos mejora que para salir: kMoveKeepGainDb) y la nueva no
+        // es claramente mejor
+        bool kept = false;
         for (const auto &pv : prev) {
             if (pv.from != i) continue;
             const advisor::Candidate *pc = nullptr;
@@ -271,13 +291,14 @@ std::vector<Move> Monitor::suggest_all(const std::vector<advisor::Candidate> &an
                 if (c.name == pv.to.name && c.hdzero == pv.to.hdzero) pc = &c;
             if (!pc || !fits(*pc)) break;
             const float pg = h.penalty - advisor::rate(*pc, last_bins_, foreign, wifi_).cost;
-            if (pg >= kMoveMinGainDb && gain < pg + kMoveMinGainDb) {
+            if (pg >= kMoveKeepGainDb && gain < pg + kMoveMinGainDb) {
                 to = *pc;
                 gain = pg;
+                kept = true;
             }
             break;
         }
-        if (gain < kMoveMinGainDb) continue;
+        if (gain < (kept ? kMoveKeepGainDb : kMoveMinGainDb)) continue;
         Move mv;
         mv.from = i;
         mv.to = to;

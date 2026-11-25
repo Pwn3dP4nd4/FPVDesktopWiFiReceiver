@@ -122,6 +122,47 @@ int main() {
         check(!mv, "carrera limpia: no recomienda mover a nadie");
     }
     {
+        // lo medido: un VTX en R1 a 37 dB, muy cerca del adaptador, con sus bandas laterales encendiendose a rafagas
+        // de 10 a 45 MHz a cada lado. Como en la ventana: lo fijado es mio (se quita antes de buscar redes WiFi, que
+        // se recuerdan) y el monitor recibe el espectro tal cual. Antes salian WiFi 124-128 y 136-140, su canal a ~7
+        // dB y se recomendaba mover a R1 a F3.
+        race::Monitor m;
+        m.start(kRace);
+        WifiMemory mem;
+        std::vector<Wifi> seenWifi;
+        int sw = 0;
+        run(m, 20, [&](int, auto &b, auto &now, auto &wifi) {
+            for (auto &x : b) {
+                const double d = std::fabs(x.mhz - R1.mhz);
+                if (d <= 10) x = Bin{x.mhz, 37, 38, 1};
+                else if (d <= 45) {
+                    const float mean = std::max(0.5f, 8 - static_cast<float>(d - 10) * 0.2f);
+                    x = Bin{x.mhz, mean, mean + 14, 0.1f};
+                }
+            }
+            Signal r1;
+            r1.mhz = R1.mhz;
+            r1.snr_db = 37;
+            now.push_back(r1);
+            fly(b, now, R3.mhz, 25);
+            fly(b, now, R6.mhz, 25);
+            fly(b, now, R8.mhz, 25);
+            auto masked = b;
+            for (const auto &s : now) mask_signal(masked, s, now);
+            const auto found = find_wifi(masked, Region::Eu, now);
+            seenWifi.insert(seenWifi.end(), found.begin(), found.end());
+            mem.update(found, now, 3.3 * sw++);
+            wifi = mem.known(3.3 * (sw - 1));
+        });
+        std::printf("  mi VTX fuerte en R1 (%zu WiFi vistas):\n", seenWifi.size());
+        show(m);
+        const auto mv = m.suggest(raceband(), {});
+        show(mv, m);
+        check(seenWifi.empty(), "las bandas laterales de un VTX fijado fuerte no salen como WiFi");
+        check(m.health()[0].channel_cost < 2, "ni suben el coste de su propio canal");
+        check(!mv, "y no se recomienda mover a ese piloto por su propia senal");
+    }
+    {
         // su piloto un poco desviado (R3 en 5734): sigue siendo el suyo, no un intruso
         race::Monitor m;
         m.start(kRace);
@@ -495,6 +536,67 @@ int main() {
               "recomienda mover el HDZero a otro canal HDZero libre");
     }
     {
+        // como en una carrera real: el espectro va cada ~3 s pero los pilotos solo se miden cada ~14 s. Entre medias
+        // siguen en el aire (fresh = false, con la SNR vieja o 0): su portadora no es interferencia ni un corte
+        race::Monitor m;
+        m.start(kRace);
+        run(m, 20, [](int sw, auto &b, auto &now, auto &) {
+            four(b, now, 25);
+            for (auto &s : now) {
+                s.fresh = sw % 5 == 0;
+                if (!s.fresh) s.snr_db = 0;
+            }
+        });
+        bool ok = true;
+        for (const auto &h : m.health())
+            ok = ok && h.seen == 20 && h.lost == 0 && h.channel_cost < 2 && h.snr_low >= 24;
+        check(ok, "pilotos medidos 1 de cada 5 barridos: sin cortes, sin interferencia, SNR de las medidas");
+        check(!m.suggest(raceband(), {}), "pilotos medidos 1 de cada 5 barridos: no recomienda mover a nadie");
+    }
+    {
+        // un DJI (digital, 18 MHz) justo debajo de R1 sin pisarlo: su borde a 3 MHz del de R1 (5648). Medido en una
+        // carrera real: lo que derramaba dentro de R1 quedaba tapado con la senal del propio piloto de R1 y no
+        // contaba para nada
+        const auto dji = [](double mhz) {
+            Signal s;
+            s.mhz = mhz;
+            s.bw_mhz = 18;
+            s.digital = true;
+            s.snr_db = 15;
+            return s;
+        };
+        race::Monitor m;
+        m.start(kRace);
+        run(m, 20, [&](int, auto &b, auto &now, auto &) {
+            four(b, now);
+            add_block(b, 5627, 5645, 15, 15, 1);
+            now.push_back(dji(5636));
+        });
+        const int r1 = index_of(m, "R1");
+        check(r1 >= 0 && m.health()[r1].intruders == 20, "DJI a 3 MHz del borde de R1: cuenta como intruso de R1");
+        bool others = true;
+        for (size_t i = 0; i < m.health().size(); i++)
+            if (static_cast<int>(i) != r1) others = others && m.health()[i].intruders == 0;
+        check(others, "DJI junto a R1: a los demas no les cuenta");
+
+        race::Monitor far;
+        far.start(kRace);
+        run(far, 20, [&](int, auto &b, auto &now, auto &) {
+            four(b, now);
+            add_block(b, 5617, 5635, 15, 15, 1);
+            now.push_back(dji(5626));
+        });
+        check(far.health()[index_of(far, "R1")].intruders == 0, "DJI a 13 MHz del borde de R1: no es intruso");
+
+        race::Monitor an;
+        an.start(kRace);
+        run(an, 20, [&](int, auto &b, auto &now, auto &) {
+            four(b, now);
+            fly(b, now, 5625, 15);  // analogico a 3 MHz del borde: solo cuenta si lo pisa (como antes)
+        });
+        check(an.health()[index_of(an, "R1")].intruders == 0, "analogico a 3 MHz del borde de R1: no es intruso");
+    }
+    {
         // 8 fijados (toda Raceband) con todas las bandas como alternativa: update y suggest caben en el segundo
         // que hay entre barridos (hilo de la GUI)
         race::Monitor m;
@@ -511,6 +613,80 @@ int main() {
         std::printf("  8 fijados: update %.1f ms/barrido, suggest %.0f ms\n", up, sg);
         check(up < 50 && sg < 150, "8 fijados: update < 50 ms, suggest < 150 ms");
         (void)mv;
+    }
+    {
+        // auto-inicio: cuantos fijados tienen a su piloto en el aire
+        using advisor::Signal;
+        const std::vector<Signal> none;
+        check(race::present(kRace, none) == 0, "present: nadie en el aire = 0");
+        std::vector<Signal> two{Signal{kRace[0].mhz + 2, 0, false, "", 20}, Signal{kRace[2].mhz, 0, false, "", 20}};
+        check(race::present(kRace, two) == 2, "present: dos pilotos (uno desviado 2 MHz) = 2");
+        two.push_back(Signal{kRace[0].mhz - 1, 0, false, "", 20});  // otro en el mismo canal: no suma
+        check(race::present(kRace, two) == 2, "present: dos senales en el mismo canal cuentan una vez");
+        two.push_back(Signal{kRace[1].mhz, 13.5, true, "", 20});  // un digital en un canal analogico: no es el suyo
+        two.push_back(Signal{kRace[3].mhz + 20, 0, false, "", 20});  // lejos de todos
+        check(race::present(kRace, two) == 2, "present: otro sistema o lejos de los fijados no cuenta");
+    }
+    {
+        // el canal que deja un piloto movido no se le da a otro mientras su piloto sigue ahi (aun no ha aterrizado):
+        // su senal cuenta como suya y esta quitada del espectro, asi que el canal se veria libre y limpio
+        race::Monitor m;
+        m.start({R1, R8});
+        const auto intruder = [](auto &now) { now.push_back(Signal{5920, 0, false, "", 15}); };  // encima de R8
+        run(m, 12, [&](int, auto &b, auto &now, auto &) {
+            fly(b, now, R1.mhz, 25);
+            fly(b, now, R8.mhz, 25);
+            intruder(now);
+        });
+        m.moved(0, R3);  // A: R1 -> R3, pero sigue en R1 hasta que aterrice
+        run(m, 5, [&](int, auto &b, auto &now, auto &) {
+            fly(b, now, R1.mhz, 25);
+            fly(b, now, R8.mhz, 25);
+            intruder(now);
+        });
+        const std::vector<Candidate> cands{R1, R3, R8};
+        bool onOld = false;
+        for (const auto &mv : m.suggest_all(cands, {})) onOld = onOld || std::fabs(mv.to.mhz - R1.mhz) < 25;
+        check(m.leaving().size() == 1 && !onOld, "canal que deja un movido: no se le da a otro mientras sigue ahi");
+        run(m, 5, [&](int, auto &b, auto &now, auto &) {  // ya ha cambiado: R1 libre de verdad
+            fly(b, now, R3.mhz, 25);
+            fly(b, now, R8.mhz, 25);
+            intruder(now);
+        });
+        const auto all = m.suggest_all(cands, {});
+        check(m.leaving().empty() && all.size() == 1 && all[0].to.name == "R1",
+              "cuando ya ha cambiado, su canal viejo vuelve a estar libre");
+    }
+    {
+        // margen: con la mejora rondando kMoveMinGainDb, una recomendacion no aparece y desaparece de un barrido a
+        // otro. Un intruso encima de R1 en 2 de 16 barridos: penalizacion ~ 20 * 2/16 = 2.5 dB, entre kMoveKeepGainDb
+        // y kMoveMinGainDb
+        const auto scene = [](int k) {
+            return [k](int sw, auto &b, auto &now, auto &) {
+                fly(b, now, R1.mhz, 25);
+                fly(b, now, R8.mhz, 25);
+                if (sw < k) now.push_back(Signal{5661, 0, false, "", 15});  // encima de R1 (no el suyo: mas lejos)
+            };
+        };
+        const std::vector<Candidate> cands{R1, R3, R8};
+        race::Monitor m;
+        m.start({R1, R8});
+        run(m, 16, scene(2));
+        const auto fresh = m.suggest_all(cands, {});
+        race::Move shown;
+        shown.from = 0;
+        shown.to = R3;
+        const auto kept = m.suggest_all(cands, {}, {shown});
+        std::printf("    R1: penalizacion %.2f dB; nueva %zu, mantenida %zu (%.2f dB)\n", m.health()[0].penalty,
+                    fresh.size(), kept.size(), kept.empty() ? 0.f : kept[0].gain_db);
+        check(fresh.empty(), "mejora entre kMoveKeepGainDb y kMoveMinGainDb: no sale una recomendacion nueva");
+        check(kept.size() == 1 && kept[0].to.name == "R3" && kept[0].gain_db >= race::kMoveKeepGainDb &&
+                  kept[0].gain_db < race::kMoveMinGainDb,
+              "la misma mejora con la recomendacion ya mostrada: se mantiene");
+        race::Monitor low;
+        low.start({R1, R8});
+        run(low, 20, scene(1));  // ~1 dB: por debajo de kMoveKeepGainDb
+        check(low.suggest_all(cands, {}, {shown}).empty(), "por debajo de kMoveKeepGainDb se quita");
     }
     std::printf("\n%s\n", failures ? "HAY FALLOS" : "todo bien");
     return failures ? 1 : 0;
