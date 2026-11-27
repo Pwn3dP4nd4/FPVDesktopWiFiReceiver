@@ -28,6 +28,7 @@ class QTimer;
 class QToolButton;
 class QTreeWidget;
 class QTreeWidgetItem;
+class QVBoxLayout;
 
 // Grafica del analizador: espectro medio y picos (dB sobre el suelo), zonas con rafagas, los canales candidatos
 // coloreados por interferencia, lo que ya hay en el aire y los canales recomendados (los fijados, distintos).
@@ -122,6 +123,8 @@ protected:
 private:
     // ---- el constructor, por bloques de la ventana ----
     QWidget *buildSide();
+    void addBandsPanel(QVBoxLayout *side);
+    void addPilotsPanel(QVBoxLayout *side);
     QWidget *buildLegend();
     QWidget *buildAdvicePage();
     QWidget *buildRacePage();

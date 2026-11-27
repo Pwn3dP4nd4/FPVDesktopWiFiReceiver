@@ -622,9 +622,8 @@ ChannelAnalyzer::ChannelAnalyzer(Backend *backend, QWidget *parent) : QDialog(pa
     recompute();
 }
 
-// panel de la izquierda: bandas, pilotos, en el aire, Empezar y el estado
-QWidget *ChannelAnalyzer::buildSide() {
-    auto *side = new QVBoxLayout;
+// las bandas a analizar: una casilla por banda y, al lado, el desplegable de sus canales
+void ChannelAnalyzer::addBandsPanel(QVBoxLayout *side) {
     bandsTitle_ = new QLabel;
     bandsTitle_->setStyleSheet(QStringLiteral("font-weight:bold;"));
     side->addWidget(bandsTitle_);
@@ -648,7 +647,10 @@ QWidget *ChannelAnalyzer::buildSide() {
         row->addWidget(btn);
         side->addLayout(row);
     }
-    side->addSpacing(8);
+}
+
+// cuantos pilotos (analogicos, HDZero), HDZero estrecho, reglas WiFi y memoria
+void ChannelAnalyzer::addPilotsPanel(QVBoxLayout *side) {
     pilotsTitle_ = new QLabel;
     pilotsTitle_->setStyleSheet(QStringLiteral("font-weight:bold;"));
     side->addWidget(pilotsTitle_);
@@ -714,6 +716,14 @@ QWidget *ChannelAnalyzer::buildSide() {
     });
 
     side->addLayout(g);
+}
+
+// panel de la izquierda: bandas, pilotos, en el aire, Empezar y el estado
+QWidget *ChannelAnalyzer::buildSide() {
+    auto *side = new QVBoxLayout;
+    addBandsPanel(side);
+    side->addSpacing(8);
+    addPilotsPanel(side);
     side->addSpacing(8);
     airTitle_ = new QLabel;
     airTitle_->setStyleSheet(QStringLiteral("font-weight:bold;"));
