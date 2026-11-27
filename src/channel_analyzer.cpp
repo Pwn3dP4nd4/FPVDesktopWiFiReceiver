@@ -929,7 +929,33 @@ QWidget *ChannelAnalyzer::buildRacePage() {
     raceState_->setWordWrap(true);
     top->addWidget(raceState_, 1);
     v->addLayout(top);
-    // auto-inicio: se arma y empieza solo cuando estan en el aire los pilotos elegidos (0 = todos los fijados)
+    v->addLayout(buildArmRow());
+    raceTable_ = new QTreeWidget;
+    raceTable_->setRootIsDecorated(false);
+    raceTable_->setColumnCount(8);
+    raceTable_->header()->setStretchLastSection(true);
+    raceTable_->setSelectionMode(QAbstractItemView::NoSelection);
+    // clic derecho en una fila: aplicar solo la recomendacion de ese canal
+    raceTable_->setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(raceTable_, &QWidget::customContextMenuRequested, this, &ChannelAnalyzer::raceTableMenu);
+    v->addWidget(raceTable_, 1);
+    auto *r = new QHBoxLayout;
+    raceAdvice_ = new QLabel;
+    raceAdvice_->setWordWrap(true);
+    raceAdvice_->setTextFormat(Qt::RichText);
+    r->addWidget(raceAdvice_, 1);
+    applyBtn_ = new QPushButton;
+    applyBtn_->setObjectName(QStringLiteral("apply"));
+    applyBtn_->setVisible(false);
+    connect(applyBtn_, &QPushButton::clicked, this, [this] { applyMoves(moves_); });
+    r->addWidget(applyBtn_);
+    v->addLayout(r);
+    return page;
+}
+
+// auto-inicio: se arma y empieza solo cuando estan en el aire los pilotos elegidos (0 = todos los fijados); y parar
+// sola cuando todos han aterrizado
+QHBoxLayout *ChannelAnalyzer::buildArmRow() {
     auto *arm = new QHBoxLayout;
     armBtn_ = new QPushButton;
     armBtn_->setObjectName(QStringLiteral("arm"));
@@ -958,28 +984,7 @@ QWidget *ChannelAnalyzer::buildRacePage() {
     arm->addSpacing(12);
     arm->addWidget(autoStop_);
     arm->addStretch(1);
-    v->addLayout(arm);
-    raceTable_ = new QTreeWidget;
-    raceTable_->setRootIsDecorated(false);
-    raceTable_->setColumnCount(8);
-    raceTable_->header()->setStretchLastSection(true);
-    raceTable_->setSelectionMode(QAbstractItemView::NoSelection);
-    // clic derecho en una fila: aplicar solo la recomendacion de ese canal
-    raceTable_->setContextMenuPolicy(Qt::CustomContextMenu);
-    connect(raceTable_, &QWidget::customContextMenuRequested, this, &ChannelAnalyzer::raceTableMenu);
-    v->addWidget(raceTable_, 1);
-    auto *r = new QHBoxLayout;
-    raceAdvice_ = new QLabel;
-    raceAdvice_->setWordWrap(true);
-    raceAdvice_->setTextFormat(Qt::RichText);
-    r->addWidget(raceAdvice_, 1);
-    applyBtn_ = new QPushButton;
-    applyBtn_->setObjectName(QStringLiteral("apply"));
-    applyBtn_->setVisible(false);
-    connect(applyBtn_, &QPushButton::clicked, this, [this] { applyMoves(moves_); });
-    r->addWidget(applyBtn_);
-    v->addLayout(r);
-    return page;
+    return arm;
 }
 
 // clic derecho en una fila de la tabla de carrera: aplicar solo la recomendacion de ese canal, o todas

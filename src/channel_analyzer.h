@@ -130,6 +130,7 @@ private:
     QWidget *buildLegend();
     QWidget *buildAdvicePage();
     QWidget *buildRacePage();
+    QHBoxLayout *buildArmRow();
     void raceTableMenu(const QPoint &pos);
     void retranslate();
     void toggle();
