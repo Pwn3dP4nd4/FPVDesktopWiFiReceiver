@@ -431,6 +431,7 @@ QWidget *ElrsAnalyzer::buildBottom() {
     detectedTitle_ = new QLabel;
     detectedTitle_->setFont(bold);
     detected_ = new QTreeWidget;
+    detected_->setObjectName(QStringLiteral("detected"));
     detected_->setRootIsDecorated(false);
     detected_->setColumnCount(4);
     detected_->header()->setSectionResizeMode(QHeaderView::ResizeToContents);

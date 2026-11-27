@@ -167,5 +167,19 @@ template <class W>
 bool shows(const W &w, const QString &verdict) {
     return find<QLabel>(&w, "summary")->text().startsWith(verdict);
 }
+// las filas de "En el aire": "senal | frecuencia | pico | actividad", con " (tenue)" si lleva un rato sin verse
+template <class W>
+QStringList detected(const W &w) {
+    const auto *t = find<QTreeWidget>(&w, "detected");
+    QStringList out;
+    for (int r = 0; r < t->topLevelItemCount(); r++) {
+        const QTreeWidgetItem *it = t->topLevelItem(r);
+        QStringList cols;
+        for (int c = 0; c < t->columnCount(); c++) cols << it->text(c);
+        const bool dim = it->foreground(1).color().alpha() < 255;
+        out << cols.join(QStringLiteral(" | ")) + (dim ? QStringLiteral(" (tenue)") : QString());
+    }
+    return out;
+}
 
 }  // namespace drive

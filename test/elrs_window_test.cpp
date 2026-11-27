@@ -77,6 +77,8 @@ int main(int argc, char **argv) {
 
     at(0.5, band(sw++, false));
     check(drive::shows(w, QStringLiteral("Clean band")), "banda limpia: se muestra limpia en seguida");
+    check(drive::detected(w) == QStringList{QStringLiteral("Nothing besides noise |  |  | ")},
+          "en el aire, banda limpia: nada mas que ruido");
     at(1, band(sw++, true));
     check(drive::shows(w, QStringLiteral("Clean band")), "un barrido con mucha interferencia: sigue limpia");
     at(1.5, band(sw++, false));
@@ -90,6 +92,13 @@ int main(int argc, char **argv) {
     // las cifras cambian a cada barrido, las sugerencias no: el texto no se rehace en 5 s
     for (double t = 14; t < 30; t += 0.5) at(t, band(sw++, true));
     const QString before = drive::tips(w);
+    {
+        const QStringList d = drive::detected(w);
+        check(d.size() == 3 && d[0].startsWith(QStringLiteral("WiFi channel 1 | 2412 MHz | 28 dB | traffic")) &&
+                  d[1].startsWith(QStringLiteral("WiFi channel 6 | 2437 MHz")) &&
+                  d[2].startsWith(QStringLiteral("WiFi channel 11 | 2462 MHz")),
+              "en el aire, WiFi en 1, 6 y 11: una fila cada una, en orden");
+    }
     at(30.5, band(sw++, true, 0, 0.4f));
     at(31, band(sw++, true, 0, 0.8f));
     check(drive::tips(w) == before, "mismas sugerencias, cifras distintas: el texto no se rehace en seguida");
@@ -97,10 +106,43 @@ int main(int argc, char **argv) {
     // un AP fuerte que se ve y deja de verse: su consejo sigue un rato
     for (double t = 40; t < 50; t += 0.5) at(t, band(sw++, false, 3));
     check(drive::tips(w).contains(QStringLiteral("strong network")), "AP fuerte en el 3: consejo de la WiFi");
+    check(drive::detected(w).size() == 1 &&
+              drive::detected(w)[0].startsWith(QStringLiteral("WiFi channel 3 | 2422 MHz | 25 dB | traffic")) &&
+              !drive::detected(w)[0].endsWith(QStringLiteral("(tenue)")),
+          "en el aire, AP en el 3: su fila (las de 1, 6 y 11 se fueron)");
     for (double t = 50; t < 58; t += 0.5) at(t, band(sw++, false));
     check(drive::tips(w).contains(QStringLiteral("strong network")), "el AP calla 8 s: el consejo sigue");
+    check(drive::detected(w).size() == 1 && drive::detected(w)[0].endsWith(QStringLiteral("(tenue)")),
+          "en el aire, el AP calla 8 s: su fila sigue, mas tenue");
     for (double t = 58; t < 66; t += 0.5) at(t, band(sw++, false));
     check(!drive::tips(w).contains(QStringLiteral("strong network")), "el AP calla 16 s: el consejo ya no esta");
+    check(drive::detected(w) == QStringList{QStringLiteral("Nothing besides noise |  |  | ")},
+          "en el aire, el AP calla 16 s: su fila ya no esta");
+
+    // lo que no es WiFi, en "En el aire": emisoras que saltan, emision continua y un transmisor muy cerca
+    {
+        NullBackend backend_o;
+        ElrsAnalyzer o(&backend_o);
+        o.setAdapterOpen(true);
+        o.setTimeForTest(0);
+        drive::start(o);
+        for (int k = 0; k < 4; k++) {
+            SurveyData d = band(k, false);
+            for (auto &p : d.bins) {
+                if (static_cast<int>(p.mhz) % 3 == 0) p.peakDb = 18, p.duty = 0.03f;   // Bluetooth
+                if (std::fabs(p.mhz - 2450) < 1.5) p.meanDb = 20, p.peakDb = 22, p.duty = 1;  // emisor continuo
+            }
+            d.bins[400].peakDb = 45;
+            o.setTimeForTest(0.5 + k * 0.5);
+            emit backend_o.surveyUpdated(d);
+        }
+        check(drive::detected(o) ==
+                  QStringList{QStringLiteral("Hopping signals (ELRS, Bluetooth, other radios) | whole band | 18 dB | "
+                                             "short bursts in 32 % of the channels"),
+                              QStringLiteral("Continuous signal | 2448.6-2451.5 MHz | 22 dB | always on"),
+                              QStringLiteral("Very strong signal nearby | 2464.6 MHz | 45 dB | ")},
+              "en el aire: saltos, emision continua y transmisor cerca");
+    }
 
     // parar solo: banda estable, 20 barridos en la media, al menos 30 s y 15 s sin cambios
     {
