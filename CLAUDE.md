@@ -20,7 +20,7 @@ En cada cambio: **primero que funcione, luego dejarlo bien, y seguir la práctic
 - **Los datos se comprueban donde entran; dentro, se confía en ellos.** El JSON de la radio se lee en
   `radio::parseStatus` / `parsePilots` (src/radio_status.cpp) y dentro solo circulan `RadioStatus` y `Pilot`.
 - **La lógica, en funciones puras, fuera de los widgets.** Recomendador (`advisor::`), carrera (`race::`), ELRS
-  (`elrs::`), parámetros de vídeo (`VideoEncoder::paramsFor`): sin Qt Widgets, con sus pruebas. Las ventanas solo
+  (`elrs::`), textos del estado (`statustext::`), parámetros de vídeo (`VideoEncoder::paramsFor`): sin Qt Widgets, con sus pruebas. Las ventanas solo
   muestran y emiten órdenes.
 - **Estado compartido entre hilos:** si no hace falta compartirlo, cada hilo tiene el suyo (el estado del paso del
   escaneo es del hilo DSP); si hace falta, un escritor y lo que se lee de `_m`, de una vez y con un solo bloqueo.

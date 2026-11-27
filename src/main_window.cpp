@@ -2,6 +2,7 @@
 #include "elrs_analyzer.h"
 #include "main_window.h"
 #include "app_settings.h"
+#include "status_text.h"
 
 #include <QActionGroup>
 #include <QApplication>
@@ -556,7 +557,7 @@ void MainWindow::updatePlaceholder() {
             video_->setPlaceholder(
                 tr("%1 on %2, %3 MHz wide.\n\nIt is digital video: this program shows analog video only and cannot "
                    "decode it.\nIn developer mode (Options menu), \"Record IQ\" saves the raw signal for analysis.")
-                    .arg(digitalKind(p), where)
+                    .arg(statustext::digitalKind(p), where)
                     .arg(p.bwMHz, 0, 'f', 0));
             break;
         }
@@ -1055,13 +1056,6 @@ void MainWindow::onLost(const QString &msg) {
     statusBar()->showMessage(tr("Adapter disconnected"));
 }
 
-QString MainWindow::digitalKind(const Pilot &p) const {
-    if (p.digital == QLatin1String("hdzero")) return tr("HDZero");
-    if (p.digital == QLatin1String("hdzero_narrow")) return tr("HDZero narrow");
-    if (p.digital == QLatin1String("dji")) return tr("DJI %1 MHz").arg(p.bwMHz, 0, 'f', 0);
-    return tr("digital %1 MHz").arg(p.bwMHz, 0, 'f', 0);
-}
-
 const Pilot *MainWindow::digitalPilotAt(double mhz) const {
     if (!expMode_) return nullptr;
     for (const Pilot &p : pilots_)
@@ -1084,7 +1078,7 @@ void MainWindow::onPilots(const QVector<Pilot> &pilots) {
         if (p.isDigital()) {
             text = p.name.isEmpty() ? QStringLiteral("%1 MHz").arg(p.freqMHz, 0, 'f', 0)
                                     : QStringLiteral("%1  %2 MHz").arg(p.name).arg(p.freqMHz, 0, 'f', 0);
-            text += QStringLiteral("  ") + digitalKind(p);
+            text += QStringLiteral("  ") + statustext::digitalKind(p);
         }
         auto *it = new QListWidgetItem(QStringLiteral("%1   %2 dB").arg(text).arg(p.snrDb, 0, 'f', 1));
         it->setData(Qt::UserRole, p.freqMHz);
@@ -1152,48 +1146,8 @@ void MainWindow::onStatus(const RadioStatus &s) {
         lastSaved_ = watching_;
         appSettings().setValue("lastMHz", watching_);
     }
-    QString osd;
-    if (s.mode == QLatin1String("scan")) {
-        osd = tr("Scanning %1/%2").arg(s.scanStep + 1).arg(qMax(1, s.scanSteps));
-    } else if (s.mode == QLatin1String("watch")) {
-        const QString ch = chnames::resolve(s.watchMHz).label();  // "R5/A4/F4" mientras no se elija
-        osd = QStringLiteral("%1%2 MHz").arg(ch.isEmpty() ? QString() : ch + QStringLiteral("  "))
-                  .arg(s.watchMHz, 0, 'f', 0);
-        if (s.snrDb >= 0) osd += QStringLiteral("  SNR %1 dB").arg(s.snrDb, 0, 'f', 0);
-        if (digitalWatch_)
-            osd += QStringLiteral("  ") + tr("%1 (digital, no picture)").arg(digitalKind(digitalPilot_));
-        else
-            osd += QStringLiteral("  ") + (s.locked ? (s.colour ? s.videoStd : tr("%1 B/W").arg(s.videoStd)) : tr("no sync"));
-    }
-    video_->setOsd(osd);
-
-    QString mode = s.mode;
-    if (s.mode == QLatin1String("idle")) mode = tr("idle");
-    else if (s.mode == QLatin1String("scan")) mode = tr("scan");
-    else if (s.mode == QLatin1String("watch")) mode = tr("watch");
-    else if (s.mode == QLatin1String("test")) mode = tr("test");
-
-    QString t;
-    if (s.open && devMode_) {
-        t += QStringLiteral("chip: %1  USB %2\n").arg(s.chip, s.usb3 ? "3" : "2");
-        t += tr("mode: %1  rx: %2").arg(mode, s.rxState) + QLatin1Char('\n');
-        if (s.mode == QLatin1String("watch"))
-            t += tr("%1 MS/s%2  lock %3%  %4 fps")
-                     .arg(s.msps, 0, 'f', 0)
-                     .arg(s.fallback ? tr(" (fallback)") : QString())
-                     .arg(s.lock * 100, 0, 'f', 0)
-                     .arg(s.fps, 0, 'f', 1) + QLatin1Char('\n');
-        // Al escanear, cada cambio de frecuencia reinicia el stream: el contador solo dice algo al ver un canal.
-        if (s.mode == QLatin1String("watch"))
-            t += tr("dropped: %1  restarts: %2").arg(s.dropped).arg(s.restarts);
-        else
-            t += tr("dropped: %1").arg(s.dropped);
-    }
-    // Errores y avisos: tambien sin el modo desarrollador
-    if (s.open && !s.rxError.isEmpty()) t += (t.isEmpty() ? QString() : QStringLiteral("\n")) + tr("error: %1").arg(s.rxError);
-    if (s.open && !s.usb3 && s.chip != QLatin1String("demo"))
-        t += (t.isEmpty() ? QString() : QStringLiteral("\n")) + tr("WARNING: USB 2, no 40 MS/s. Use a USB 3 port.");
-    info_->setText(t);
+    video_->setOsd(statustext::osd(s, digitalWatch_ ? &digitalPilot_ : nullptr));
+    info_->setText(statustext::info(s, devMode_));
 }
 
 void MainWindow::toggleFullScreen() {
