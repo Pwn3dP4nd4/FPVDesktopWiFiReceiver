@@ -10,6 +10,7 @@
 #include "backend.h"
 #include "channel_advisor.h"
 #include "race_monitor.h"
+#include "survey_session.h"
 
 class QCheckBox;
 class QComboBox;
@@ -77,12 +78,12 @@ class ChannelAnalyzer : public QDialog {
 public:
     ChannelAnalyzer(Backend *backend, QWidget *parent = nullptr);
     void setAdapterOpen(bool open);
-    bool isRunning() const { return running_; }
+    bool isRunning() const { return session_.running(); }
     // el analizador de 2,4 GHz se ha puesto en marcha (el barrido ya es suyo): parar sin pedirselo al backend
     void abandon(const QString &why);
     // test/analyzer_shot.cpp: pilotos (< 0 = los guardados) y empezar sin clic
     void setCounts(int analog, int hdzero);
-    void startForTest() { if (!running_) toggle(); }
+    void startForTest() { if (!session_.running()) toggle(); }
     // canales fijados ("R3", "hdz:R3"; se guardan como los del usuario) y activar el seguimiento de carrera
     void setPinnedForTest(const QStringList &pins);
     void setRaceForTest(bool on);
@@ -98,8 +99,8 @@ public:
     QStringList pilotSummaryForTest() const;
     SpectrumView *viewForTest() const { return view_; }
     // test/analyzer_logic_test.cpp: reloj del analisis (s) en lugar del real (< 0: el real) y estado interno
-    void setTimeForTest(double s) { testTimeS_ = s; }
-    bool runningForTest() const { return running_; }
+    void setTimeForTest(double s) { session_.setTimeForTest(s); }
+    bool runningForTest() const { return session_.running(); }
     bool raceOnForTest() const { return raceOn_; }
     bool armedForTest() const { return armed_; }
     int raceSweepsForTest() const { return race_.sweeps(); }
@@ -122,7 +123,7 @@ private:
     void toggle();
     void stop();
     void onStopped();     // el backend lo ha parado (otra orden): solo la ventana
-    double now() const;   // s desde que empezo el analisis (clock_, o el de setTimeForTest)
+    void showStopped(const QString &state, const QString &why);  // ya parado: boton, estado, carrera
     QByteArray airKey() const;        // los pilotos en el aire, sin la edad (cambia: hay que recomendar de nuevo)
     QStringList mineForView() const;  // mios para la grafica: marcados y en un canal fijado
     void updateAir();     // lista de pilotos en el aire
@@ -277,8 +278,8 @@ private:
     QComboBox *region_ = nullptr;  // reglas WiFi (UE / EE. UU.): hasta donde llega el bloque de cada canal
     QLabel *regionLbl_ = nullptr;
     advisor::WifiMemory wifiMem_;  // redes WiFi vistas en este analisis (un AP callado se ve a ratos)
-    QElapsedTimer clock_;          // desde que empezo el analisis
-    double surveyT_ = 0;           // s de clock_ en el ultimo barrido recibido
+    SurveySession session_;        // en marcha, adaptador, paradas pendientes y el reloj del analisis
+    double surveyT_ = 0;           // s de session_.now() en el ultimo barrido recibido
     QLabel *memoryLbl_ = nullptr;
     QListWidget *air_ = nullptr;  // pilotos en el aire; marcados = mios (su canal no cuenta como ocupado)
     QLabel *airTitle_ = nullptr;
@@ -291,7 +292,6 @@ private:
     SpectrumView *view_ = nullptr;
     QTreeWidget *table_ = nullptr;
     SurveyData last_;
-    bool running_ = false, open_ = false;
     // por barrido, no por actualizacion: el backend manda el espectro cada segundo y un barrido tarda ~3 s. El
     // seguimiento de carrera, la memoria WiFi y la recomendacion solo avanzan con un barrido nuevo (o, la
     // recomendacion, si cambian los pilotos en el aire); en medio solo se repinta la grafica
@@ -299,6 +299,4 @@ private:
     QByteArray airKey_;           // los pilotos en el aire (sin la edad) del ultimo recompute
     advisor::Advice advice_;      // la ultima recomendacion (para repintar la grafica entre barridos)
     int recomputes_ = 0;
-    int pendingStops_ = 0;        // requestStop emitidos cuyo surveyStopped aun no ha llegado
-    double testTimeS_ = -1;
 };

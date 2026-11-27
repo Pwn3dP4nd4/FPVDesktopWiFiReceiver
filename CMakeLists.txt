@@ -134,6 +134,7 @@ add_executable(FPVDesktopWiFiReceiver
   src/race_monitor.cpp src/race_monitor.h
   src/channel_names.cpp src/channel_names.h
   src/i18n.cpp src/i18n.h
+  src/app_settings.h src/survey_session.h
   src/video_recorder.cpp src/video_recorder.h src/video_encoder.h
   assets/icons.qrc
 )

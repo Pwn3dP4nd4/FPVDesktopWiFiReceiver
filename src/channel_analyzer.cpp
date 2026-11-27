@@ -1047,7 +1047,7 @@ void ChannelAnalyzer::retranslate() {
     air_->setToolTip(tr("Pilots the analyzer has seen. Those on a pinned channel are already yours. Tick the other "
                         "ones that are yours: their channel is not treated as taken and the advice may give them "
                         "another one."));
-    startBtn_->setText(running_ ? tr("Stop") : tr("Start analysis"));
+    startBtn_->setText(session_.running() ? tr("Stop") : tr("Start analysis"));
     hint_->setText(tr("Anything on the air is treated as taken, unless it is on a pinned channel or you tick it "
                       "in the list (only for this analysis). It averages the last sweeps (Remember). No video "
                       "while it runs."));
@@ -1145,18 +1145,15 @@ void ChannelAnalyzer::changeEvent(QEvent *e) {
 }
 
 void ChannelAnalyzer::setAdapterOpen(bool open) {
-    if (open == open_) return;
-    open_ = open;
-    startBtn_->setEnabled(open_ && haveChannels());
-    if (!open_ && running_) {
-        running_ = false;
-        startBtn_->setText(tr("Start analysis"));
-        setArmed(false);
-        setRace(false, tr("The adapter was disconnected"));
+    bool lostRun;
+    if (!session_.setAdapterOpen(open, &lostRun)) return;
+    startBtn_->setEnabled(open && haveChannels());
+    if (lostRun) {
+        showStopped(QString(), tr("The adapter was disconnected"));
         emit runningChanged(false);
     }
-    if (!running_) state_->setText(open_ ? tr("Ready: choose the bands and press Start analysis.")
-                                         : tr("Connect the adapter first."));
+    if (!session_.running()) state_->setText(open ? tr("Ready: choose the bands and press Start analysis.")
+                                                  : tr("Connect the adapter first."));
 }
 
 void ChannelAnalyzer::setCounts(int analog, int hdzero) {
@@ -1231,8 +1228,8 @@ void ChannelAnalyzer::bandsChanged() {
     appSettings().setValue("analyzer/bands", bands());
     appSettings().setValue("analyzer/excluded", excluded_);
     updateBandTexts();
-    startBtn_->setEnabled(open_ && haveChannels());
-    if (running_) {  // otra zona que barrer: se empieza de nuevo
+    startBtn_->setEnabled(session_.adapterOpen() && haveChannels());
+    if (session_.running()) {  // otra zona que barrer: se empieza de nuevo
         double lo, hi;
         range(lo, hi);
         if (haveChannels()) emit requestStart(lo, hi);
@@ -1275,7 +1272,7 @@ void ChannelAnalyzer::setExcluded(const QStringList &names, bool excluded) {
     // la misma zona: no hace falta volver a barrer, solo cambian los candidatos
     appSettings().setValue("analyzer/excluded", excluded_);
     updateBandTexts();
-    startBtn_->setEnabled(open_ && haveChannels());
+    startBtn_->setEnabled(session_.adapterOpen() && haveChannels());
     recompute();
     updateRace();
 }
@@ -1367,7 +1364,7 @@ void ChannelAnalyzer::range(double &lo, double &hi) const {
 }
 
 void ChannelAnalyzer::toggle() {
-    if (running_) {
+    if (session_.running()) {
         stop();
         return;
     }
@@ -1377,11 +1374,10 @@ void ChannelAnalyzer::toggle() {
     mine_.clear();  // "mio" vale para un analisis: otro dia, otro piloto puede estar en ese canal
     adviceLogKey_.clear();  // cada analisis empieza su recomendacion en el log
     wifiMem_.reset();
-    clock_.start();
-    surveyT_ = now();
+    session_.start();
+    surveyT_ = session_.now();
     lastSweep_ = -1;
     updateAir();
-    running_ = true;
     startBtn_->setText(tr("Stop"));
     state_->setText(tr("Analysing %1-%2 MHz...").arg(lo, 0, 'f', 0).arg(hi, 0, 'f', 0));
     emit requestStart(lo, hi);
@@ -1391,40 +1387,32 @@ void ChannelAnalyzer::toggle() {
 }
 
 void ChannelAnalyzer::stop() {
-    if (!running_) return;
-    running_ = false;
-    startBtn_->setText(tr("Start analysis"));
-    state_->setText(last_.sweeps > 0 ? tr("Stopped after %n sweep(s).", nullptr, last_.sweeps)
-                                       : tr("Ready: choose the bands and press Start analysis."));
-    setArmed(false);
-    setRace(false, tr("The analysis was stopped"));
-    // su surveyStopped llega en cola y puede llegar despues de volver a Empezar: no es que otra orden lo pare
-    pendingStops_++;
-    emit requestStop();
+    if (!session_.stop()) return;
+    showStopped(last_.sweeps > 0 ? tr("Stopped after %n sweep(s).", nullptr, last_.sweeps)
+                                 : tr("Ready: choose the bands and press Start analysis."),
+                tr("The analysis was stopped"));
+    emit requestStop();  // su surveyStopped llega en cola: SurveySession lo descuenta
     emit runningChanged(false);
 }
 
-void ChannelAnalyzer::onStopped() {
-    if (pendingStops_ > 0) {  // la respuesta a un stop() de esta ventana (Backend::stopSurvey responde siempre)
-        pendingStops_--;
-        return;
-    }
-    if (!running_) return;
-    running_ = false;
+// El analisis se ha acabado (ya no esta en marcha): la ventana y la carrera. state vacio: el texto de estado se queda
+void ChannelAnalyzer::showStopped(const QString &state, const QString &why) {
     startBtn_->setText(tr("Start analysis"));
-    state_->setText(tr("Stopped: the receiver went back to scanning or watching."));
+    if (!state.isEmpty()) state_->setText(state);
     setArmed(false);
-    setRace(false, tr("The receiver went back to scanning or watching"));
+    setRace(false, why);
+}
+
+void ChannelAnalyzer::onStopped() {
+    if (!session_.onStopped()) return;
+    showStopped(tr("Stopped: the receiver went back to scanning or watching."),
+                tr("The receiver went back to scanning or watching"));
     emit runningChanged(false);
 }
 
 void ChannelAnalyzer::abandon(const QString &why) {
-    if (!running_) return;
-    running_ = false;
-    startBtn_->setText(tr("Start analysis"));
-    state_->setText(why);
-    setArmed(false);
-    setRace(false, why);
+    if (!session_.abandon()) return;
+    showStopped(why, why);
     emit runningChanged(false);
 }
 
@@ -1477,19 +1465,16 @@ void ChannelAnalyzer::closeEvent(QCloseEvent *e) {
     QDialog::closeEvent(e);
 }
 
-double ChannelAnalyzer::now() const {
-    if (testTimeS_ >= 0) return testTimeS_;
-    return clock_.isValid() ? clock_.elapsed() / 1000.0 : 0;
-}
 
 void ChannelAnalyzer::onSurvey(const SurveyData &d) {
-    if (!running_) return;
+    if (!session_.running()) return;
     // el barrido de 2,4 GHz (src/elrs_analyzer.h), de antes de empezar este: no es de aqui
     if (!d.bins.isEmpty() && d.bins.front().mhz < 3000) return;
+    session_.onData();
     last_ = d;
     // el mismo nombre que en la ventana principal (y la clave de "mio" no salta entre R5 y A4 de un barrido a otro)
     for (Pilot &p : last_.pilots) chnames::apply(p);
-    surveyT_ = now();
+    surveyT_ = session_.now();
     // el backend manda el espectro cada segundo, a medio barrido o no: lo que va por barrido, solo con uno nuevo
     const bool newSweep = d.sweeps != lastSweep_;
     lastSweep_ = d.sweeps;
@@ -1659,7 +1644,7 @@ void ChannelAnalyzer::recompute() {
         return QStringLiteral("<b>%1</b>%2").arg(name, hdz ? QStringLiteral(" (HDZero)") : QString());
     };
     if (!haveData) {
-        QString s = running_ ? tr("Waiting for the first sweep...")
+        QString s = session_.running() ? tr("Waiting for the first sweep...")
                              : tr("Choose the bands and how many pilots will fly, then start the analysis.");
         if (!pinned_.isEmpty()) {
             QStringList pins;
@@ -1684,7 +1669,7 @@ void ChannelAnalyzer::recompute() {
             it->setText(3, QString::number(p.r.ch.mhz, 'f', 0));
             it->setText(4, QStringLiteral("-"));
             it->setText(5, QStringLiteral("-"));
-            it->setText(6, running_ ? tr("not measured yet") : tr("not measured yet: start the analysis"));
+            it->setText(6, session_.running() ? tr("not measured yet") : tr("not measured yet: start the analysis"));
         }
         for (int c = 0; c < 6; c++) table_->resizeColumnToContents(c);
         return;
@@ -1788,7 +1773,7 @@ void ChannelAnalyzer::recompute() {
 
     // al log, cuando cambia lo recomendado (canales, notas, WiFi, quien tiene que cambiar), no en cada barrido: los
     // dB van en la linea pero no cuentan como cambio
-    if (running_ && last_.sweeps >= 3 && !a.picks.empty()) {
+    if (session_.running() && last_.sweeps >= 3 && !a.picks.empty()) {
         QStringList key, line;
         for (const auto &p : a.picks) {
             const QString name = chName(p.r.ch);
@@ -1942,7 +1927,7 @@ bool ChannelAnalyzer::pinnedMine(const Pilot &p) const {
 // ---- seguimiento de carrera ---------------------------------------------------------------------------------
 
 void ChannelAnalyzer::setRace(bool on, const QString &why) {
-    on = on && running_ && !pinned_.isEmpty();
+    on = on && session_.running() && !pinned_.isEmpty();
     if (raceBox_->isChecked() != on) {
         const QSignalBlocker b(raceBox_);
         raceBox_->setChecked(on);
@@ -1980,10 +1965,11 @@ void ChannelAnalyzer::setRace(bool on, const QString &why) {
 }
 
 void ChannelAnalyzer::updateRaceControls() {
-    raceBox_->setEnabled(running_ && !pinned_.isEmpty());
+    raceBox_->setEnabled(session_.running() && !pinned_.isEmpty());
     unpinBtn_->setEnabled(!pinned_.isEmpty());
     // armar: con fijados y sin carrera en marcha; si el analisis no esta en marcha, lo arranca (hace falta adaptador)
-    armBtn_->setEnabled(armed_ || (!raceOn_ && !pinned_.isEmpty() && (running_ || (open_ && haveChannels()))));
+    const bool canStart = session_.running() || (session_.adapterOpen() && haveChannels());
+    armBtn_->setEnabled(armed_ || (!raceOn_ && !pinned_.isEmpty() && canStart));
     if (armBtn_->isChecked() != armed_) {
         const QSignalBlocker b(armBtn_);
         armBtn_->setChecked(armed_);
@@ -2013,9 +1999,9 @@ std::vector<advisor::Signal> ChannelAnalyzer::raceSignals() const {
 
 void ChannelAnalyzer::setArmed(bool on) {
     on = on && !pinned_.isEmpty() && !raceOn_;
-    if (on && !running_) {
-        if (open_ && haveChannels()) toggle();  // arranca el analisis: sin barridos no se ve a nadie
-        on = running_;
+    if (on && !session_.running()) {
+        if (session_.adapterOpen() && haveChannels()) toggle();  // arranca el analisis: sin barridos no se ve a nadie
+        on = session_.running();
     }
     if (on != armed_) {
         armed_ = on;
@@ -2024,7 +2010,7 @@ void ChannelAnalyzer::setArmed(bool on) {
         const int want = armWant();
         if (on) KP_LOGI("carrera: esperando a %d de %d piloto(s) para empezar", want, n);
         else KP_LOGI("carrera: ya no se espera a los pilotos");
-        if (on && running_ && last_.sweeps > 0) checkArmed(raceSignals());  // ya pueden estar todos
+        if (on && session_.running() && last_.sweeps > 0) checkArmed(raceSignals());  // ya pueden estar todos
     }
     updateRace();
 }
@@ -2601,7 +2587,7 @@ QString ChannelAnalyzer::raceStateText() const {
             .arg(armPresent_).arg(armWant());
     if (!raceOn_ && sw > 0) return tr("Tracking stopped after %n sweep(s).", nullptr, sw);
     if (!raceOn_)
-        return running_ ? tr("Tick it when the race starts.")
+        return session_.running() ? tr("Tick it when the race starts.")
                         : tr("Start the analysis, then tick it when the race starts.");
     if (sw < race::kMinSweeps) return tr("Learning the channels: sweep %1 of %2...").arg(sw).arg(race::kMinSweeps);
     return tr("Following %n pinned channel(s): %1 sweeps.", nullptr, n).arg(sw);

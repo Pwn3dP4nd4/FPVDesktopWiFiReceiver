@@ -406,7 +406,7 @@ ElrsAnalyzer::ElrsAnalyzer(Backend *backend, QWidget *parent) : QDialog(parent) 
     connect(memory_, &QComboBox::currentIndexChanged, this, [this] {
         const int n = memory_->currentData().toInt();
         appSettings().setValue("elrs/memory", n);
-        if (running_) emit requestMemory(n);
+        if (session_.running()) emit requestMemory(n);
         updateAutoStopTip();  // dice cuantos barridos
     });
 
@@ -456,7 +456,7 @@ void ElrsAnalyzer::retranslate() {
         memory_->setItemText(i, tr("last %n sweep(s)", nullptr, memory_->itemData(i).toInt()));
     memory_->setToolTip(tr("How many recent sweeps the graph and the advice average. Fewer: it follows changes "
                            "sooner; more: it also catches WiFi that only transmits now and then."));
-    startBtn_->setText(running_ ? tr("Stop") : tr("Start analysis"));
+    startBtn_->setText(session_.running() ? tr("Stop") : tr("Start analysis"));
     autoStop_->setText(tr("Stop when the result is steady"));
     updateAutoStopTip();
     detectedTitle_->setText(tr("On the air"));
@@ -466,8 +466,8 @@ void ElrsAnalyzer::retranslate() {
     tipsT_ = -1e9;
     tipsHtml_.clear();
     shownKeys_.clear();  // "En el aire": los textos, otra vez
-    if (!running_ && open_) state_->setText(tr("Ready: press Start analysis."));
-    else if (!open_) state_->setText(tr("Connect the adapter first."));
+    if (!session_.running() && session_.adapterOpen()) state_->setText(tr("Ready: press Start analysis."));
+    else if (!session_.adapterOpen()) state_->setText(tr("Connect the adapter first."));
     recompute();
 }
 
@@ -494,26 +494,21 @@ void ElrsAnalyzer::buildLegend() {
                             "a few dB low."));
 }
 
-double ElrsAnalyzer::now() const {
-    if (testTimeS_ >= 0) return testTimeS_;
-    return clock_.isValid() ? clock_.elapsed() / 1000.0 : 0;
-}
 
 void ElrsAnalyzer::setAdapterOpen(bool open) {
-    if (open == open_) return;
-    open_ = open;
-    startBtn_->setEnabled(open_);
-    if (!open_ && running_) {
-        running_ = false;
-        awaitingData_ = false;
+    bool lostRun;
+    if (!session_.setAdapterOpen(open, &lostRun)) return;
+    startBtn_->setEnabled(open);
+    if (lostRun) {
         startBtn_->setText(tr("Start analysis"));
         emit runningChanged(false);
     }
-    if (!running_) state_->setText(open_ ? tr("Ready: press Start analysis.") : tr("Connect the adapter first."));
+    if (!session_.running())
+        state_->setText(open ? tr("Ready: press Start analysis.") : tr("Connect the adapter first."));
 }
 
 void ElrsAnalyzer::toggle() {
-    if (running_) {
+    if (session_.running()) {
         stop();
         return;
     }
@@ -531,9 +526,7 @@ void ElrsAnalyzer::toggle() {
     lastChange_.clear();
     shownReport_ = elrs::Report{};
     shownSweep_ = -1;
-    running_ = true;
-    awaitingData_ = true;
-    clock_.start();
+    session_.start();
     startBtn_->setText(tr("Stop"));
     state_->setText(tr("Analysing %1-%2 MHz...").arg(kSurveyLo, 0, 'f', 0).arg(kSurveyHi, 0, 'f', 0));
     // primero runningChanged: la ventana principal deja al otro analizador (abandon) antes de pedir este barrido
@@ -544,43 +537,35 @@ void ElrsAnalyzer::toggle() {
 }
 
 void ElrsAnalyzer::stop() {
-    if (!running_) return;
-    running_ = false;
-    awaitingData_ = false;
-    startBtn_->setText(tr("Start analysis"));
-    state_->setText(last_.sweeps > 0 ? tr("Stopped after %n sweep(s).", nullptr, last_.sweeps)
-                                     : tr("Ready: press Start analysis."));
-    pendingStops_++;
-    emit requestStop();
+    if (!session_.stop()) return;
+    showStopped(last_.sweeps > 0 ? tr("Stopped after %n sweep(s).", nullptr, last_.sweeps)
+                                 : tr("Ready: press Start analysis."));
+    emit requestStop();  // su surveyStopped llega en cola: SurveySession lo descuenta
     emit runningChanged(false);
 }
 
-void ElrsAnalyzer::abandon(const QString &why) {
-    if (!running_) return;
-    running_ = false;
-    awaitingData_ = false;
+void ElrsAnalyzer::showStopped(const QString &state) {
     startBtn_->setText(tr("Start analysis"));
-    state_->setText(why);
+    state_->setText(state);
+}
+
+void ElrsAnalyzer::abandon(const QString &why) {
+    if (!session_.abandon()) return;
+    showStopped(why);
     emit runningChanged(false);
 }
 
 void ElrsAnalyzer::onStopped() {
-    if (pendingStops_ > 0) {
-        pendingStops_--;
-        return;
-    }
-    if (!running_ || awaitingData_) return;
-    running_ = false;
-    startBtn_->setText(tr("Start analysis"));
-    state_->setText(tr("Stopped: the receiver went back to scanning or watching."));
+    if (!session_.onStopped()) return;
+    showStopped(tr("Stopped: the receiver went back to scanning or watching."));
     emit runningChanged(false);
 }
 
 void ElrsAnalyzer::onSurvey(const SurveyData &d) {
-    if (!running_) return;
+    if (!session_.running()) return;
     // el barrido de 5,8 GHz (de antes de empezar este, o del otro analizador): no es de aqui
     if (d.bins.isEmpty() || d.bins.front().mhz > 3000) return;
-    awaitingData_ = false;
+    session_.onData();
     last_ = d;
     sweeps_ = d.sweeps;
     state_->setText(tr("Analysing %1-%2 MHz: %n sweep(s) so far.", nullptr, d.sweeps)
@@ -607,7 +592,7 @@ void ElrsAnalyzer::recompute() {
     view_->setData(last_.bins, shownReport_);  // el espectro, al momento; WiFi y canales, del informe mostrado
     const elrs::Report &r = shownReport_;
     if (r.measured == 0) {
-        summary_->setText(running_ ? tr("Measuring...") : QString());
+        summary_->setText(session_.running() ? tr("Measuring...") : QString());
     } else {
         summary_->setText(verdictText() + QStringLiteral(" — ") +
                           tr("%1 of 80 ELRS channels measured: %2 clean, %3 busy at times, %4 busy often. About %5 "
@@ -652,11 +637,11 @@ TipsKey parseKey(const QString &k) {
 }  // namespace
 
 void ElrsAnalyzer::checkSteady() {
-    if (!running_ || shownVerdict_ == elrs::Verdict::Unknown) return;
+    if (!session_.running() || shownVerdict_ == elrs::Verdict::Unknown) return;
     // lo que importa para configurar la emisora: el veredicto y que sugerencias salen (no sus cifras, ni cada fila de
     // "En el aire": una WiFi debil en el limite de la deteccion iba y venia y no dejaba parar nunca)
     const QString key = currentTipsKey_;
-    const double t = now();
+    const double t = session_.now();
     if (key != steadyKey_) {
         if (!steadyKey_.isEmpty()) {
             const TipsKey a = parseKey(steadyKey_), b = parseKey(key);
@@ -700,7 +685,7 @@ void ElrsAnalyzer::checkSteady() {
 
 void ElrsAnalyzer::settleVerdict(bool immediate) {
     const elrs::Verdict v = report_.verdict;
-    const double t = now();
+    const double t = session_.now();
     if (v == elrs::Verdict::Unknown) {  // aun sin medir lo bastante (al empezar): nada que mostrar
         shownVerdict_ = candVerdict_ = v;
         return;
@@ -732,7 +717,7 @@ QString ElrsAnalyzer::verdictText() const {
 }
 
 void ElrsAnalyzer::updateDetected() {
-    const double t = now();
+    const double t = session_.now();
     const auto put = [&](const QString &key, const QStringList &cols, const QColor &colour) {
         held_[key] = Held{cols, colour, t};
     };
@@ -767,13 +752,13 @@ void ElrsAnalyzer::updateDetected() {
         }
     }
     // lo que lleva un rato sin verse, fuera (al parar, se queda lo ultimo)
-    if (running_)
+    if (session_.running())
         for (auto it = held_.begin(); it != held_.end();)
             it = t - it->seen > kKeepS ? held_.erase(it) : std::next(it);
     QStringList keys = held_.keys();
     if (keys.isEmpty() && report_.measured > 0) keys << QStringLiteral("z:none");
     if (keys != shownKeys_) {  // otras filas: rehacer la lista (conservando el desplazamiento)
-        if (running_)
+        if (session_.running())
             KP_LOGI("elrs: en el aire a los %.0f s: %s", t, qUtf8Printable(keys.join(QLatin1Char(' '))));
         const int scroll = detected_->verticalScrollBar()->value();
         detected_->clear();
@@ -948,12 +933,12 @@ QString ElrsAnalyzer::tipText(elrs::Tip t) const {
 }
 
 void ElrsAnalyzer::updateTips() {
-    const double t = now();
+    const double t = session_.now();
     QString html, key;
     if (shownVerdict_ == elrs::Verdict::Unknown) {
-        key = running_ ? QStringLiteral("wait") : QStringLiteral("idle");
+        key = session_.running() ? QStringLiteral("wait") : QStringLiteral("idle");
         html = QStringLiteral("<p>%1</p>")
-                   .arg(running_ ? tr("Wait for a few sweeps: the suggestions need most of the band measured.")
+                   .arg(session_.running() ? tr("Wait for a few sweeps: the suggestions need most of the band measured.")
                                  : tr("Press Start analysis. In a couple of sweeps (a few seconds) you will see how busy "
                                       "each ELRS channel is and how to set up ELRS for it."));
     } else {
@@ -967,7 +952,7 @@ void ElrsAnalyzer::updateTips() {
         };
         std::vector<elrs::Tip> tips;
         // midiendo, lo que lleva kKeepS sin salir se olvida; parado, se queda lo que habia al parar
-        if (running_)
+        if (session_.running())
             for (auto it = tipSeen_.begin(); it != tipSeen_.end();)
                 it = t - it.value() > kKeepS ? tipSeen_.erase(it) : std::next(it);
         for (auto it = tipSeen_.cbegin(); it != tipSeen_.cend(); ++it) {

@@ -6,6 +6,7 @@
 
 #include "backend.h"
 #include "elrs_advisor.h"
+#include "survey_session.h"
 
 class QCheckBox;
 class QComboBox;
@@ -50,17 +51,17 @@ class ElrsAnalyzer : public QDialog {
     Q_OBJECT
 public:
     ElrsAnalyzer(Backend *backend, QWidget *parent = nullptr);
-    bool isRunning() const { return running_; }
+    bool isRunning() const { return session_.running(); }
     void setAdapterOpen(bool open);  // tambien llega solo, con el estado del backend
     // el otro analizador se ha puesto en marcha (el barrido ya es suyo): parar sin pedirselo al backend
     void abandon(const QString &why);
-    void startForTest() { if (!running_) toggle(); }
+    void startForTest() { if (!session_.running()) toggle(); }
     const elrs::Report &reportForTest() const { return report_; }
     void setPilotsForTest(int n);
-    void setTimeForTest(double s) { testTimeS_ = s; }
+    void setTimeForTest(double s) { session_.setTimeForTest(s); }
     elrs::Verdict shownVerdictForTest() const { return shownVerdict_; }
     void feedForTest(const SurveyData &d) { onSurvey(d); }
-    bool runningForTest() const { return running_; }
+    bool runningForTest() const { return session_.running(); }
     void setAutoStopForTest(bool on);
     QString tipsTextForTest() const;
 
@@ -87,7 +88,7 @@ private:
     QString rateAdvice(elrs::Verdict v) const;
     QString modeTable() const;  // perdida estimada de los modos del uso elegido
     QString verdictText() const;
-    double now() const;  // s desde que empezo el analisis
+    void showStopped(const QString &state);  // ya parado: boton y estado
     // El veredicto que se muestra: cambia solo si el nuevo dura kHoldS (no salta a cada barrido). immediate: ya
     // (al cambiar un ajuste, o el primero)
     void settleVerdict(bool immediate);
@@ -111,11 +112,7 @@ private:
     QTextBrowser *tips_ = nullptr;
     SurveyData last_;
     elrs::Report report_;
-    bool running_ = false, open_ = false;
-    bool awaitingData_ = false;
-    double testTimeS_ = -1;  // pedido el barrido: un surveyStopped de antes (de otra ventana) no es para este
-    int pendingStops_ = 0;
-    QElapsedTimer clock_;
+    SurveySession session_;  // en marcha, adaptador, paradas pendientes y el reloj del analisis
     // ---- lo que se muestra no salta a cada barrido ----
     static constexpr double kHoldS = 8;      // un veredicto nuevo tiene que durar esto para mostrarse
     static constexpr double kKeepS = 12;     // una sugerencia o algo "en el aire" sigue a la vista esto tras dejar de verse

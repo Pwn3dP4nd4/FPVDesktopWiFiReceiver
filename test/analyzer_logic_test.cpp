@@ -112,6 +112,7 @@ int main(int argc, char **argv) {
         QCoreApplication::processEvents();
         check(b.stops == 1 && b.starts == 2 && w.runningForTest(),
               "Parar y Empezar seguidos: la respuesta del primer Parar no para el segundo");
+        emit b.surveyUpdated(survey(0, {}));  // ya barre para esta ventana
         emit b.surveyStopped();  // otra orden (escanear, ver un canal) lo para: eso si
         check(!w.runningForTest(), "una parada que no ha pedido la ventana si la para");
         b.queued = false;  // respuesta inmediata (backend en el mismo hilo)
@@ -119,6 +120,16 @@ int main(int argc, char **argv) {
         w.close();
         w.startForTest();
         check(w.runningForTest(), "con respuesta inmediata tambien");
+    }
+    {
+        // el analizador de 2,4 GHz para (su surveyStopped va en cola) y este empieza antes de que llegue: esa
+        // respuesta no es para esta ventana, que aun no ha recibido ningun barrido suyo
+        FakeBackend b;
+        ChannelAnalyzer w(&b);
+        open(b);
+        w.startForTest();
+        emit b.surveyStopped();  // la respuesta al Parar de la otra ventana
+        check(w.runningForTest(), "la parada de la otra ventana, antes del primer barrido: sigue en marcha");
     }
     {
         // auto-inicio, aviso de que una senal sola impide el fin automatico, y fin automatico
