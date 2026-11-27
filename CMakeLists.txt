@@ -130,6 +130,7 @@ set(KP_GUI_SRC
   src/scan_plan.cpp src/scan_plan.h
   src/scan_channels_dialog.cpp src/scan_channels_dialog.h
   src/channel_analyzer.cpp src/channel_analyzer.h src/channel_advisor.cpp src/channel_advisor.h
+  src/collapsible.cpp src/collapsible.h
   src/elrs_analyzer.cpp src/elrs_analyzer.h src/elrs_advisor.cpp src/elrs_advisor.h
   src/race_monitor.cpp src/race_monitor.h src/race_history.cpp src/race_history.h src/analyzer_style.h
   src/channel_names.cpp src/channel_names.h src/status_text.cpp src/status_text.h
@@ -227,6 +228,7 @@ endif()
 
 # Captura del analizador con el backend de demo: QT_QPA_PLATFORM=offscreen analyzer_shot salida.png [N M [s]]
 add_executable(analyzer_shot test/analyzer_shot.cpp src/channel_analyzer.cpp src/channel_analyzer.h
+               src/collapsible.cpp
                src/channel_advisor.cpp src/race_monitor.cpp src/race_history.cpp src/channel_names.cpp src/stub_backend.cpp
                src/stub_backend.h src/backend.h src/video_widget.cpp src/theme.cpp)
 target_include_directories(analyzer_shot PRIVATE src)
@@ -234,12 +236,14 @@ target_link_libraries(analyzer_shot PRIVATE Qt6::Widgets kepyur_dsp)
 
 # Ventana del analizador de 2,4 GHz sin adaptador ni pantalla (que no salte a cada barrido): --target elrs_window_test
 add_executable(elrs_window_test EXCLUDE_FROM_ALL test/elrs_window_test.cpp src/elrs_analyzer.cpp src/elrs_analyzer.h
+               src/collapsible.cpp
                src/elrs_advisor.cpp src/backend.h)
 target_include_directories(elrs_window_test PRIVATE src)
 target_link_libraries(elrs_window_test PRIVATE Qt6::Widgets kepyur_dsp)  # log.h (KP_LOGI)
 
 # Captura del analizador de 2,4 GHz (ELRS) con el backend de demo: QT_QPA_PLATFORM=offscreen elrs_shot salida.png [s]
 add_executable(elrs_shot EXCLUDE_FROM_ALL test/elrs_shot.cpp src/elrs_analyzer.cpp src/elrs_analyzer.h src/elrs_advisor.cpp
+               src/collapsible.cpp
                src/stub_backend.cpp src/stub_backend.h src/backend.h src/video_widget.cpp src/theme.cpp)
 target_include_directories(elrs_shot PRIVATE src)
 target_link_libraries(elrs_shot PRIVATE Qt6::Widgets kepyur_dsp)
@@ -247,6 +251,7 @@ target_link_libraries(elrs_shot PRIVATE Qt6::Widgets kepyur_dsp)
 # Logica de la ventana del analizador (ritmo de barridos, parar/empezar, auto-inicio y fin de la carrera) con un
 # backend falso y sin pantalla: cmake --build <dir> --target analyzer_logic_test
 add_executable(analyzer_logic_test EXCLUDE_FROM_ALL test/analyzer_logic_test.cpp src/channel_analyzer.cpp
+               src/collapsible.cpp
                src/channel_analyzer.h src/channel_advisor.cpp src/race_monitor.cpp src/race_history.cpp src/channel_names.cpp
                src/backend.h src/video_widget.cpp)
 target_include_directories(analyzer_logic_test PRIVATE src)

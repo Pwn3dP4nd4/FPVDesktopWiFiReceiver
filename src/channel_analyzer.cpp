@@ -1,6 +1,7 @@
 #include "channel_analyzer.h"
 #include "analyzer_style.h"
 #include "app_settings.h"
+#include "collapsible.h"
 #include "channel_names.h"
 #include "spectrum.h"  // kp::fpv_channels()
 #include "log.h"
@@ -670,7 +671,8 @@ ChannelAnalyzer::ChannelAnalyzer(Backend *backend, QWidget *parent) : QDialog(pa
     auto *main = new QVBoxLayout;
     view_ = new SpectrumView;
     main->addWidget(view_, 3);
-    main->addWidget(buildLegend());
+    legend_ = new Collapsible(buildLegend(), QStringLiteral("legend"), QStringLiteral("analyzer/legend"));
+    main->addWidget(legend_);
     summary_ = new QLabel;
     summary_->setObjectName(QStringLiteral("summary"));
     summary_->setWordWrap(true);
@@ -1081,6 +1083,7 @@ void ChannelAnalyzer::retranslate() {
                             tr("Pinned channel (right-click a mark to pin)"),
                             tr("Sweep: just measured (bright), fading until the next pass")};
         for (int i = 0; i < legendText_.size() && i < t.size(); i++) legendText_[i]->setText(t[i]);
+        legend_->setTitle(tr("Legend"));
     }
     table_->setHeaderLabels({tr("Pin"), tr("System"), tr("Channel"), tr("MHz"), tr("Interference"), tr("Bursts"),
                              tr("Notes")});

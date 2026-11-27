@@ -60,6 +60,10 @@
         <translation>Barrido: recién medido (brillante), se apaga hasta la siguiente pasada</translation>
     </message>
     <message>
+        <source>Legend</source>
+        <translation>Leyenda</translation>
+    </message>
+    <message>
         <source>System</source>
         <translation>Sistema</translation>
     </message>
@@ -747,6 +751,10 @@
     <message>
         <source>Ready: press Start analysis.</source>
         <translation>Listo: pulsa Empezar el análisis.</translation>
+    </message>
+    <message>
+        <source>Legend</source>
+        <translation>Leyenda</translation>
     </message>
     <message>
         <source>Graph:</source>

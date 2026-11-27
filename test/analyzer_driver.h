@@ -208,6 +208,16 @@ inline void setEventGroupOpen(ChannelAnalyzer &w, int group, bool open) {
     find<QTreeWidget>(&w, "historyEvents")->topLevelItem(group)->setExpanded(open);
 }
 
+// La leyenda bajo la grafica (las dos ventanas): si se ve, y pulsar su boton para plegarla o desplegarla
+template <class W>
+bool legendShown(const W &w) {
+    return find<QWidget>(&w, "legend")->isVisibleTo(&w);
+}
+template <class W>
+void toggleLegend(W &w) {
+    find<QToolButton>(&w, "legendToggle")->click();
+}
+
 // ---- analizador de 2,4 GHz ----
 
 template <class W>

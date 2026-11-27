@@ -339,6 +339,18 @@ int main(int argc, char **argv) {
         check(SpectrumView::cursorText(5990, cells) == QStringList{QStringLiteral("5990 MHz")},
               "cursor: sin canal cerca ni medida, solo los MHz");
     }
+    {
+        // leyenda plegable: se recuerda al volver a abrir la ventana
+        FakeBackend b;
+        ChannelAnalyzer w(&b);
+        check(drive::legendShown(w), "leyenda: se ve la primera vez");
+        drive::toggleLegend(w);
+        check(!drive::legendShown(w), "leyenda: su boton la pliega");
+        ChannelAnalyzer w2(&b);
+        check(!drive::legendShown(w2), "leyenda: plegada al volver a abrir");
+        drive::toggleLegend(w2);
+        check(drive::legendShown(w2), "leyenda: su boton la despliega");
+    }
     std::printf("\n%s\n", failures ? "HAY FALLOS" : "todo bien");
     return failures ? 1 : 0;
 }

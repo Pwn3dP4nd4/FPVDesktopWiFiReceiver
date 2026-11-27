@@ -1,6 +1,7 @@
 #include "elrs_analyzer.h"
 #include "analyzer_style.h"
 #include "app_settings.h"
+#include "collapsible.h"
 #include "log.h"
 
 #include <QCloseEvent>
@@ -452,7 +453,10 @@ QWidget *ElrsAnalyzer::buildGraph() {
     const int col = addLegendRow(legend, 1, {levelSwatch(elrs::Level::Clean), levelSwatch(elrs::Level::Busy),
                                              levelSwatch(elrs::Level::Bad), levelSwatch(elrs::Level::Unknown)});
     legend->setColumnStretch(col + 8, 1);
-    tv->addLayout(legend);
+    auto *legendBox = new QWidget;  // muestras y nota, plegables
+    auto *lv = new QVBoxLayout(legendBox);
+    lv->setContentsMargins(0, 0, 0, 0);
+    lv->addLayout(legend);
     legendNote_ = new QLabel;
     legendNote_->setWordWrap(true);
     {
@@ -465,7 +469,9 @@ QWidget *ElrsAnalyzer::buildGraph() {
         f.setPointSizeF(f.pointSizeF() * 0.9);
         legendNote_->setFont(f);
     }
-    tv->addWidget(legendNote_);
+    lv->addWidget(legendNote_);
+    legend_ = new Collapsible(legendBox, QStringLiteral("legend"), QStringLiteral("elrs/legend"));
+    tv->addWidget(legend_);
     summary_ = new QLabel;
     summary_->setObjectName(QStringLiteral("summary"));
     summary_->setWordWrap(true);
@@ -595,6 +601,7 @@ void ElrsAnalyzer::updateAutoStopTip() {
 
 void ElrsAnalyzer::buildLegend() {
     if (!legendGraph_ || legendText_.size() < 9) return;
+    legend_->setTitle(tr("Legend"));
     legendGraph_->setText(tr("Graph:"));
     legendElrs_->setText(tr("ELRS channels:"));
     const QString t[] = {tr("average level"), tr("peaks"),        tr("bursts"),  tr("WiFi network"), tr("sweep"),
