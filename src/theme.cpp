@@ -32,9 +32,11 @@ struct Colours {
     QColor light, midlight, mid, dark, shadow;
 };
 
-// Oscuro: grises azulados, para mirar video en una pista al atardecer sin deslumbrar. El azul de seleccion es el de
+// Oscuro: grises azulados, para mirar video en una pista al atardecer sin deslumbrar. Los campos (Base) algo mas
+// claros que la ventana: Fusion bordea las casillas con la ventana oscurecida, y sobre un campo mas oscuro no se
+// veian (las de "En el aire" del analizador). El azul de seleccion es el de
 // los canales analogicos, algo mas oscuro para que el texto blanco encima se lea (contraste >= 4,5, theme_test).
-const Colours kDark{QColor(0x1e2128), QColor(0x16181d), QColor(0x232730), QColor(0x2a2f38), QColor(0xe6e8ec),
+const Colours kDark{QColor(0x1e2128), QColor(0x262a33), QColor(0x2c313b), QColor(0x2c313b), QColor(0xe6e8ec),
                     QColor(0x6b7280), QColor(0x8a919d), QColor(0x1f6fd6), QColor(0xffffff), QColor(0x58a6ff),
                     QColor(0x4a515e), QColor(0x323844), QColor(0x3a404b), QColor(0x121418), QColor(0x0a0b0d)};
 const Colours kLight{QColor(0xf3f4f6), QColor(0xffffff), QColor(0xf6f7f9), QColor(0xfafafa), QColor(0x1f2328),
