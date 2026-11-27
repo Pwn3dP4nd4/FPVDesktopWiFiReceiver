@@ -1,6 +1,6 @@
 // Captura de la ventana principal con el backend de demostracion (sin adaptador), para revisar la ventana: conecta,
 // escanea y se queda viendo el piloto de demo, como al abrir la app con --demo.
-//   main_window_shot SALIDA.png [SEGUNDOS]
+//   main_window_shot SALIDA.png [SEGUNDOS] [--theme dark|light]
 // (QT_QPA_PLATFORM=offscreen: sin pantalla). Usa su propio .ini (en la carpeta temporal), no el del usuario.
 #include <QApplication>
 #include <QDir>
@@ -12,6 +12,7 @@
 
 #include "main_window.h"
 #include "stub_backend.h"
+#include "theme.h"
 
 int main(int argc, char **argv) {
     QApplication app(argc, argv);
@@ -25,6 +26,8 @@ int main(int argc, char **argv) {
     const QString ini = QDir::tempPath() + QStringLiteral("/main_window_shot");
     QDir(ini).removeRecursively();
     QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, ini);
+    for (int i = 3; i + 1 < argc; i++)  // tras setPath: guarda el ajuste en el .ini de la captura
+        if (QString::fromLocal8Bit(argv[i]) == QLatin1String("--theme")) theme::apply(theme::parse(argv[i + 1]));
     qRegisterMetaType<SurveyData>();
     qRegisterMetaType<RadioStatus>();
     qRegisterMetaType<Pilot>();

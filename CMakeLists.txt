@@ -226,7 +226,7 @@ endif()
 # Captura del analizador con el backend de demo: QT_QPA_PLATFORM=offscreen analyzer_shot salida.png [N M [s]]
 add_executable(analyzer_shot test/analyzer_shot.cpp src/channel_analyzer.cpp src/channel_analyzer.h
                src/channel_advisor.cpp src/race_monitor.cpp src/race_history.cpp src/channel_names.cpp src/stub_backend.cpp
-               src/stub_backend.h src/backend.h src/video_widget.cpp)
+               src/stub_backend.h src/backend.h src/video_widget.cpp src/theme.cpp)
 target_include_directories(analyzer_shot PRIVATE src)
 target_link_libraries(analyzer_shot PRIVATE Qt6::Widgets kepyur_dsp)
 
@@ -238,7 +238,7 @@ target_link_libraries(elrs_window_test PRIVATE Qt6::Widgets kepyur_dsp)  # log.h
 
 # Captura del analizador de 2,4 GHz (ELRS) con el backend de demo: QT_QPA_PLATFORM=offscreen elrs_shot salida.png [s]
 add_executable(elrs_shot EXCLUDE_FROM_ALL test/elrs_shot.cpp src/elrs_analyzer.cpp src/elrs_analyzer.h src/elrs_advisor.cpp
-               src/stub_backend.cpp src/stub_backend.h src/backend.h src/video_widget.cpp)
+               src/stub_backend.cpp src/stub_backend.h src/backend.h src/video_widget.cpp src/theme.cpp)
 target_include_directories(elrs_shot PRIVATE src)
 target_link_libraries(elrs_shot PRIVATE Qt6::Widgets kepyur_dsp)
 
