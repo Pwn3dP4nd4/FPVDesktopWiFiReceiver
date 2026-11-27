@@ -1229,6 +1229,22 @@ S: captura   R: grabar vídeo</translation>
         <translation>Oculta los bordes sucios de la imagen analógica, como hace un televisor (3 % por lado)</translation>
     </message>
     <message>
+        <source>&amp;Theme</source>
+        <translation>&amp;Tema</translation>
+    </message>
+    <message>
+        <source>System</source>
+        <translation>Sistema</translation>
+    </message>
+    <message>
+        <source>Light</source>
+        <translation>Claro</translation>
+    </message>
+    <message>
+        <source>Dark</source>
+        <translation>Oscuro</translation>
+    </message>
+    <message>
         <source>Full screen	F</source>
         <translation>Pantalla completa	F</translation>
     </message>

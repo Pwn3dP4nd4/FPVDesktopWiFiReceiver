@@ -3,6 +3,7 @@
 #include "main_window.h"
 #include "app_settings.h"
 #include "status_text.h"
+#include "theme.h"
 
 #include <QActionGroup>
 #include <QApplication>
@@ -357,8 +358,29 @@ void MainWindow::buildViewMenu() {
         video_->setCropOverscan(on);
     });
     viewMenu_->addSeparator();
+    buildThemeMenu();
+    viewMenu_->addSeparator();
     fullScreenAct_ = viewMenu_->addAction(QString(), this, &MainWindow::toggleFullScreen);
     fullScreenAct_->setShortcutVisibleInContextMenu(true);
+}
+
+// Ver > Tema: el del sistema, claro u oscuro (src/theme.h); cambia al momento y se guarda
+void MainWindow::buildThemeMenu() {
+    themeMenu_ = viewMenu_->addMenu(QString());
+    auto *grp = new QActionGroup(this);
+    const theme::Theme all[] = {theme::Theme::System, theme::Theme::Light, theme::Theme::Dark};
+    const QLatin1String names[] = {QLatin1String("themeSystem"), QLatin1String("themeLight"),
+                                   QLatin1String("themeDark")};
+    for (int i = 0; i < 3; ++i) {
+        themeActs_[i] = themeMenu_->addAction(QString());
+        themeActs_[i]->setObjectName(names[i]);
+        themeActs_[i]->setCheckable(true);
+        themeActs_[i]->setData(static_cast<int>(all[i]));
+        themeActs_[i]->setChecked(all[i] == theme::setting());
+        grp->addAction(themeActs_[i]);
+    }
+    connect(grp, &QActionGroup::triggered, this,
+            [](QAction *a) { theme::apply(static_cast<theme::Theme>(a->data().toInt())); });
 }
 
 // Opciones: conectar al abrir, modo desarrollador, modo experimental...
@@ -513,6 +535,10 @@ void MainWindow::retranslate() {
     aspectActs_[2]->setText(tr("Stretch to the window"));
     cropAct_->setText(tr("Crop the borders (overscan)"));
     cropAct_->setToolTip(tr("Hide the dirty edges of the analog picture, as a TV does (3 % per side)"));
+    themeMenu_->setTitle(tr("&Theme"));
+    themeActs_[0]->setText(tr("System"));
+    themeActs_[1]->setText(tr("Light"));
+    themeActs_[2]->setText(tr("Dark"));
     fullScreenAct_->setText(tr("Full screen	F"));
     optMenu_->setTitle(tr("&Options"));
     autoConnectAct_->setText(tr("&Connect the adapter on startup"));

@@ -62,6 +62,7 @@ private:
     void buildMenus();
     void buildFileMenu();
     void buildViewMenu();
+    void buildThemeMenu();
     void buildOptionsMenu();
     void buildLanguageMenu();
     void setupShortcuts();  // F / F11 / Esc / O
@@ -118,6 +119,8 @@ private:
     VideoWidget *video_;
     QMenu *viewMenu_ = nullptr;
     QAction *aspectSection_ = nullptr, *aspectActs_[3] = {}, *cropAct_ = nullptr, *fullScreenAct_ = nullptr;
+    QMenu *themeMenu_ = nullptr;
+    QAction *themeActs_[3] = {};  // sistema, claro, oscuro (theme::Theme)
     QMenu *fileMenu_ = nullptr, *optMenu_ = nullptr, *langMenu_ = nullptr, *helpMenu_ = nullptr;
     QAction *snapAct_ = nullptr, *dvrAct_ = nullptr;
     QMenu *snapDirMenu_ = nullptr, *videoDirMenu_ = nullptr;
