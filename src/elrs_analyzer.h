@@ -115,6 +115,8 @@ private:
     void buildLegend();
     void updateAutoStopTip();  // la ayuda de "parar solo" (dice cuantos barridos de media)
     void checkSteady();  // parar solo (autoStop_) cuando lo que se ve lleva kSteadyS sin cambiar
+    void noteChange(const QString &from, const QString &to, double t);  // claves de updateTips
+    void stopIfDone(double t);
     elrs::Use use() const;
     elrs::Region region() const;
 

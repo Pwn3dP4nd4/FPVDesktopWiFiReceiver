@@ -677,6 +677,22 @@ TipsKey parseKey(const QString &k) {
     for (int i = 1; i < parts.size(); i++) o.tips.insert(parts[i].toInt());
     return o;
 }
+
+// "veredicto limpia -> mucha +Gemini -RateClean ajustes" (para el log)
+QString change_text(const TipsKey &a, const TipsKey &b) {
+    const auto known = [](int v, int n) { return v >= 0 && v < n; };
+    const int nTips = int(std::size(kTipNames));
+    QStringList what;
+    if (a.verdict != b.verdict && known(a.verdict, 4) && known(b.verdict, 4))
+        what << QStringLiteral("veredicto %1 -> %2").arg(QLatin1String(kVerdictNames[a.verdict]),
+                                                        QLatin1String(kVerdictNames[b.verdict]));
+    for (int x : b.tips)
+        if (!a.tips.contains(x) && known(x, nTips)) what << QStringLiteral("+%1").arg(QLatin1String(kTipNames[x]));
+    for (int x : a.tips)
+        if (!b.tips.contains(x) && known(x, nTips)) what << QStringLiteral("-%1").arg(QLatin1String(kTipNames[x]));
+    if (a.rest != b.rest) what << QStringLiteral("ajustes");
+    return what.join(QLatin1Char(' '));
+}
 }  // namespace
 
 void ElrsAnalyzer::checkSteady() {
@@ -686,25 +702,24 @@ void ElrsAnalyzer::checkSteady() {
     const QString key = run_.currentTipsKey;
     const double t = session_.now();
     if (key != run_.steadyKey) {
-        if (!run_.steadyKey.isEmpty()) {
-            const TipsKey a = parseKey(run_.steadyKey), b = parseKey(key);
-            QStringList what;
-            if (a.verdict != b.verdict && a.verdict >= 0 && a.verdict < 4 && b.verdict >= 0 && b.verdict < 4)
-                what << QStringLiteral("veredicto %1 -> %2").arg(QLatin1String(kVerdictNames[a.verdict]),
-                                                                QLatin1String(kVerdictNames[b.verdict]));
-            for (int x : b.tips)
-                if (!a.tips.contains(x) && x >= 0 && x < int(std::size(kTipNames))) what << QStringLiteral("+%1").arg(QLatin1String(kTipNames[x]));
-            for (int x : a.tips)
-                if (!b.tips.contains(x) && x >= 0 && x < int(std::size(kTipNames))) what << QStringLiteral("-%1").arg(QLatin1String(kTipNames[x]));
-            if (a.rest != b.rest) what << QStringLiteral("ajustes");
-            KP_LOGI("elrs: cambia la recomendacion a los %.0f s (barrido %d): %s", t, run_.sweeps,
-                    qUtf8Printable(what.join(QLatin1Char(' '))));
-            run_.lastChange = a.verdict != b.verdict ? tr("the verdict") : tr("which suggestions apply");
-        }
+        if (!run_.steadyKey.isEmpty()) noteChange(run_.steadyKey, key, t);
         run_.steadyKey = key;
         run_.steadySince = t;
     }
-    if (!autoStop_->isChecked()) return;
+    if (autoStop_->isChecked()) stopIfDone(t);
+}
+
+// lo que ha cambiado en la recomendacion (al log, y que fue para el texto de "sigue cambiando")
+void ElrsAnalyzer::noteChange(const QString &from, const QString &to, double t) {
+    const TipsKey a = parseKey(from), b = parseKey(to);
+    KP_LOGI("elrs: cambia la recomendacion a los %.0f s (barrido %d): %s", t, run_.sweeps,
+            qUtf8Printable(change_text(a, b)));
+    run_.lastChange = a.verdict != b.verdict ? tr("the verdict") : tr("which suggestions apply");
+}
+
+// parar solo: con la media llena y un minimo de tiempo, si la recomendacion lleva kSteadyS sin cambiar o si ya van
+// kMaxRunS
+void ElrsAnalyzer::stopIfDone(double t) {
     // la media ya tiene sus barridos y ha corrido un minimo (un AP callado se pilla a ratos)
     const int memory = memory_->currentData().toInt();
     if (run_.sweeps < memory || t < kMinRunS) return;
