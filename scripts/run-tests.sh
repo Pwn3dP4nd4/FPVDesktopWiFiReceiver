@@ -12,7 +12,7 @@ case "$(uname -s)" in
 esac
 [ -f "$BUILD/CMakeCache.txt" ] || { echo "No hay compilacion en $BUILD: ejecuta antes scripts/build.sh" >&2; exit 2; }
 # reopen_test y wedge_test no estan: necesitan el adaptador (se compilan con -DKP_WITH_RADIO y se lanzan a mano)
-TESTS=(channel_advisor_test elrs_advisor_test elrs_window_test race_monitor_test analyzer_logic_test survey_test digital_scan_test video_params_test video_recorder_test)
+TESTS=(channel_advisor_test elrs_advisor_test elrs_window_test race_monitor_test analyzer_logic_test survey_test digital_scan_test video_params_test video_recorder_test radio_status_test)
 cmake --build "$BUILD" --target "${TESTS[@]}"
 failed=()
 for t in "${TESTS[@]}"; do

@@ -188,7 +188,8 @@ else()
                   "(MSYS2: pacman -S mingw-w64-ucrt-x86_64-qt6-tools; Debian/Ubuntu: apt install qt6-tools-dev qt6-l10n-tools)")
 endif()
 if(KP_WITH_RADIO)
-  target_sources(FPVDesktopWiFiReceiver PRIVATE src/radio_backend.cpp src/radio_backend.h src/usb3_switch.cpp src/usb3_switch.h)
+  target_sources(FPVDesktopWiFiReceiver PRIVATE src/radio_backend.cpp src/radio_backend.h src/radio_status.cpp
+                 src/radio_status.h src/usb3_switch.cpp src/usb3_switch.h)
   target_link_libraries(FPVDesktopWiFiReceiver PRIVATE fpv_radio)
   target_compile_definitions(FPVDesktopWiFiReceiver PRIVATE KP_WITH_RADIO=1)
   if(WIN32)
@@ -286,6 +287,12 @@ add_executable(video_recorder_test EXCLUDE_FROM_ALL test/video_recorder_test.cpp
                src/video_recorder.h src/video_params.cpp ${KP_VIDEO_SRC})
 target_include_directories(video_recorder_test PRIVATE src)
 target_link_libraries(video_recorder_test PRIVATE Qt6::Gui kepyur_dsp ${KP_VIDEO_LIBS})
+
+# Lectura del estado de la radio (status_json) para la GUI: cmake --build <dir> --target radio_status_test
+add_executable(radio_status_test EXCLUDE_FROM_ALL test/radio_status_test.cpp src/radio_status.cpp src/radio_status.h
+               src/backend.h)
+target_include_directories(radio_status_test PRIVATE src)
+target_link_libraries(radio_status_test PRIVATE Qt6::Gui)
 
 # Seguimiento de carrera (canales fijados) con espectros sinteticos: cmake --build <dir> --target race_monitor_test
 add_executable(race_monitor_test EXCLUDE_FROM_ALL test/race_monitor_test.cpp src/race_monitor.cpp src/channel_advisor.cpp)
