@@ -17,8 +17,23 @@
 // (src/race_history.cpp): colores por sistema, la chincheta de un canal fijado y cuando un video es flojo. El cursor
 // de frecuencia, tambien en la grafica de 2,4 GHz (src/elrs_analyzer.cpp).
 
-// colores de los recomendados (franja) por sistema
+// Colores con significado, iguales con cualquier tema (src/theme.h solo cambia fondos y textos). Cada uno, aqui:
+// las graficas, las leyendas, las tablas y los avisos que hablan de lo mismo usan el mismo.
+// recomendados (franja) y canales fijados, por sistema
 inline const QColor kAnalogColour(0x2f, 0x80, 0xed), kHdzColour(0x7b, 0x5c, 0xd6);
+// estado de un canal o de un aviso: limpio / tuyo / bien, algo de interferencia / aviso, ocupado / grave
+inline const QColor kGoodColour(0x3a, 0xa8, 0x5a), kWarnColour(0xe0, 0xa0, 0x20), kBadColour(0xd9, 0x48, 0x3b);
+// cambios aplicados en el historial de carrera
+inline const QColor kInfoColour(0x2f, 0x80, 0xed);
+// sin dato o de fondo (sin medir, inicio de carrera)
+inline const QColor kNeutralColour(0x80, 0x80, 0x80);
+// picos (rafaga mas fuerte reciente), rafagas (WiFi: se pinta translucido), WiFi visto (marca)
+inline const QColor kPeakColour(0xe0, 0x70, 0x30), kBurstColour(255, 140, 0), kWifiSeenColour(0xc0, 0x60, 0x00);
+
+inline QColor withAlpha(QColor c, int alpha) {
+    c.setAlpha(alpha);
+    return c;
+}
 // seguimiento de carrera: por debajo de esta SNR (dB) el video de un piloto se tiene por flojo
 inline constexpr float kLowSnrDb = 12;
 

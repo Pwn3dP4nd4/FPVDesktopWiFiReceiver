@@ -220,7 +220,7 @@ void ElrsView::drawSpectrum(QPainter &p, const Geometry &g) const {
     for (const auto &b : bins_) {
         if (b.mhz < kLo || b.mhz > kHi || b.duty < 0.02f) continue;
         p.fillRect(QRectF(QPointF(g.x(b.mhz - 0.08), g.top), QPointF(g.x(b.mhz + 0.08), g.plotBottom)),
-                   QColor(255, 140, 0, 20 + int(std::min(1.f, b.duty * 2) * 60)));
+                   withAlpha(kBurstColour, 20 + int(std::min(1.f, b.duty * 2) * 60)));
     }
     QPainterPath peak, mean;
     bool first = true;
@@ -240,7 +240,7 @@ void ElrsView::drawSpectrum(QPainter &p, const Geometry &g) const {
         lastMhz = b.mhz;
     }
     if (!first) mean.lineTo(g.x(lastMhz), g.plotBottom);
-    p.setPen(QPen(QColor(0xe0, 0x70, 0x30), 1));
+    p.setPen(QPen(kPeakColour, 1));
     p.drawPath(peak);
     QColor fill = pal.color(QPalette::Highlight);
     p.setPen(QPen(fill, 1.5));
@@ -380,13 +380,13 @@ QPixmap graphSwatch(GraphKey kind, const QPalette &pal) {
         break;
     }
     case GraphKey::Peaks:
-        q.setPen(QPen(QColor(0xe0, 0x70, 0x30), 2));
+        q.setPen(QPen(kPeakColour, 2));
         q.drawLine(0, 8, 7, 3);
         q.drawLine(7, 3, 14, 9);
         q.drawLine(14, 9, 22, 2);
         break;
     case GraphKey::Bursts:
-        q.fillRect(r, QColor(255, 140, 0, 70));
+        q.fillRect(r, withAlpha(kBurstColour, 70));
         break;
     case GraphKey::Wifi: {
         QColor c = kWifiColour;
