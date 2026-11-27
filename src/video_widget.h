@@ -4,6 +4,8 @@
 #include <QPixmap>
 #include <QWidget>
 
+class QPainter;
+
 class QTimer;
 
 // Pinta el ultimo fotograma escalado a la forma elegida (4:3 por defecto: 720x480 NTSC / 720x576 PAL son
@@ -45,6 +47,12 @@ private:
     QImage frame_;
     QString osd_, placeholder_, rec_;
     QRectF sourceRect() const;  // parte del fotograma que se ve (recorte del sobrebarrido)
+    // paintEvent, por capas
+    void drawPlaceholder(QPainter &p);
+    QRect drawFrame(QPainter &p);
+    void drawNoSignal(QPainter &p, const QRect &r);
+    void drawOsd(QPainter &p);
+    void drawRecording(QPainter &p);
     QPixmap logo_;
     bool osdOn_ = true;
     // Senal perdida: el decodificador deja de emitir fotogramas y el ultimo se quedaria congelado como si
