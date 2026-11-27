@@ -3,6 +3,8 @@
 #include <QDialog>
 #include <QElapsedTimer>
 #include <QHash>
+#include <algorithm>
+#include <QFontMetrics>
 #include <QVector>
 
 #include <optional>
@@ -55,6 +57,22 @@ protected:
 
 private:
     bool isPinned(const advisor::Candidate &c) const;
+    // ---- paintEvent(), por capas ----
+    struct Geometry {  // ejes del pintado: x por MHz (lo..hi), y por dB (0..dbMax); filas de canales debajo
+        QFontMetrics fm;
+        int rowH = 0, left = 0, right = 0, barTop = 0, barH = 0, top = 0, plotBottom = 0;
+        double lo = 0, hi = 1, dbMax = 40;
+        double x(double mhz) const { return left + (mhz - lo) / (hi - lo) * (right - left); }
+        double y(double db) const { return plotBottom - std::clamp(db, 0.0, dbMax) / dbMax * (plotBottom - top); }
+    };
+    void drawAxes(QPainter &p, const Geometry &g) const;
+    void drawPicks(QPainter &p, const Geometry &g) const;      // los recomendados (franjas) y los fijados
+    void drawSpectrum(QPainter &p, const Geometry &g) const;   // rafagas, picos y media
+    void drawWifi(QPainter &p, const Geometry &g) const;       // las redes WiFi que recuerda el analisis
+    void drawSweepBar(QPainter &p, const Geometry &g) const;   // la barra de barrido
+    void drawSweepHead(QPainter &p, const Geometry &g, qint64 t) const;  // donde va ahora
+    void drawAir(QPainter &p, const Geometry &g) const;        // lo que hay en el aire
+    void drawChannelRows(QPainter &p, const Geometry &g) const;
     SurveyData data_;              // los bins juntados de 1 en 1 MHz (se dibujan mas limpios)
     advisor::Advice advice_;
     QStringList mine_;

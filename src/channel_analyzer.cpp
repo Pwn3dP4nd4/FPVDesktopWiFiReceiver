@@ -248,50 +248,64 @@ void SpectrumView::setData(const SurveyData &d, const advisor::Advice &a, double
 void SpectrumView::paintEvent(QPaintEvent *) {
     QPainter p(this);
     p.setRenderHint(QPainter::Antialiasing);
-    const QPalette pal = palette();
-    p.fillRect(rect(), pal.base());
+    p.fillRect(rect(), palette().base());
     const QFontMetrics fm(font());
-    const int rowH = fm.height() + 4;
-    const int left = std::max({fm.horizontalAdvance(QStringLiteral("40 dB")), fm.horizontalAdvance(tr("Analog")),
-                               fm.horizontalAdvance(QStringLiteral("HDZero"))}) + 10,
-              right = width() - 8;
+    Geometry g{fm};
+    g.rowH = fm.height() + 4;
+    g.left = std::max({fm.horizontalAdvance(QStringLiteral("40 dB")), fm.horizontalAdvance(tr("Analog")),
+                       fm.horizontalAdvance(QStringLiteral("HDZero"))}) + 10;
+    g.right = width() - 8;
     // barra de barrido arriba del todo; la grafica, debajo
-    const int barTop = 7, barH = 7, top = barTop + barH + 14;
-    const int plotBottom = height() - 2 * rowH - fm.height() - 10;
-    const double dbMax = 40;
-    const auto X = [&](double mhz) { return left + (mhz - lo_) / (hi_ - lo_) * (right - left); };
-    const auto Y = [&](double db) { return plotBottom - std::clamp(db, 0.0, dbMax) / dbMax * (plotBottom - top); };
+    g.barTop = 7;
+    g.barH = 7;
+    g.top = g.barTop + g.barH + 14;
+    g.plotBottom = height() - 2 * g.rowH - fm.height() - 10;
+    g.lo = lo_;
+    g.hi = hi_;
+    // geometria del ultimo pintado (menu contextual): eje x y filas de canales
+    left_ = g.left;
+    right_ = g.right;
+    plotBottom_ = g.plotBottom;
+    rowH_ = g.rowH;
+    rowsTop_ = g.plotBottom + fm.height() + 6;
 
-    // rejilla y ejes: la rejilla, el color del texto muy tenue; los textos, el del texto (QPalette::Mid es casi negro
-    // en tema oscuro: ni la rejilla ni los dB se veian)
+    drawAxes(p, g);
+    drawPicks(p, g);
+    drawSpectrum(p, g);
+    drawWifi(p, g);
+    drawSweepBar(p, g);
+    drawAir(p, g);
+    drawChannelRows(p, g);
+}
+
+// rejilla y ejes: la rejilla, el color del texto muy tenue; los textos, el del texto (QPalette::Mid es casi negro
+// en tema oscuro: ni la rejilla ni los dB se veian)
+void SpectrumView::drawAxes(QPainter &p, const Geometry &g) const {
+    const QPalette pal = palette();
     QColor grid = pal.color(QPalette::Text);
     grid.setAlpha(70);
     for (int db = 10; db <= 40; db += 10) {
         p.setPen(QPen(grid, 1, Qt::DotLine));
-        p.drawLine(QPointF(left, Y(db)), QPointF(right, Y(db)));
+        p.drawLine(QPointF(g.left, g.y(db)), QPointF(g.right, g.y(db)));
         p.setPen(pal.color(QPalette::Text));
-        p.drawText(QRectF(0, Y(db) - fm.height() / 2.0, left - 4, fm.height()), Qt::AlignRight | Qt::AlignVCenter,
+        p.drawText(QRectF(0, g.y(db) - g.fm.height() / 2.0, g.left - 4, g.fm.height()), Qt::AlignRight | Qt::AlignVCenter,
                    QStringLiteral("%1 dB").arg(db));
     }
     p.setPen(pal.color(QPalette::Text));
     for (int f = int(std::ceil(lo_ / 50) * 50); f <= hi_; f += 50) {
-        p.drawLine(QPointF(X(f), plotBottom), QPointF(X(f), plotBottom + 3));
-        p.drawText(QRectF(X(f) - 30, plotBottom + 3, 60, fm.height()), Qt::AlignCenter, QString::number(f));
+        p.drawLine(QPointF(g.x(f), g.plotBottom), QPointF(g.x(f), g.plotBottom + 3));
+        p.drawText(QRectF(g.x(f) - 30, g.plotBottom + 3, 60, g.fm.height()), Qt::AlignCenter, QString::number(f));
     }
-    p.drawLine(QPointF(left, plotBottom), QPointF(right, plotBottom));
+    p.drawLine(QPointF(g.left, g.plotBottom), QPointF(g.right, g.plotBottom));
+}
 
-    left_ = left;
-    right_ = right;
-    plotBottom_ = plotBottom;
-    rowH_ = rowH;
-    rowsTop_ = plotBottom + fm.height() + 6;
-
-    // recomendados: franja con su ancho; los fijados, mas intensa y con los bordes marcados (de picks: un fijado
-    // fuera de las bandas elegidas no esta entre los candidatos)
+// recomendados: franja con su ancho; los fijados, mas intensa y con los bordes marcados (de picks: un fijado
+// fuera de las bandas elegidas no esta entre los candidatos)
+void SpectrumView::drawPicks(QPainter &p, const Geometry &g) const {
     for (const auto &pk : advice_.picks) {
         const double half = advisor::width(pk.r.ch) / 2;
-        const QRectF band(QPointF(X(std::max(lo_, pk.r.ch.mhz - half)), top),
-                          QPointF(X(std::min(hi_, pk.r.ch.mhz + half)), plotBottom));
+        const QRectF band(QPointF(g.x(std::max(lo_, pk.r.ch.mhz - half)), g.top),
+                          QPointF(g.x(std::min(hi_, pk.r.ch.mhz + half)), g.plotBottom));
         if (band.width() <= 0) continue;
         QColor c = pk.r.ch.hdzero ? kHdzColour : kAnalogColour;
         c.setAlpha(pk.pinned ? 80 : 45);
@@ -303,143 +317,153 @@ void SpectrumView::paintEvent(QPaintEvent *) {
             if (pk.r.ch.mhz + half <= hi_) p.drawLine(band.topRight(), band.bottomRight());
         }
     }
+}
 
-    // espectro: rafagas (fondo naranja), picos (linea fina) y media (area)
-    if (!data_.bins.isEmpty()) {
-        for (const auto &b : data_.bins) {
-            // fondo naranja mas intenso cuanto mas tiempo hay rafagas
-            if (b.mhz < lo_ || b.mhz > hi_ || b.duty < 0.02f) continue;
-            p.fillRect(QRectF(QPointF(X(b.mhz - 0.5), top), QPointF(X(b.mhz + 0.5), plotBottom)),
-                       QColor(255, 140, 0, 25 + int(std::min(1.f, b.duty * 2) * 70)));
+// espectro: rafagas (fondo naranja), picos (linea fina) y media (area)
+void SpectrumView::drawSpectrum(QPainter &p, const Geometry &g) const {
+    const QPalette pal = palette();
+    if (data_.bins.isEmpty()) return;
+    for (const auto &b : data_.bins) {
+        // fondo naranja mas intenso cuanto mas tiempo hay rafagas
+        if (b.mhz < lo_ || b.mhz > hi_ || b.duty < 0.02f) continue;
+        p.fillRect(QRectF(QPointF(g.x(b.mhz - 0.5), g.top), QPointF(g.x(b.mhz + 0.5), g.plotBottom)),
+                   QColor(255, 140, 0, 25 + int(std::min(1.f, b.duty * 2) * 70)));
+    }
+    QPainterPath peak, mean;
+    bool first = true;
+    double lastX = 0;
+    for (const auto &b : data_.bins) {
+        if (b.mhz < lo_ || b.mhz > hi_) continue;
+        const double x = g.x(b.mhz);
+        if (first || g.x(b.mhz) - g.x(b.mhz - 1.5) < x - lastX) {  // hueco (sin datos): empezar otro tramo
+            peak.moveTo(x, g.y(b.peakDb));
+            mean.moveTo(x, g.plotBottom);
+        } else {
+            peak.lineTo(x, g.y(b.peakDb));
         }
-        QPainterPath peak, mean;
-        bool first = true;
-        double lastX = 0;
-        for (const auto &b : data_.bins) {
-            if (b.mhz < lo_ || b.mhz > hi_) continue;
-            const double x = X(b.mhz);
-            if (first || X(b.mhz) - X(b.mhz - 1.5) < x - lastX) {  // hueco (sin datos): empezar otro tramo
-                peak.moveTo(x, Y(b.peakDb));
-                mean.moveTo(x, plotBottom);
+        mean.lineTo(x, g.y(b.meanDb));
+        first = false;
+        lastX = x;
+    }
+    p.setPen(QPen(QColor(0xe0, 0x70, 0x30), 1));
+    p.drawPath(peak);
+    QColor fill = pal.color(QPalette::Highlight);
+    p.setPen(QPen(fill, 1.5));
+    fill.setAlpha(90);
+    p.setBrush(fill);
+    p.drawPath(mean);
+    p.setBrush(Qt::NoBrush);
+}
+
+// redes WiFi (las que recuerda el analisis), en la fila bajo los pilotos: barra en los canales que se le han
+// visto (seguidos del mismo bloque: una red en 40/80 MHz, una etiqueta) y discontinua por el resto de su bloque
+// mientras no se sabe su ancho (sin trafico visto)
+void SpectrumView::drawWifi(QPainter &p, const Geometry &g) const {
+    const QColor wc(0xc0, 0x60, 0x00);
+    const double y = g.top + g.fm.height() + 6;
+    const auto clip = [&](double mhz) { return g.x(std::clamp(mhz, lo_, hi_)); };
+    for (const auto &grp : advisor::group_wifi(advice_.wifi)) {
+        bool unknownWidth = false;
+        double blo = grp.lo, bhi = grp.hi;
+        for (const auto &w : advice_.wifi)
+            if (w.ch >= grp.first && w.ch <= grp.last) {
+                unknownWidth = unknownWidth || !w.traffic;
+                blo = w.block_lo;
+                bhi = w.block_hi;
+            }
+        if (unknownWidth && bhi >= lo_ && blo <= hi_) {
+            p.setPen(QPen(wc, 1, Qt::DashLine));
+            p.drawLine(QPointF(clip(blo), y), QPointF(clip(bhi), y));
+        }
+        if (grp.hi < lo_ || grp.lo > hi_) continue;
+        p.fillRect(QRectF(QPointF(clip(grp.lo), y - 2), QPointF(clip(grp.hi), y + 2)), wc);
+        p.setPen(wc);
+        const QString t = grp.first == grp.last ? QStringLiteral("WiFi %1").arg(grp.first)
+                                            : QStringLiteral("WiFi %1\u2013%2").arg(grp.first).arg(grp.last);
+        const double cx = g.x((grp.lo + grp.hi) / 2);
+        p.drawText(QRectF(cx - 60, y + 3, 120, g.fm.height()), Qt::AlignHCenter | Qt::AlignTop, t);
+    }
+}
+
+// barra de barrido: cada MHz, del color de la seleccion recien medido y apagandose hasta que vuelve a pasar el
+// barrido (periodS_); gris lo que no se mide desde hace mas de 2 pasadas. Donde va ahora, una franja tenue sobre
+// la grafica y una raya en la barra por el borde que avanza
+void SpectrumView::drawSweepBar(QPainter &p, const Geometry &g) const {
+    const QPalette pal = palette();
+    QColor track = pal.color(QPalette::Text);
+    track.setAlpha(28);
+    p.fillRect(QRectF(g.left, g.barTop, g.right - g.left, g.barH), track);
+    const qint64 t = sweepClock_.elapsed();
+    const QColor hl = kSweepColour;  // azul fijo: el de la seleccion depende del tema (gris o el de acento)
+    if (scanning_) {
+        for (auto it = cellT_.constBegin(); it != cellT_.constEnd(); ++it) {
+            const double mhz = it.key();
+            if (mhz + 1 < lo_ || mhz > hi_) continue;
+            const double age = (t - it.value()) / 1000.0 / periodS_;
+            QColor c = hl;
+            if (age > 2) {
+                c = pal.color(QPalette::Text);
+                c.setAlpha(60);
             } else {
-                peak.lineTo(x, Y(b.peakDb));
+                c.setAlpha(int(255 * std::clamp(1.0 - 0.8 * age, 0.25, 1.0)));
             }
-            mean.lineTo(x, Y(b.meanDb));
-            first = false;
-            lastX = x;
+            p.fillRect(QRectF(QPointF(g.x(std::max(lo_, mhz)), g.barTop),
+                              QPointF(g.x(std::min(hi_, mhz + 1)), g.barTop + g.barH)),
+                       c);
         }
-        p.setPen(QPen(QColor(0xe0, 0x70, 0x30), 1));
-        p.drawPath(peak);
-        QColor fill = pal.color(QPalette::Highlight);
-        p.setPen(QPen(fill, 1.5));
-        fill.setAlpha(90);
-        p.setBrush(fill);
-        p.drawPath(mean);
-        p.setBrush(Qt::NoBrush);
+        drawSweepHead(p, g, t);
     }
+    // titulo a la izquierda, si cabe
+    QFont sf = font();
+    sf.setPointSizeF(std::max(6.0, sf.pointSizeF() * 0.8));
+    const QFontMetrics sfm(sf);
+    p.setFont(sf);
+    p.setPen(pal.color(QPalette::Text));
+    p.drawText(QRectF(0, g.barTop - 4, g.left - 4, g.barH + 8), Qt::AlignRight | Qt::AlignVCenter,
+               sfm.elidedText(tr("Sweep"), Qt::ElideRight, g.left - 6));
+    p.setFont(font());
+}
 
-    // redes WiFi (las que recuerda el analisis), en la fila bajo los pilotos: barra en los canales que se le han
-    // visto (seguidos del mismo bloque: una red en 40/80 MHz, una etiqueta) y discontinua por el resto de su bloque
-    // mientras no se sabe su ancho (sin trafico visto)
-    {
-        const QColor wc(0xc0, 0x60, 0x00);
-        const double y = top + fm.height() + 6;
-        const auto clip = [&](double mhz) { return X(std::clamp(mhz, lo_, hi_)); };
-        for (const auto &g : advisor::group_wifi(advice_.wifi)) {
-            bool unknownWidth = false;
-            double blo = g.lo, bhi = g.hi;
-            for (const auto &w : advice_.wifi)
-                if (w.ch >= g.first && w.ch <= g.last) {
-                    unknownWidth = unknownWidth || !w.traffic;
-                    blo = w.block_lo;
-                    bhi = w.block_hi;
-                }
-            if (unknownWidth && bhi >= lo_ && blo <= hi_) {
-                p.setPen(QPen(wc, 1, Qt::DashLine));
-                p.drawLine(QPointF(clip(blo), y), QPointF(clip(bhi), y));
-            }
-            if (g.hi < lo_ || g.lo > hi_) continue;
-            p.fillRect(QRectF(QPointF(clip(g.lo), y - 2), QPointF(clip(g.hi), y + 2)), wc);
-            p.setPen(wc);
-            const QString t = g.first == g.last ? QStringLiteral("WiFi %1").arg(g.first)
-                                                : QStringLiteral("WiFi %1\u2013%2").arg(g.first).arg(g.last);
-            const double cx = X((g.lo + g.hi) / 2);
-            p.drawText(QRectF(cx - 60, y + 3, 120, fm.height()), Qt::AlignHCenter | Qt::AlignTop, t);
-        }
-    }
-
-    // barra de barrido: cada MHz, del color de la seleccion recien medido y apagandose hasta que vuelve a pasar el
-    // barrido (periodS_); gris lo que no se mide desde hace mas de 2 pasadas. Donde va ahora, una franja tenue sobre
-    // la grafica y una raya en la barra por el borde que avanza
-    {
-        QColor track = pal.color(QPalette::Text);
-        track.setAlpha(28);
-        p.fillRect(QRectF(left, barTop, right - left, barH), track);
-        const qint64 t = sweepClock_.elapsed();
-        const QColor hl = kSweepColour;  // azul fijo: el de la seleccion depende del tema (gris o el de acento)
-        if (scanning_) {
-            for (auto it = cellT_.constBegin(); it != cellT_.constEnd(); ++it) {
-                const double mhz = it.key();
-                if (mhz + 1 < lo_ || mhz > hi_) continue;
-                const double age = (t - it.value()) / 1000.0 / periodS_;
-                QColor c = hl;
-                if (age > 2) {
-                    c = pal.color(QPalette::Text);
-                    c.setAlpha(60);
-                } else {
-                    c.setAlpha(int(255 * std::clamp(1.0 - 0.8 * age, 0.25, 1.0)));
-                }
-                p.fillRect(QRectF(QPointF(X(std::max(lo_, mhz)), barTop),
-                                  QPointF(X(std::min(hi_, mhz + 1)), barTop + barH)),
-                           c);
-            }
-            const double fade = headT_ < 0 ? 0 : std::clamp(1.0 - (t - headT_) / 1000.0 / periodS_, 0.0, 1.0);
-            if (!head_.isEmpty() && fade > 0) {
-                QColor band = hl, edge = hl;
-                band.setAlpha(int(60 * fade));
-                edge.setAlpha(int(200 * fade));
-                // solo el tramo de head_ que acaba en lo ultimo medido (el seq mas alto), y su borde ahi: una
-                // actualizacion puede cubrir el final de un barrido y el principio del siguiente
-                QVector<int> h = head_;
-                std::sort(h.begin(), h.end());
-                int newest = 0;
-                for (int k = 1; k < h.size(); k++)
-                    if (cellSeq_.value(h[k]) > cellSeq_.value(h[newest])) newest = k;
-                {
-                    int i = newest;
-                    while (i > 0 && h[i] - h[i - 1] <= 2) i--;
-                    const double a = std::max(lo_, double(h[i])), b = std::min(hi_, double(h[newest] + 1));
-                    if (b > a) {
-                        // estela: transparente por detras y mas intensa hacia el borde que avanza (los pasos van de
-                        // menos a mas MHz, src/scan_plan.cpp); una franja plana se confundia con un canal recomendado
-                        QLinearGradient g(X(a), 0, X(b), 0);
-                        QColor clear = band;
-                        clear.setAlpha(0);
-                        g.setColorAt(0, clear);
-                        g.setColorAt(1, band);
-                        p.fillRect(QRectF(QPointF(X(a), top), QPointF(X(b), plotBottom)), g);
-                        QColor line = edge;
-                        line.setAlpha(int(110 * fade));
-                        p.setPen(QPen(line, 1, Qt::DotLine));
-                        p.drawLine(QPointF(X(b), top), QPointF(X(b), plotBottom));
-                        p.setPen(QPen(edge, 2));
-                        p.drawLine(QPointF(X(b), barTop - 2), QPointF(X(b), barTop + barH + 2));
-                    }
-                }
+void SpectrumView::drawSweepHead(QPainter &p, const Geometry &g, qint64 t) const {
+    const QColor hl = kSweepColour;
+    const double fade = headT_ < 0 ? 0 : std::clamp(1.0 - (t - headT_) / 1000.0 / periodS_, 0.0, 1.0);
+    if (!head_.isEmpty() && fade > 0) {
+        QColor band = hl, edge = hl;
+        band.setAlpha(int(60 * fade));
+        edge.setAlpha(int(200 * fade));
+        // solo el tramo de head_ que acaba en lo ultimo medido (el seq mas alto), y su borde ahi: una
+        // actualizacion puede cubrir el final de un barrido y el principio del siguiente
+        QVector<int> h = head_;
+        std::sort(h.begin(), h.end());
+        int newest = 0;
+        for (int k = 1; k < h.size(); k++)
+            if (cellSeq_.value(h[k]) > cellSeq_.value(h[newest])) newest = k;
+        {
+            int i = newest;
+            while (i > 0 && h[i] - h[i - 1] <= 2) i--;
+            const double a = std::max(lo_, double(h[i])), b = std::min(hi_, double(h[newest] + 1));
+            if (b > a) {
+                // estela: transparente por detras y mas intensa hacia el borde que avanza (los pasos van de
+                // menos a mas MHz, src/scan_plan.cpp); una franja plana se confundia con un canal recomendado
+                QLinearGradient grad(g.x(a), 0, g.x(b), 0);
+                QColor clear = band;
+                clear.setAlpha(0);
+                grad.setColorAt(0, clear);
+                grad.setColorAt(1, band);
+                p.fillRect(QRectF(QPointF(g.x(a), g.top), QPointF(g.x(b), g.plotBottom)), grad);
+                QColor line = edge;
+                line.setAlpha(int(110 * fade));
+                p.setPen(QPen(line, 1, Qt::DotLine));
+                p.drawLine(QPointF(g.x(b), g.top), QPointF(g.x(b), g.plotBottom));
+                p.setPen(QPen(edge, 2));
+                p.drawLine(QPointF(g.x(b), g.barTop - 2), QPointF(g.x(b), g.barTop + g.barH + 2));
             }
         }
-        // titulo a la izquierda, si cabe
-        QFont sf = font();
-        sf.setPointSizeF(std::max(6.0, sf.pointSizeF() * 0.8));
-        const QFontMetrics sfm(sf);
-        p.setFont(sf);
-        p.setPen(pal.color(QPalette::Text));
-        p.drawText(QRectF(0, barTop - 4, left - 4, barH + 8), Qt::AlignRight | Qt::AlignVCenter,
-                   sfm.elidedText(tr("Sweep"), Qt::ElideRight, left - 6));
-        p.setFont(font());
     }
+}
 
-    // lo que hay en el aire
+// lo que hay en el aire
+void SpectrumView::drawAir(QPainter &p, const Geometry &g) const {
     for (const auto &s : data_.pilots) {
         if (!onAir(s) || s.freqMHz < lo_ || s.freqMHz > hi_) continue;
         const QString key = pilotKey(s);
@@ -449,17 +473,20 @@ void SpectrumView::paintEvent(QPaintEvent *) {
                           (mine ? QStringLiteral(" \u2713") : QString());
         const QColor c = mine ? QColor(0x3a, 0xa8, 0x5a) : QColor(0xd9, 0x48, 0x3b);  // tuyo: verde
         p.setPen(QPen(c, 1.5, Qt::DashLine));
-        p.drawLine(QPointF(X(s.freqMHz), top), QPointF(X(s.freqMHz), plotBottom));
+        p.drawLine(QPointF(g.x(s.freqMHz), g.top), QPointF(g.x(s.freqMHz), g.plotBottom));
         p.setPen(c);
-        p.drawText(QPointF(X(s.freqMHz) + 3, top + fm.ascent()), t);
+        p.drawText(QPointF(g.x(s.freqMHz) + 3, g.top + g.fm.ascent()), t);
     }
+}
 
-    // filas de canales: analogicos y HDZero, coloreados por interferencia; recomendados en negrita, fijados con
-    // chincheta y recuadro grueso
+// filas de canales: analogicos y HDZero, coloreados por interferencia; recomendados en negrita, fijados con
+// chincheta y recuadro grueso
+void SpectrumView::drawChannelRows(QPainter &p, const Geometry &g) const {
+    const QPalette pal = palette();
     const auto row = [&](const std::vector<advisor::Rating> &rs, int y, const QString &title) {
         if (rs.empty()) return;
         p.setPen(pal.color(QPalette::Text));
-        p.drawText(QRectF(0, y, left - 4, rowH), Qt::AlignRight | Qt::AlignVCenter, title);
+        p.drawText(QRectF(0, y, g.left - 4, g.rowH), Qt::AlignRight | Qt::AlignVCenter, title);
         QFont bf = font();
         bf.setBold(true);
         const QFontMetrics bfm(bf);
@@ -469,25 +496,25 @@ void SpectrumView::paintEvent(QPaintEvent *) {
             for (const auto &pk : advice_.picks) picked = picked || (pk.r.ch.name == r.ch.name && pk.r.ch.hdzero == r.ch.hdzero);
             const bool pinned = isPinned(r.ch);
             const QColor c = ratingColour(r);
-            const QRectF box(X(r.ch.mhz) - 2.5, y + 2, 5, rowH - 4);
+            const QRectF box(g.x(r.ch.mhz) - 2.5, y + 2, 5, g.rowH - 4);
             p.fillRect(box, c);
             if (picked || pinned) {
                 const QString name = QString::fromStdString(r.ch.name);
                 p.setFont(bf);
                 p.setPen(pal.color(QPalette::Text));
-                p.drawText(QRectF(X(r.ch.mhz) - 20, y - fm.height() + 2, 40, fm.height()), Qt::AlignCenter, name);
+                p.drawText(QRectF(g.x(r.ch.mhz) - 20, y - g.fm.height() + 2, 40, g.fm.height()), Qt::AlignCenter, name);
                 p.setFont(font());
                 p.setPen(QPen(pal.color(QPalette::Text), pinned ? 2 : 1));
                 p.drawRect(box.adjusted(-1.5, -1.5, 1.5, 1.5));
                 if (pinned)
-                    drawPin(p, QPointF(X(r.ch.mhz) + bfm.horizontalAdvance(name) / 2.0 + 5, y + 1),
+                    drawPin(p, QPointF(g.x(r.ch.mhz) + bfm.horizontalAdvance(name) / 2.0 + 5, y + 1),
                             r.ch.hdzero ? kHdzColour : kAnalogColour);
             }
         }
     };
     const int rowsTop = int(rowsTop_);
     row(advice_.analog, rowsTop, tr("Analog"));
-    row(advice_.hdzero, rowsTop + rowH, QStringLiteral("HDZero"));
+    row(advice_.hdzero, rowsTop + g.rowH, QStringLiteral("HDZero"));
 }
 
 bool SpectrumView::isPinned(const advisor::Candidate &c) const {
