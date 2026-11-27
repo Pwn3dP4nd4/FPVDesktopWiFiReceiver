@@ -256,6 +256,42 @@ ElrsAnalyzer::ElrsAnalyzer(Backend *backend, QWidget *parent) : QDialog(parent) 
     setWindowFlag(Qt::WindowMaximizeButtonHint);
     auto *v = new QVBoxLayout(this);
 
+    auto *row = buildControls();
+    v->addLayout(row);
+
+    state_ = new QLabel;
+    state_->setWordWrap(true);
+    v->addWidget(state_);
+
+    auto *split = new QSplitter(Qt::Vertical);
+    QWidget *top = buildGraph();
+    split->addWidget(top);
+
+    QWidget *bottom = buildBottom();
+    split->addWidget(bottom);
+    split->setStretchFactor(0, 3);
+    split->setStretchFactor(1, 2);
+    v->addWidget(split, 1);
+
+    connect(startBtn_, &QPushButton::clicked, this, &ElrsAnalyzer::toggle);
+    connectSettings();
+
+    connect(this, &ElrsAnalyzer::runningChanged, view_, &ElrsView::setScanning);
+    connect(this, &ElrsAnalyzer::requestStart, backend, &Backend::startSurvey);
+    connect(this, &ElrsAnalyzer::requestStop, backend, &Backend::stopSurvey);
+    connect(this, &ElrsAnalyzer::requestMemory, backend, &Backend::setSurveyMemory);
+    connect(backend, &Backend::surveyUpdated, this, &ElrsAnalyzer::onSurvey);
+    connect(backend, &Backend::surveyStopped, this, &ElrsAnalyzer::onStopped);
+    connect(backend, &Backend::statusChanged, this, [this](const RadioStatus &s) { setAdapterOpen(s.open); });
+
+    retranslate();
+    state_->setText(tr("Connect the adapter first."));
+    resize(1000, 700);
+    recompute();
+}
+
+// arriba: lo que vuelas, dominio, pilotos, media, parar solo y Empezar
+QHBoxLayout *ElrsAnalyzer::buildControls() {
     auto *row = new QHBoxLayout;
     useLbl_ = new QLabel;
     use_ = new QComboBox;
@@ -294,13 +330,11 @@ ElrsAnalyzer::ElrsAnalyzer(Backend *backend, QWidget *parent) : QDialog(parent) 
     row->addStretch(1);
     row->addWidget(autoStop_);
     row->addWidget(startBtn_);
-    v->addLayout(row);
+    return row;
+}
 
-    state_ = new QLabel;
-    state_->setWordWrap(true);
-    v->addWidget(state_);
-
-    auto *split = new QSplitter(Qt::Vertical);
+// la grafica, su leyenda y el resumen
+QWidget *ElrsAnalyzer::buildGraph() {
     auto *top = new QWidget;
     auto *tv = new QVBoxLayout(top);
     tv->setContentsMargins(0, 0, 0, 0);
@@ -383,8 +417,13 @@ ElrsAnalyzer::ElrsAnalyzer(Backend *backend, QWidget *parent) : QDialog(parent) 
     bold.setBold(true);
     summary_->setFont(bold);
     tv->addWidget(summary_);
-    split->addWidget(top);
+    return top;
+}
 
+// abajo: lo que hay en el aire y como configurar ELRS
+QWidget *ElrsAnalyzer::buildBottom() {
+    QFont bold = summary_->font();  // la de los titulos, como el resumen (buildGraph)
+    bold.setBold(true);
     auto *bottom = new QWidget;
     auto *bh = new QHBoxLayout(bottom);
     bh->setContentsMargins(0, 0, 0, 0);
@@ -407,12 +446,11 @@ ElrsAnalyzer::ElrsAnalyzer(Backend *backend, QWidget *parent) : QDialog(parent) 
     tl->addWidget(tipsTitle_);
     tl->addWidget(tips_, 1);
     bh->addLayout(tl, 3);
-    split->addWidget(bottom);
-    split->setStretchFactor(0, 3);
-    split->setStretchFactor(1, 2);
-    v->addWidget(split, 1);
+    return bottom;
+}
 
-    connect(startBtn_, &QPushButton::clicked, this, &ElrsAnalyzer::toggle);
+// los ajustes: se guardan y se aplican al momento
+void ElrsAnalyzer::connectSettings() {
     connect(use_, &QComboBox::currentIndexChanged, this, [this] {
         appSettings().setValue("elrs/use", use_->currentIndex());
         run_.candVerdict = elrs::Verdict::Unknown;  // al momento, sin esperar
@@ -439,18 +477,6 @@ ElrsAnalyzer::ElrsAnalyzer(Backend *backend, QWidget *parent) : QDialog(parent) 
         updateAutoStopTip();  // dice cuantos barridos
     });
 
-    connect(this, &ElrsAnalyzer::runningChanged, view_, &ElrsView::setScanning);
-    connect(this, &ElrsAnalyzer::requestStart, backend, &Backend::startSurvey);
-    connect(this, &ElrsAnalyzer::requestStop, backend, &Backend::stopSurvey);
-    connect(this, &ElrsAnalyzer::requestMemory, backend, &Backend::setSurveyMemory);
-    connect(backend, &Backend::surveyUpdated, this, &ElrsAnalyzer::onSurvey);
-    connect(backend, &Backend::surveyStopped, this, &ElrsAnalyzer::onStopped);
-    connect(backend, &Backend::statusChanged, this, [this](const RadioStatus &s) { setAdapterOpen(s.open); });
-
-    retranslate();
-    state_->setText(tr("Connect the adapter first."));
-    resize(1000, 700);
-    recompute();
 }
 
 void ElrsAnalyzer::changeEvent(QEvent *e) {

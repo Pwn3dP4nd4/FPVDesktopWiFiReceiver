@@ -13,6 +13,7 @@
 
 class QCheckBox;
 class QComboBox;
+class QHBoxLayout;
 class QLabel;
 class QPushButton;
 class QSpinBox;
@@ -87,6 +88,11 @@ protected:
     void changeEvent(QEvent *e) override;
 
 private:
+    // ---- el constructor, por bloques de la ventana ----
+    QHBoxLayout *buildControls();
+    QWidget *buildGraph();
+    QWidget *buildBottom();
+    void connectSettings();
     void retranslate();
     void toggle();
     void stop();
