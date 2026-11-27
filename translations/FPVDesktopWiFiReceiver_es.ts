@@ -140,98 +140,6 @@
         <translation>Historial</translation>
     </message>
     <message>
-        <source>Time</source>
-        <translation>Hora</translation>
-    </message>
-    <message>
-        <source>Event</source>
-        <translation>Evento</translation>
-    </message>
-    <message>
-        <source>Details</source>
-        <translation>Detalles</translation>
-    </message>
-    <message>
-        <source>Time since race tracking started (sweep number in the tooltip).</source>
-        <translation>Tiempo desde que empezó el seguimiento de carrera (el número de barrido, en la ayuda emergente).</translation>
-    </message>
-    <message>
-        <source>Warnings, recommendations and changes of every race since the program started, and a summary of each channel when it stops.</source>
-        <translation>Avisos, recomendaciones y cambios de cada carrera desde que se abrió el programa, y un resumen de cada canal al pararla.</translation>
-    </message>
-    <message>
-        <source>Race:</source>
-        <translation>Carrera:</translation>
-    </message>
-    <message>
-        <source>By pilot</source>
-        <translation>Por piloto</translation>
-    </message>
-    <message>
-        <source>Timeline</source>
-        <translation>Cronológico</translation>
-    </message>
-    <message>
-        <source>By pilot: who had the most trouble and which, grouped as serious, warnings, channel changes and information. Timeline: every event in order.</source>
-        <translation>Por piloto: quién ha tenido más problemas y cuáles, agrupados en graves, avisos, cambios de canal e información. Cronológico: todos los eventos en orden.</translation>
-    </message>
-    <message>
-        <source>Pilot</source>
-        <translation>Piloto</translation>
-    </message>
-    <message>
-        <source>Video</source>
-        <translation>Vídeo</translation>
-    </message>
-    <message>
-        <source>Serious</source>
-        <translation>Graves</translation>
-    </message>
-    <message>
-        <source>Warnings</source>
-        <translation>Avisos</translation>
-    </message>
-    <message>
-        <source>Changes</source>
-        <translation>Cambios</translation>
-    </message>
-    <message>
-        <source>Info</source>
-        <translation>Info</translation>
-    </message>
-    <message>
-        <source>One pilot per pinned channel when the race started, with the channels it went through.</source>
-        <translation>Un piloto por canal fijado al empezar la carrera, con los canales por los que ha pasado.</translation>
-    </message>
-    <message>
-        <source>Estimated video quality (dB, more is better) and its SNR in the worst moments. After a move, only on its new channel.</source>
-        <translation>Calidad estimada del vídeo (dB, más es mejor) y su SNR en los peores momentos. Tras moverlo, solo en su canal nuevo.</translation>
-    </message>
-    <message>
-        <source>Its channel gave it trouble: someone else on top of it or interference (move recommended, or no better free channel).</source>
-        <translation>Su canal le ha dado problemas: otro emitiendo encima o interferencias (se recomendó moverlo, o no había canal libre mejor).</translation>
-    </message>
-    <message>
-        <source>Weak video that is not the channel&apos;s fault (antennas, power, distance), or a signal that would not go away.</source>
-        <translation>Vídeo flojo que no es culpa del canal (antenas, potencia, distancia), o una señal que no se iba.</translation>
-    </message>
-    <message>
-        <source>Channel changes applied.</source>
-        <translation>Cambios de canal aplicados.</translation>
-    </message>
-    <message>
-        <source>Copy</source>
-        <translation>Copiar</translation>
-    </message>
-    <message>
-        <source>Save...</source>
-        <translation>Guardar...</translation>
-    </message>
-    <message>
-        <source>Clear</source>
-        <translation>Borrar</translation>
-    </message>
-    <message>
         <source>Apply</source>
         <translation>Aplicar</translation>
     </message>
@@ -399,65 +307,6 @@
         <translation>Parada sola: ningún piloto en el aire durante más de un minuto</translation>
     </message>
     <message>
-        <source>Channel changes</source>
-        <translation>Cambios de canal</translation>
-    </message>
-    <message>
-        <source>Information</source>
-        <translation>Información</translation>
-    </message>
-    <message>
-        <source>Race %1</source>
-        <translation>Carrera %1</translation>
-    </message>
-    <message>
-        <source>Whole race</source>
-        <translation>Toda la carrera</translation>
-    </message>
-    <message>
-        <source>Pilot %1</source>
-        <translation>Piloto %1</translation>
-    </message>
-    <message>
-        <source>Sweep %1</source>
-        <translation>Barrido %1</translation>
-    </message>
-    <message numerus="yes">
-        <source>Race %1 (%2, %n pilot(s))</source>
-        <translation>
-            <numerusform>Carrera %1 (%2, %n piloto)</numerusform>
-            <numerusform>Carrera %1 (%2, %n pilotos)</numerusform>
-        </translation>
-    </message>
-    <message>
-        <source>The most trouble</source>
-        <translation>El que más problemas ha tenido</translation>
-    </message>
-    <message>
-        <source>Most trouble: &lt;b&gt;%1&lt;/b&gt;: its pilot was never seen.</source>
-        <translation>Más problemas: &lt;b&gt;%1&lt;/b&gt;: no se ha visto nunca a su piloto.</translation>
-    </message>
-    <message>
-        <source>Most trouble: &lt;b&gt;%1&lt;/b&gt;: %2 serious, %3 warning(s).</source>
-        <translation>Más problemas: &lt;b&gt;%1&lt;/b&gt;: %2 graves, %3 aviso(s).</translation>
-    </message>
-    <message>
-        <source>No trouble: %1.</source>
-        <translation>Sin problemas: %1.</translation>
-    </message>
-    <message>
-        <source>No pilot had any trouble.</source>
-        <translation>Ningún piloto ha tenido problemas.</translation>
-    </message>
-    <message>
-        <source>Its pilot was never seen.</source>
-        <translation>No se ha visto nunca a su piloto.</translation>
-    </message>
-    <message>
-        <source>SNR %1 / %2 dB, quality %3 dB, %4 dropout(s), intruders %5 %, interference %6 dB (%7 sweeps).</source>
-        <translation>SNR %1 / %2 dB, calidad %3 dB, %4 corte(s), intrusos %5 %, interferencia %6 dB (%7 barridos).</translation>
-    </message>
-    <message>
         <source>Summary (worst video)</source>
         <translation>Resumen (peor vídeo)</translation>
     </message>
@@ -468,38 +317,6 @@
     <message>
         <source>History (%1)</source>
         <translation>Historial (%1)</translation>
-    </message>
-    <message>
-        <source>Date</source>
-        <translation>Fecha</translation>
-    </message>
-    <message>
-        <source>Sweep</source>
-        <translation>Barrido</translation>
-    </message>
-    <message>
-        <source>Race no.</source>
-        <translation>Nº carrera</translation>
-    </message>
-    <message>
-        <source>Category</source>
-        <translation>Categoría</translation>
-    </message>
-    <message>
-        <source>Save race history</source>
-        <translation>Guardar el historial de carrera</translation>
-    </message>
-    <message>
-        <source>CSV (*.csv);;Text (*.txt)</source>
-        <translation>CSV (*.csv);;Texto (*.txt)</translation>
-    </message>
-    <message>
-        <source>Could not save %1.</source>
-        <translation>No se ha podido guardar %1.</translation>
-    </message>
-    <message>
-        <source>Saved to %1.</source>
-        <translation>Guardado en %1.</translation>
     </message>
     <message>
         <source>not seen</source>
@@ -536,14 +353,6 @@
     <message>
         <source>OK</source>
         <translation>Bien</translation>
-    </message>
-    <message>
-        <source>SNR %1 / %2 dB, quality %3 dB, %4 dropout(s), intruders %5 %, interference %6 dB.</source>
-        <translation>SNR %1 / %2 dB, calidad %3 dB, %4 corte(s), intrusos %5 %, interferencia %6 dB.</translation>
-    </message>
-    <message>
-        <source>Its pilot has not been seen.</source>
-        <translation>Aún no se ha visto a su piloto.</translation>
     </message>
     <message>
         <source>The worst video so far</source>
@@ -1841,6 +1650,216 @@ Lo grabado hasta entonces se ha guardado en %2</translation>
     <message>
         <source>WARNING: USB 2, no 40 MS/s. Use a USB 3 port.</source>
         <translation>AVISO: USB 2, sin 40 MS/s. Usa un puerto USB 3.</translation>
+    </message>
+</context>
+<context>
+    <name>RaceHistory</name>
+    <message>
+        <source>Channel</source>
+        <translation>Canal</translation>
+    </message>
+    <message>
+        <source>Race</source>
+        <translation>Carrera</translation>
+    </message>
+    <message>
+        <source>Time</source>
+        <translation>Hora</translation>
+    </message>
+    <message>
+        <source>Event</source>
+        <translation>Evento</translation>
+    </message>
+    <message>
+        <source>Details</source>
+        <translation>Detalles</translation>
+    </message>
+    <message>
+        <source>Time since race tracking started (sweep number in the tooltip).</source>
+        <translation>Tiempo desde que empezó el seguimiento de carrera (el número de barrido, en la ayuda emergente).</translation>
+    </message>
+    <message>
+        <source>Warnings, recommendations and changes of every race since the program started, and a summary of each channel when it stops.</source>
+        <translation>Avisos, recomendaciones y cambios de cada carrera desde que se abrió el programa, y un resumen de cada canal al pararla.</translation>
+    </message>
+    <message>
+        <source>Race:</source>
+        <translation>Carrera:</translation>
+    </message>
+    <message>
+        <source>By pilot</source>
+        <translation>Por piloto</translation>
+    </message>
+    <message>
+        <source>Timeline</source>
+        <translation>Cronológico</translation>
+    </message>
+    <message>
+        <source>By pilot: who had the most trouble and which, grouped as serious, warnings, channel changes and information. Timeline: every event in order.</source>
+        <translation>Por piloto: quién ha tenido más problemas y cuáles, agrupados en graves, avisos, cambios de canal e información. Cronológico: todos los eventos en orden.</translation>
+    </message>
+    <message>
+        <source>Pilot</source>
+        <translation>Piloto</translation>
+    </message>
+    <message>
+        <source>Video</source>
+        <translation>Vídeo</translation>
+    </message>
+    <message>
+        <source>Serious</source>
+        <translation>Graves</translation>
+    </message>
+    <message>
+        <source>Warnings</source>
+        <translation>Avisos</translation>
+    </message>
+    <message>
+        <source>Changes</source>
+        <translation>Cambios</translation>
+    </message>
+    <message>
+        <source>Info</source>
+        <translation>Info</translation>
+    </message>
+    <message>
+        <source>One pilot per pinned channel when the race started, with the channels it went through.</source>
+        <translation>Un piloto por canal fijado al empezar la carrera, con los canales por los que ha pasado.</translation>
+    </message>
+    <message>
+        <source>Estimated video quality (dB, more is better) and its SNR in the worst moments. After a move, only on its new channel.</source>
+        <translation>Calidad estimada del vídeo (dB, más es mejor) y su SNR en los peores momentos. Tras moverlo, solo en su canal nuevo.</translation>
+    </message>
+    <message>
+        <source>Its channel gave it trouble: someone else on top of it or interference (move recommended, or no better free channel).</source>
+        <translation>Su canal le ha dado problemas: otro emitiendo encima o interferencias (se recomendó moverlo, o no había canal libre mejor).</translation>
+    </message>
+    <message>
+        <source>Weak video that is not the channel&apos;s fault (antennas, power, distance), or a signal that would not go away.</source>
+        <translation>Vídeo flojo que no es culpa del canal (antenas, potencia, distancia), o una señal que no se iba.</translation>
+    </message>
+    <message>
+        <source>Channel changes applied.</source>
+        <translation>Cambios de canal aplicados.</translation>
+    </message>
+    <message>
+        <source>Copy</source>
+        <translation>Copiar</translation>
+    </message>
+    <message>
+        <source>Save...</source>
+        <translation>Guardar...</translation>
+    </message>
+    <message>
+        <source>Clear</source>
+        <translation>Borrar</translation>
+    </message>
+    <message>
+        <source>All</source>
+        <translation>Todos</translation>
+    </message>
+    <message>
+        <source>Channel changes</source>
+        <translation>Cambios de canal</translation>
+    </message>
+    <message>
+        <source>Information</source>
+        <translation>Información</translation>
+    </message>
+    <message>
+        <source>Race %1</source>
+        <translation>Carrera %1</translation>
+    </message>
+    <message>
+        <source>Whole race</source>
+        <translation>Toda la carrera</translation>
+    </message>
+    <message>
+        <source>Pilot %1</source>
+        <translation>Piloto %1</translation>
+    </message>
+    <message>
+        <source>Sweep %1</source>
+        <translation>Barrido %1</translation>
+    </message>
+    <message numerus="yes">
+        <source>Race %1 (%2, %n pilot(s))</source>
+        <translation>
+            <numerusform>Carrera %1 (%2, %n piloto)</numerusform>
+            <numerusform>Carrera %1 (%2, %n pilotos)</numerusform>
+        </translation>
+    </message>
+    <message>
+        <source>The most trouble</source>
+        <translation>El que más problemas ha tenido</translation>
+    </message>
+    <message>
+        <source>Most trouble: &lt;b&gt;%1&lt;/b&gt;: its pilot was never seen.</source>
+        <translation>Más problemas: &lt;b&gt;%1&lt;/b&gt;: no se ha visto nunca a su piloto.</translation>
+    </message>
+    <message>
+        <source>Most trouble: &lt;b&gt;%1&lt;/b&gt;: %2 serious, %3 warning(s).</source>
+        <translation>Más problemas: &lt;b&gt;%1&lt;/b&gt;: %2 graves, %3 aviso(s).</translation>
+    </message>
+    <message>
+        <source>No trouble: %1.</source>
+        <translation>Sin problemas: %1.</translation>
+    </message>
+    <message>
+        <source>No pilot had any trouble.</source>
+        <translation>Ningún piloto ha tenido problemas.</translation>
+    </message>
+    <message>
+        <source>Its pilot was never seen.</source>
+        <translation>No se ha visto nunca a su piloto.</translation>
+    </message>
+    <message>
+        <source>SNR %1 / %2 dB, quality %3 dB, %4 dropout(s), intruders %5 %, interference %6 dB (%7 sweeps).</source>
+        <translation>SNR %1 / %2 dB, calidad %3 dB, %4 corte(s), intrusos %5 %, interferencia %6 dB (%7 barridos).</translation>
+    </message>
+    <message>
+        <source>Date</source>
+        <translation>Fecha</translation>
+    </message>
+    <message>
+        <source>Sweep</source>
+        <translation>Barrido</translation>
+    </message>
+    <message>
+        <source>Race no.</source>
+        <translation>Nº carrera</translation>
+    </message>
+    <message>
+        <source>Category</source>
+        <translation>Categoría</translation>
+    </message>
+    <message>
+        <source>Save race history</source>
+        <translation>Guardar el historial de carrera</translation>
+    </message>
+    <message>
+        <source>CSV (*.csv);;Text (*.txt)</source>
+        <translation>CSV (*.csv);;Texto (*.txt)</translation>
+    </message>
+    <message>
+        <source>Could not save %1.</source>
+        <translation>No se ha podido guardar %1.</translation>
+    </message>
+    <message>
+        <source>Saved to %1.</source>
+        <translation>Guardado en %1.</translation>
+    </message>
+    <message>
+        <source>not seen</source>
+        <translation>no se ve</translation>
+    </message>
+    <message>
+        <source>SNR %1 / %2 dB, quality %3 dB, %4 dropout(s), intruders %5 %, interference %6 dB.</source>
+        <translation>SNR %1 / %2 dB, calidad %3 dB, %4 corte(s), intrusos %5 %, interferencia %6 dB.</translation>
+    </message>
+    <message>
+        <source>Its pilot has not been seen.</source>
+        <translation>Aún no se ha visto a su piloto.</translation>
     </message>
 </context>
 <context>
