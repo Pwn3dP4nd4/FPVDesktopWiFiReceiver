@@ -40,6 +40,8 @@ jobs:
         run: ldd build/release/FPVDesktopWiFiReceiver | grep -q libavcodec
       - name: Tests (senales sinteticas, sin adaptador)
         run: bash scripts/run-tests.sh
+      - name: Radio sin adaptador (grabaciones sinteticas en radio_sim)
+        run: bash scripts/radio-sim-test.sh
       - name: Comprobar instalacion (regla udev en /etc/udev/rules.d)
         run: |
           DESTDIR="$PWD/stage" cmake --install build/release
@@ -84,6 +86,8 @@ jobs:
       - run: scripts/build.sh
       - name: Tests (senales sinteticas, sin adaptador)
         run: bash scripts/run-tests.sh
+      - name: Radio sin adaptador (grabaciones sinteticas en radio_sim)
+        run: bash scripts/radio-sim-test.sh
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
         with:
           name: FPVDesktopWiFiReceiver-windows-x64
