@@ -359,24 +359,101 @@ void Radio::unpack(const Bank &b, std::vector<cf> &out) {
   }
 }
 
+Radio::Got Radio::next_bank(Bank &b) {
+  std::unique_lock<std::mutex> l(_qm);
+  _qcv.wait_for(l, std::chrono::milliseconds(200), [&] { return !_q.empty() || _stop; });
+  if (_q.empty()) {
+    if (_rx && !_rx->status().running) {
+      KP_LOGE("radio: receiver stopped: %s", _rx->status().error.c_str());
+      return Got::Stopped;
+    }
+    return Got::Nothing;
+  }
+  b = std::move(_q.front());
+  _q.pop_front();
+  return Got::Bank;
+}
+
+void Radio::start_watch() {
+  // Watch at 40 MS/s with the chip's AGC, or 20 MS/s after a fallback (watch_fault). Both on a 40 MHz
+  // channel: at 20 MHz width the OFDM CCA/AGC froze the LA in 120-sample runs (wifi-sdr RxSettings::wide).
+  double hz;
+  int rate;
+  {
+    std::lock_guard<std::mutex> l(_m);
+    hz = _watch_hz;
+    rate = _fallback && _watch_rate == 1 ? 2 : _watch_rate;
+    _watch_comb = _comb;  // a decoder rebuilt later in this watch (fallback, shift) keeps it
+    _snr_db = -1;
+  }
+  KP_LOGI("radio: watch %.3f MHz at %.0f MS/s", hz / 1e6, wsdr::Receiver::rate_of(rate) / 1e6);
+  _watch_faults.clear();
+  _snr_psd.reset();
+  _snr_t_ms = 0;
+  tune(hz, rate);
+}
+
+void Radio::start_scan() {
+  {
+    std::lock_guard<std::mutex> l(_m);
+    _plan = _scan_plan_override.empty() ? scan_plan() : _scan_plan_override;
+    // the survey always lists digital signals (not the spectrum-only one: 2.4 GHz)
+    if ((!_digital_on && !_survey) || (_survey && _survey_spectrum_only)) _digital.reset();
+    else if (!_digital) _digital = std::make_unique<kpx::DigitalScan>();
+  }
+  _step = 0;
+  _cap.clear();
+  _phase = StepPhase::Retuned;
+  _pass = SurveyPass::Gapped;
+  _cut_steps.clear();
+  _whole_spans.clear();
+  _scan_start_ms = now_ms();
+  if (_digital) _digital->reset();
+  KP_LOGI("radio: scan, %zu steps", _plan.size());
+  tune(_plan[0], 1);
+}
+
+void Radio::start_test() {
+  int rate;
+  {
+    std::lock_guard<std::mutex> l(_m);
+    rate = _req_rate;
+    _test_result.clear();
+  }
+  _test_banks = _test_gaps = 0;
+  _test_last_seq = 0;
+  _test_t0_ms = 0;
+  _test_fs = wsdr::Receiver::rate_of(rate);
+  KP_LOGI("radio: stream test at %.1f MS/s", _test_fs / 1e6);
+  tune(5769e6, rate);
+}
+
+void Radio::account_load(std::chrono::steady_clock::time_point t0) {
+  _busy_s += std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
+  const int64_t t = now_ms();
+  if (t - _load_t0_ms < 1000) return;
+  std::lock_guard<std::mutex> l(_m);
+  _load = _busy_s / ((t - _load_t0_ms) / 1000.0);
+  _busy_s = 0;
+  _load_t0_ms = t;
+  if (++_status_ticks % 5 == 0 && _mode == Mode::Watch)
+    KP_LOGI("status: watch %.1f MHz, cpu demod %.0f%% decode %.0f%%, dropped usb %llu decode %llu, restarts %llu, "
+            "%s %s lock %.2f fps %.0f, acq %llu lost %llu rephase %llu", _watch_hz / 1e6, _load * 100, _dload * 100,
+            (unsigned long long)_dropped.load(), (unsigned long long)_ddropped.load(),
+            (unsigned long long)(_rx ? _rx->status().restarts : 0), _vstats.std_name,
+            _vstats.colour ? "colour" : "grey", _vstats.lock_recent, _fps,
+            (unsigned long long)_vstats.acquisitions, (unsigned long long)_vstats.losses,
+            (unsigned long long)_vstats.rephases);
+}
+
 void Radio::dsp_loop() {
   boost_thread("dsp");
   Bank b;
   _load_t0_ms = now_ms();
   while (!_stop) {
-    {
-      std::unique_lock<std::mutex> l(_qm);
-      _qcv.wait_for(l, std::chrono::milliseconds(200), [&] { return !_q.empty() || _stop; });
-      if (_q.empty()) {
-        if (_rx && !_rx->status().running) {
-          KP_LOGE("radio: receiver stopped: %s", _rx->status().error.c_str());
-          break;
-        }
-        continue;
-      }
-      b = std::move(_q.front());
-      _q.pop_front();
-    }
+    const Got got = next_bank(b);
+    if (got == Got::Stopped) break;
+    if (got == Got::Nothing) continue;
     const auto t0 = std::chrono::steady_clock::now();
     Mode mode;
     uint64_t epoch;
@@ -385,71 +462,18 @@ void Radio::dsp_loop() {
       mode = _mode;
       epoch = _mode_epoch;
     }
-    const bool fresh = epoch != _epoch_seen;
-    _epoch_seen = epoch;
-    if (fresh) {
+    if (epoch != _epoch_seen) {
+      _epoch_seen = epoch;
       // a mode change: set the radio up for it (a new watch builds a new decoder). A recording does not carry
       // over: it would go on later, maybe on another channel, under the first one's centre_hz.
       abort_record("mode change");
       _fe.reset();
       _fe_gen = ~0u;
-      if (mode == Mode::Watch) {
-        double hz;
-        {
-          std::lock_guard<std::mutex> l(_m);
-          hz = _watch_hz;
-        }
-        // Watch at 40 MS/s with the chip's AGC, or 20 MS/s after a fallback (watch_fault). Both on a 40 MHz
-        // channel: at 20 MHz width the OFDM CCA/AGC froze the LA in 120-sample runs (wifi-sdr RxSettings::wide).
-        int rate;
-        {
-          std::lock_guard<std::mutex> l(_m);
-          rate = _fallback && _watch_rate == 1 ? 2 : _watch_rate;
-          _watch_comb = _comb;  // a decoder rebuilt later in this watch (fallback, shift) keeps it
-        }
-        KP_LOGI("radio: watch %.3f MHz at %.0f MS/s", hz / 1e6, wsdr::Receiver::rate_of(rate) / 1e6);
-        _watch_faults.clear();
-        _snr_psd.reset();
-        _snr_t_ms = 0;
-        {
-          std::lock_guard<std::mutex> l(_m);
-          _snr_db = -1;
-        }
-        tune(hz, rate);
-      } else if (mode == Mode::Scan) {
-        {
-          std::lock_guard<std::mutex> l(_m);
-          _plan = _scan_plan_override.empty() ? scan_plan() : _scan_plan_override;
-        }
-        _step = 0;
-        _cap.clear();
-        _phase = StepPhase::Retuned;
-        _pass = SurveyPass::Gapped;
-        _cut_steps.clear();
-        _whole_spans.clear();
-        _scan_start_ms = now_ms();
-        {
-          std::lock_guard<std::mutex> l(_m);
-          // the survey always lists digital signals (not the spectrum-only one: 2.4 GHz)
-          if ((!_digital_on && !_survey) || (_survey && _survey_spectrum_only)) _digital.reset();
-          else if (!_digital) _digital = std::make_unique<kpx::DigitalScan>();
-        }
-        if (_digital) _digital->reset();
-        KP_LOGI("radio: scan, %zu steps", _plan.size());
-        tune(_plan[0], 1);
-      } else if (mode == Mode::Test) {
-        int rate;
-        {
-          std::lock_guard<std::mutex> l(_m);
-          rate = _req_rate;
-          _test_result.clear();
-        }
-        _test_banks = _test_gaps = 0;
-        _test_last_seq = 0;
-        _test_t0_ms = 0;
-        _test_fs = wsdr::Receiver::rate_of(rate);
-        KP_LOGI("radio: stream test at %.1f MS/s", _test_fs / 1e6);
-        tune(5769e6, rate);
+      switch (mode) {
+      case Mode::Watch: start_watch(); break;
+      case Mode::Scan: start_scan(); break;
+      case Mode::Test: start_test(); break;
+      case Mode::Idle: break;
       }
     }
     switch (mode) {
@@ -462,22 +486,7 @@ void Radio::dsp_loop() {
       std::lock_guard<std::mutex> l(_qm);
       if (_pool.size() < _qcap) _pool.push_back(std::move(b.data));
     }
-    _busy_s += std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
-    const int64_t t = now_ms();
-    if (t - _load_t0_ms >= 1000) {
-      std::lock_guard<std::mutex> l(_m);
-      _load = _busy_s / ((t - _load_t0_ms) / 1000.0);
-      _busy_s = 0;
-      _load_t0_ms = t;
-      if (++_status_ticks % 5 == 0 && _mode == Mode::Watch)
-        KP_LOGI("status: watch %.1f MHz, cpu demod %.0f%% decode %.0f%%, dropped usb %llu decode %llu, restarts %llu, "
-                "%s %s lock %.2f fps %.0f, acq %llu lost %llu rephase %llu", _watch_hz / 1e6, _load * 100, _dload * 100,
-                (unsigned long long)_dropped.load(), (unsigned long long)_ddropped.load(),
-                (unsigned long long)(_rx ? _rx->status().restarts : 0), _vstats.std_name,
-                _vstats.colour ? "colour" : "grey", _vstats.lock_recent, _fps,
-                (unsigned long long)_vstats.acquisitions, (unsigned long long)_vstats.losses,
-                (unsigned long long)_vstats.rephases);
-    }
+    account_load(t0);
   }
 }
 

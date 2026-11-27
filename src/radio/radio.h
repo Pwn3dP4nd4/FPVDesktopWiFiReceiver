@@ -9,6 +9,7 @@
 #include "survey.h"
 #include <map>
 #include <atomic>
+#include <chrono>
 #include <condition_variable>
 #include <cstdint>
 #include <deque>
@@ -109,6 +110,13 @@ private:
     bool gapped = false;  // wsdr::BankMeta::gapped: not contiguous with the bank before (survey)
   };
   void dsp_loop();
+  // ---- dsp_loop(), in parts ----
+  enum class Got { Bank, Nothing, Stopped };  // Nothing: no bank in 200 ms; Stopped: the receiver stopped
+  Got next_bank(Bank &b);
+  void start_watch();  // a new mode: set the radio up for it
+  void start_scan();
+  void start_test();
+  void account_load(std::chrono::steady_clock::time_point t0);  // the DSP thread's load, every second
   void decode_loop();
   void on_bank(const uint8_t *b, size_t n, uint64_t seq, uint32_t gen, double fs, double centre, double shift,
                bool gapped);
@@ -119,7 +127,7 @@ private:
   void record_bank(const Bank &b);
   void abort_record(const char *why);
   void handle_scan(Bank &b);
-  // ---- handle_scan(), por partes (DSP thread) ----
+  // ---- handle_scan(), in parts (DSP thread) ----
   // The step's samples: after a retune, kSettleBanks banks are dropped while the chip settles; then contiguous
   // banks up to what _phase needs (a gap starts the capture over). true: the capture is complete
   bool capture(const Bank &b);
@@ -136,7 +144,7 @@ private:
   void skip_known_humps();  // survey: humps checked in the last few sweeps, not again
   void handle_test(Bank &b);
   void scan_step_done();
-  // ---- scan_step_done(), por partes ----
+  // ---- scan_step_done(), in parts ----
   struct SurveyKnown;
   // the pilots of this step: its humps with video (sync check) and the digital scan's; recheck: what each check
   // found goes to checked (survey)
