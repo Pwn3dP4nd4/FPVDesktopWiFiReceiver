@@ -1474,17 +1474,9 @@ void ChannelAnalyzer::recompute() {
     const bool haveData = !bins.empty();
     QElapsedTimer t;
     t.start();
-    advisor::Advice a = haveData ? advisor::advise(bins, seen, analogCands(), hdzCands(),
-                                                   nAnalog_->value(), nHdz_->value(), &wifi, pinnedCandidates())
-                                 : advisor::Advice{};
-    // sin barridos todavia (recien abierta): los fijados se ven igual, en la grafica y en la tabla, sin medir
-    if (!haveData)
-        for (const auto &c : pinnedCandidates()) {
-            advisor::Pick pk;
-            pk.r.ch = c;
-            pk.pinned = true;
-            a.picks.push_back(pk);
-        }
+    const advisor::Advice a = haveData ? advisor::advise(bins, seen, analogCands(), hdzCands(), nAnalog_->value(),
+                                                         nHdz_->value(), &wifi, pinnedCandidates())
+                                       : pinnedOnlyAdvice();
     if (t.elapsed() > 100) KP_LOGW("analizador: recomendar ha tardado %lld ms", static_cast<long long>(t.elapsed()));
     recomputes_++;
     advice_ = a;
@@ -1495,178 +1487,198 @@ void ChannelAnalyzer::recompute() {
 
     const QSignalBlocker block(table_);  // las casillas de fijar: solo los clics del usuario
     table_->clear();
-    const auto pinLabel = [](const QString &name, bool hdz) {
-        return QStringLiteral("<b>%1</b>%2").arg(name, hdz ? QStringLiteral(" (HDZero)") : QString());
-    };
     if (!haveData) {
-        QString s = session_.running() ? tr("Waiting for the first sweep...")
-                             : tr("Choose the bands and how many pilots will fly, then start the analysis.");
-        if (!pinned_.isEmpty()) {
-            QStringList pins;
-            for (const Pin &p : pinned_) pins << pinLabel(p.name, p.hdzero);
-            s += QStringLiteral(" ") + tr("Pinned: %1.").arg(pins.join(QStringLiteral(", ")));
-        }
-        summary_->setText(s);
-        for (const auto &p : a.picks) {
-            const QString name = QString::fromStdString(p.r.ch.name);
-            auto *it = new QTreeWidgetItem(table_);
-            it->setFlags(it->flags() | Qt::ItemIsUserCheckable);
-            it->setCheckState(0, Qt::Checked);
-            it->setData(0, Qt::UserRole, name);
-            it->setData(0, Qt::UserRole + 1, p.r.ch.hdzero);
-            it->setIcon(0, pinIcon(p.r.ch.hdzero ? kHdzColour : kAnalogColour));
-            it->setToolTip(0, tr("Pinned: untick to let the advice choose this pilot's channel again."));
-            it->setText(1, p.r.ch.hdzero ? QStringLiteral("HDZero") : tr("Analog"));
-            it->setText(2, name);
-            QFont bold = table_->font();
-            bold.setBold(true);
-            it->setFont(2, bold);
-            it->setText(3, QString::number(p.r.ch.mhz, 'f', 0));
-            it->setText(4, QStringLiteral("-"));
-            it->setText(5, QStringLiteral("-"));
-            it->setText(6, session_.running() ? tr("not measured yet") : tr("not measured yet: start the analysis"));
-        }
-        for (int c = 0; c < 6; c++) table_->resizeColumnToContents(c);
+        showUnmeasured(a);
         return;
     }
     // los marcados como mios (sin canal fijado) se tratan como si no estuvieran: su canal queda libre y se reparten
     // con los demas. Se dice en que canal recomendado estan ya y cuales tienen que cambiar (o fijarse si se quedan)
-    QStringList ticked;      // nombre a mostrar
-    QVector<double> tickedMhz;
-    QVector<bool> tickedHdz;
+    QStringList mineShown;
+    std::vector<advisor::Signal> mine;
     for (const Pilot &p : last_.pilots) {
-        if (!onAir(p) || pinnedMine(p)) continue;
-        const QString key = pilotKey(p);
-        if (!mine_.contains(key)) continue;
-        ticked << pilotShown(p);
-        tickedMhz << p.freqMHz;
-        tickedHdz << p.isDigital();
+        if (!onAir(p) || pinnedMine(p) || !mine_.contains(pilotKey(p))) continue;
+        mineShown << pilotShown(p);
+        mine.push_back(toSignal(p));
     }
-    QVector<bool> placed(ticked.size(), false);
-    QStringList names, pinnedNames;
-    QFont bold = table_->font();
-    bold.setBold(true);
-    for (const auto &p : a.picks) {
-        const QString name = QString::fromStdString(p.r.ch.name);
-        (p.pinned ? pinnedNames : names) << pinLabel(name, p.r.ch.hdzero);
-        auto *it = new QTreeWidgetItem(table_);
-        it->setFlags(it->flags() | Qt::ItemIsUserCheckable);
-        it->setCheckState(0, p.pinned ? Qt::Checked : Qt::Unchecked);
-        it->setData(0, Qt::UserRole, name);
-        it->setData(0, Qt::UserRole + 1, p.r.ch.hdzero);
-        if (p.pinned) it->setIcon(0, pinIcon(p.r.ch.hdzero ? kHdzColour : kAnalogColour));
-        it->setToolTip(0, p.pinned ? tr("Pinned: untick to let the advice choose this pilot's channel again.")
-                                   : tr("Tick to pin this channel (it is already given to a pilot)."));
-        it->setText(1, p.r.ch.hdzero ? QStringLiteral("HDZero") : tr("Analog"));
-        it->setText(2, name);
-        if (p.pinned) it->setFont(2, bold);
-        it->setText(3, QString::number(p.r.ch.mhz, 'f', 0));
-        it->setText(4, QStringLiteral("%1 dB").arg(p.r.noise_db, 0, 'f', 1));
-        it->setText(5, QStringLiteral("%1 %").arg(qRound(p.r.burst * 100)));
-        QString note = noteText(p, a.wifi);
-        if (p.pinned)
-            // se da por mio sin preguntar (los fijados se guardan: otro dia puede ser otro piloto): que se vea
-            for (const Pilot &pl : last_.pilots)
-                if (onAir(pl) && onPinned({p.r.ch}, pl)) {
-                    if (!note.isEmpty()) note += QStringLiteral("; ");
-                    note += tr("%1 is on the air here: taken as yours (if it is not, unpin this channel)")
-                                .arg(pilotShown(pl));
-                    break;
-                }
-        if (!p.pinned)
-            for (int k = 0; k < ticked.size(); k++)
-                if (!placed[k] && tickedHdz[k] == p.r.ch.hdzero &&
-                    std::abs(tickedMhz[k] - p.r.ch.mhz) < race::kMatchMhz) {
-                    placed[k] = true;
-                    if (!note.isEmpty()) note += QStringLiteral("; ");
-                    note += tr("your pilot %1 is already here").arg(ticked[k]);
-                }
-        it->setText(6, note);
-        it->setForeground(4, ratingColour(p.r));
+    const std::vector<std::vector<int>> on = race::already_on(a.picks, mine);
+    QStringList toMove;  // los mios que no estan en ningun recomendado
+    for (int k = 0; k < mineShown.size(); k++)
+        if (std::none_of(on.begin(), on.end(), [k](const std::vector<int> &v) {
+                return std::find(v.begin(), v.end(), k) != v.end();
+            }))
+            toMove << mineShown[k];
+    for (size_t i = 0; i < a.picks.size(); i++) {
+        QStringList here;
+        for (int k : on[i]) here << mineShown[k];
+        addAdviceRow(a.picks[i], a.wifi, here);
     }
     for (int c = 0; c < 6; c++) table_->resizeColumnToContents(c);
+    summary_->setText(summaryText(a, toMove));
+    logAdvice(a, toMove);
+}
+
+advisor::Advice ChannelAnalyzer::pinnedOnlyAdvice() const {
+    // sin barridos todavia (recien abierta): los fijados se ven igual, en la grafica y en la tabla, sin medir
+    advisor::Advice a;
+    for (const auto &c : pinnedCandidates()) {
+        advisor::Pick pk;
+        pk.r.ch = c;
+        pk.pinned = true;
+        a.picks.push_back(pk);
+    }
+    return a;
+}
+
+namespace {
+QString pinLabel(const QString &name, bool hdz) {
+    return QStringLiteral("<b>%1</b>%2").arg(name, hdz ? QStringLiteral(" (HDZero)") : QString());
+}
+}  // namespace
+
+QTreeWidgetItem *ChannelAnalyzer::addPickRow(const advisor::Pick &p) {
+    const QString name = QString::fromStdString(p.r.ch.name);
+    auto *it = new QTreeWidgetItem(table_);
+    it->setFlags(it->flags() | Qt::ItemIsUserCheckable);
+    it->setCheckState(0, p.pinned ? Qt::Checked : Qt::Unchecked);
+    it->setData(0, Qt::UserRole, name);
+    it->setData(0, Qt::UserRole + 1, p.r.ch.hdzero);
+    if (p.pinned) it->setIcon(0, pinIcon(p.r.ch.hdzero ? kHdzColour : kAnalogColour));
+    it->setToolTip(0, p.pinned ? tr("Pinned: untick to let the advice choose this pilot's channel again.")
+                               : tr("Tick to pin this channel (it is already given to a pilot)."));
+    it->setText(1, p.r.ch.hdzero ? QStringLiteral("HDZero") : tr("Analog"));
+    it->setText(2, name);
+    if (p.pinned) {
+        QFont bold = table_->font();
+        bold.setBold(true);
+        it->setFont(2, bold);
+    }
+    it->setText(3, QString::number(p.r.ch.mhz, 'f', 0));
+    return it;
+}
+
+void ChannelAnalyzer::showUnmeasured(const advisor::Advice &a) {
+    QString s = session_.running() ? tr("Waiting for the first sweep...")
+                                   : tr("Choose the bands and how many pilots will fly, then start the analysis.");
+    if (!pinned_.isEmpty()) {
+        QStringList pins;
+        for (const Pin &p : pinned_) pins << pinLabel(p.name, p.hdzero);
+        s += QStringLiteral(" ") + tr("Pinned: %1.").arg(pins.join(QStringLiteral(", ")));
+    }
+    summary_->setText(s);
+    for (const auto &p : a.picks) {
+        QTreeWidgetItem *it = addPickRow(p);
+        it->setText(4, QStringLiteral("-"));
+        it->setText(5, QStringLiteral("-"));
+        it->setText(6, session_.running() ? tr("not measured yet") : tr("not measured yet: start the analysis"));
+    }
+    for (int c = 0; c < 6; c++) table_->resizeColumnToContents(c);
+}
+
+void ChannelAnalyzer::addAdviceRow(const advisor::Pick &p, const std::vector<advisor::Wifi> &wifi,
+                                   const QStringList &mineHere) {
+    QTreeWidgetItem *it = addPickRow(p);
+    it->setText(4, QStringLiteral("%1 dB").arg(p.r.noise_db, 0, 'f', 1));
+    it->setText(5, QStringLiteral("%1 %").arg(qRound(p.r.burst * 100)));
+    QStringList note;
+    if (const QString n = noteText(p, wifi); !n.isEmpty()) note << n;
+    if (p.pinned)
+        // se da por mio sin preguntar (los fijados se guardan: otro dia puede ser otro piloto): que se vea
+        for (const Pilot &pl : last_.pilots)
+            if (onAir(pl) && onPinned({p.r.ch}, pl)) {
+                note << tr("%1 is on the air here: taken as yours (if it is not, unpin this channel)")
+                            .arg(pilotShown(pl));
+                break;
+            }
+    for (const QString &m : mineHere) note << tr("your pilot %1 is already here").arg(m);
+    it->setText(6, note.join(QStringLiteral("; ")));
+    it->setForeground(4, ratingColour(p.r));
+}
+
+QString ChannelAnalyzer::summaryText(const advisor::Advice &a, const QStringList &toMove) const {
+    QStringList names, pinnedNames;
+    for (const auto &p : a.picks)
+        (p.pinned ? pinnedNames : names) << pinLabel(QString::fromStdString(p.r.ch.name), p.r.ch.hdzero);
     // el aviso de interferencia, por los que elige la recomendacion (lo de los fijados ya se ve en la tabla)
     float worstSuggested = 0;
     for (const auto &p : a.picks)
         if (!p.pinned) worstSuggested = std::max(worstSuggested, p.r.noise_db);
+    const auto span = [](const char *colour, const QString &text) {
+        return QStringLiteral(" <span style='color:%1'>").arg(QLatin1String(colour)) + text +
+               QStringLiteral("</span>");
+    };
     QString s;
     if (a.picks.empty()) s = tr("Set how many pilots will fly.");
     else if (pinnedNames.isEmpty()) s = tr("Recommended: %1.").arg(names.join(QStringLiteral(", ")));
     else if (names.isEmpty()) s = tr("Pinned: %1.").arg(pinnedNames.join(QStringLiteral(", ")));
     else s = tr("Pinned: %1. Suggested for the rest: %2.").arg(pinnedNames.join(QStringLiteral(", ")),
                                                                   names.join(QStringLiteral(", ")));
-    if (!a.complete) s += QStringLiteral(" <span style='color:#d9483b'>") +
-                          (pinnedNames.isEmpty()
-                               ? tr("Not enough room for that many pilots in these bands with safe spacing: add bands "
-                                    "or fly fewer at once.")
-                               : tr("Not enough room for that many pilots with safe spacing next to the pinned "
-                                    "channels: unpin some, add bands or fly fewer at once.")) +
-                          QStringLiteral("</span>");
-    else if (worstSuggested >= 8) s += QStringLiteral(" <span style='color:#e0a020'>") +
-                                   tr("Even the best channels have noticeable interference here.") +
-                                   QStringLiteral("</span>");
-    if (!a.wifi.empty()) {
-        QStringList chs;
-        for (const auto &g : advisor::group_wifi(a.wifi))
-            chs << (g.first == g.last ? QString::number(g.first)
-                                      : QStringLiteral("%1\u2013%2").arg(g.first).arg(g.last));
+    if (!a.complete)
+        s += span("#d9483b", pinnedNames.isEmpty()
+                                 ? tr("Not enough room for that many pilots in these bands with safe spacing: add "
+                                      "bands or fly fewer at once.")
+                                 : tr("Not enough room for that many pilots with safe spacing next to the pinned "
+                                      "channels: unpin some, add bands or fly fewer at once."));
+    else if (worstSuggested >= 8)
+        s += span("#e0a020", tr("Even the best channels have noticeable interference here."));
+    if (!a.wifi.empty())
         s += QStringLiteral(" ") + tr("WiFi seen on channel(s) %1: it counts against the channels it covers, "
-                                      "even while quiet.").arg(chs.join(QStringLiteral(", ")));
+                                      "even while quiet.").arg(wifiChannels(a.wifi, QStringLiteral("\u2013"))
+                                                                   .join(QStringLiteral(", ")));
+    if (!toMove.isEmpty() && !a.picks.empty()) {
+        QStringList bold;
+        for (const QString &m : toMove) bold << QStringLiteral("<b>%1</b>").arg(m);
+        s += span("#e0a020",
+                  (toMove.size() == 1
+                       ? tr("%1 must change to one of the suggested channels (or pin its channel if it stays).")
+                       : tr("%1 must change to the suggested channels (or pin their channels if they stay)."))
+                      .arg(bold.join(QStringLiteral(", "))));
     }
-    QStringList toMove;
-    for (int k = 0; k < ticked.size(); k++)
-        if (!placed[k]) toMove << QStringLiteral("<b>%1</b>").arg(ticked[k]);
-    if (!toMove.isEmpty() && !a.picks.empty())
-        s += QStringLiteral(" <span style='color:#e0a020'>") +
-             (toMove.size() == 1
-                  ? tr("%1 must change to one of the suggested channels (or pin its channel if it stays).")
-                  : tr("%1 must change to the suggested channels (or pin their channels if they stay)."))
-                 .arg(toMove.join(QStringLiteral(", "))) +
-             QStringLiteral("</span>");
     if (last_.sweeps < 3) s += QStringLiteral(" ") + tr("(still learning: let it run a few sweeps)");
-    summary_->setText(s);
+    return s;
+}
 
+QStringList ChannelAnalyzer::wifiChannels(const std::vector<advisor::Wifi> &wifi, const QString &dash) {
+    QStringList chs;
+    for (const auto &g : advisor::group_wifi(wifi))
+        chs << (g.first == g.last ? QString::number(g.first) : QString::number(g.first) + dash + QString::number(g.last));
+    return chs;
+}
+
+void ChannelAnalyzer::logAdvice(const advisor::Advice &a, const QStringList &moving) {
     // al log, cuando cambia lo recomendado (canales, notas, WiFi, quien tiene que cambiar), no en cada barrido: los
     // dB van en la linea pero no cuentan como cambio
-    if (session_.running() && last_.sweeps >= 3 && !a.picks.empty()) {
-        QStringList key, line;
-        for (const auto &p : a.picks) {
-            const QString name = chName(p.r.ch);
-            const QString note = noteText(p, a.wifi);
-            // la clave, con lo que se recomienda y no con su texto: el de una red WiFi cambia casi en cada barrido
-            // ("ahora callada" / "vista hace poco" / "en uso") sin que cambie nada de lo recomendado
-            QString k = name + (p.pinned ? QStringLiteral("*") : QString());
-            for (auto n : p.notes) k += QLatin1Char('n') + QString::number(static_cast<int>(n));
-            if (p.r.busy >= 0) k += QStringLiteral("b");
-            if (p.r.burst > 0.1f) k += QStringLiteral("r");
-            if (p.r.wifi >= 0 && p.r.wifi < static_cast<int>(a.wifi.size()))
-                k += QStringLiteral("w%1%2").arg(a.wifi[p.r.wifi].ch).arg(p.r.wifi_block ? "B" : "");
-            key << k;
-            line << QStringLiteral("%1 %2 MHz%3: %4 dB, rafagas %5 %%6")
-                        .arg(name)
-                        .arg(p.r.ch.mhz, 0, 'f', 0)
-                        .arg(p.pinned ? QStringLiteral(" (fijado)") : QString())
-                        .arg(p.r.noise_db, 0, 'f', 1)
-                        .arg(qRound(p.r.burst * 100))
-                        .arg(note.isEmpty() ? QString() : QStringLiteral(" (") + note + QLatin1Char(')'));
-        }
-        QStringList wifiChs;
-        for (const auto &g : advisor::group_wifi(a.wifi))
-            wifiChs << (g.first == g.last ? QString::number(g.first) : QStringLiteral("%1-%2").arg(g.first).arg(g.last));
-        QStringList moving;
-        for (int k = 0; k < ticked.size(); k++)
-            if (!placed[k]) moving << ticked[k];
-        key << wifiChs.join(QLatin1Char(',')) << moving.join(QLatin1Char(',')) << (a.complete ? "1" : "0");
-        const QString k = key.join(QLatin1Char(';'));
-        if (k != adviceLogKey_) {
-            adviceLogKey_ = k;
-            QString msg = line.join(QStringLiteral("; "));
-            if (!wifiChs.isEmpty()) msg += QStringLiteral(" | WiFi: ") + wifiChs.join(QStringLiteral(", "));
-            if (!moving.isEmpty()) msg += QStringLiteral(" | tienen que cambiar: ") + moving.join(QStringLiteral(", "));
-            if (!a.complete) msg += QStringLiteral(" | no caben con separacion segura");
-            KP_LOGI("analizador: recomendacion (barrido %d): %s", last_.sweeps, qUtf8Printable(msg));
-        }
+    if (!session_.running() || last_.sweeps < 3 || a.picks.empty()) return;
+    QStringList key, line;
+    for (const auto &p : a.picks) {
+        const QString name = chName(p.r.ch);
+        const QString note = noteText(p, a.wifi);
+        // la clave, con lo que se recomienda y no con su texto: el de una red WiFi cambia casi en cada barrido
+        // ("ahora callada" / "vista hace poco" / "en uso") sin que cambie nada de lo recomendado
+        QString k = name + (p.pinned ? QStringLiteral("*") : QString());
+        for (auto n : p.notes) k += QLatin1Char('n') + QString::number(static_cast<int>(n));
+        if (p.r.busy >= 0) k += QStringLiteral("b");
+        if (p.r.burst > 0.1f) k += QStringLiteral("r");
+        if (p.r.wifi >= 0 && p.r.wifi < static_cast<int>(a.wifi.size()))
+            k += QStringLiteral("w%1%2").arg(a.wifi[p.r.wifi].ch).arg(p.r.wifi_block ? "B" : "");
+        key << k;
+        line << QStringLiteral("%1 %2 MHz%3: %4 dB, rafagas %5 %%6")
+                    .arg(name)
+                    .arg(p.r.ch.mhz, 0, 'f', 0)
+                    .arg(p.pinned ? QStringLiteral(" (fijado)") : QString())
+                    .arg(p.r.noise_db, 0, 'f', 1)
+                    .arg(qRound(p.r.burst * 100))
+                    .arg(note.isEmpty() ? QString() : QStringLiteral(" (") + note + QLatin1Char(')'));
     }
+    const QStringList wifiChs = wifiChannels(a.wifi, QStringLiteral("-"));
+    key << wifiChs.join(QLatin1Char(',')) << moving.join(QLatin1Char(',')) << (a.complete ? "1" : "0");
+    const QString k = key.join(QLatin1Char(';'));
+    if (k == adviceLogKey_) return;
+    adviceLogKey_ = k;
+    QString msg = line.join(QStringLiteral("; "));
+    if (!wifiChs.isEmpty()) msg += QStringLiteral(" | WiFi: ") + wifiChs.join(QStringLiteral(", "));
+    if (!moving.isEmpty()) msg += QStringLiteral(" | tienen que cambiar: ") + moving.join(QStringLiteral(", "));
+    if (!a.complete) msg += QStringLiteral(" | no caben con separacion segura");
+    KP_LOGI("analizador: recomendacion (barrido %d): %s", last_.sweeps, qUtf8Printable(msg));
 }
 
 // ---- canales fijados ----------------------------------------------------------------------------------------

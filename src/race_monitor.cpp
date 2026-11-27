@@ -211,6 +211,21 @@ int present(const std::vector<advisor::Candidate> &pinned, const std::vector<adv
     return static_cast<int>(std::count(got.begin(), got.end(), true));
 }
 
+std::vector<std::vector<int>> already_on(const std::vector<advisor::Pick> &picks,
+                                         const std::vector<advisor::Signal> &mine) {
+    std::vector<std::vector<int>> on(picks.size());
+    std::vector<bool> placed(mine.size(), false);
+    for (size_t p = 0; p < picks.size(); p++) {
+        if (picks[p].pinned) continue;
+        for (size_t k = 0; k < mine.size(); k++)
+            if (!placed[k] && matches(mine[k], picks[p].r.ch)) {
+                placed[k] = true;
+                on[p].push_back(static_cast<int>(k));
+            }
+    }
+    return on;
+}
+
 int Monitor::worst() const {
     int w = -1;
     for (size_t i = 0; i < health_.size(); i++) {

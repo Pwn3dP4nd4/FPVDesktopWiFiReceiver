@@ -24,6 +24,7 @@ class QTabWidget;
 class QTimer;
 class QToolButton;
 class QTreeWidget;
+class QTreeWidgetItem;
 
 // Grafica del analizador: espectro medio y picos (dB sobre el suelo), zonas con rafagas, los canales candidatos
 // coloreados por interferencia, lo que ya hay en el aire y los canales recomendados (los fijados, distintos).
@@ -130,6 +131,15 @@ private:
     void updateAir();     // lista de pilotos en el aire
     void onSurvey(const SurveyData &d);
     void recompute();
+    // ---- recompute(), por partes ----
+    advisor::Advice pinnedOnlyAdvice() const;  // sin barridos: solo los fijados, sin medir
+    QTreeWidgetItem *addPickRow(const advisor::Pick &p);  // fila de la tabla: casilla, sistema, canal, MHz
+    void showUnmeasured(const advisor::Advice &a);  // tabla y resumen sin barridos
+    // fila de un canal recomendado; mineHere: mis pilotos que ya estan en el (race::already_on)
+    void addAdviceRow(const advisor::Pick &p, const std::vector<advisor::Wifi> &wifi, const QStringList &mineHere);
+    QString summaryText(const advisor::Advice &a, const QStringList &toMove) const;
+    static QStringList wifiChannels(const std::vector<advisor::Wifi> &wifi, const QString &dash);  // "1", "5-7"
+    void logAdvice(const advisor::Advice &a, const QStringList &moving);  // al log, solo si cambia
     QString bands() const;
     // Candidatos de las bandas marcadas sin los canales quitados (excluded_): lo que se analiza y se recomienda
     std::vector<advisor::Candidate> analogCands() const;

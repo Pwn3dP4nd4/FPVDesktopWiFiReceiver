@@ -688,6 +688,33 @@ int main() {
         run(low, 20, scene(1));  // ~1 dB: por debajo de kMoveKeepGainDb
         check(low.suggest_all(cands, {}, {shown}).empty(), "por debajo de kMoveKeepGainDb se quita");
     }
+    {
+        // mis pilotos (marcados, sin canal fijado) que ya estan en un canal recomendado: mismo sistema y cerca
+        const auto pick = [](const Candidate &c, bool pinned = false) {
+            Pick p;
+            p.r.ch = c;
+            p.pinned = pinned;
+            return p;
+        };
+        const auto sig = [](double mhz, bool digital = false) {
+            Signal s;
+            s.mhz = mhz;
+            s.digital = digital;
+            return s;
+        };
+        const Candidate hdzR3{"R3", 5732, true, kHdzBw};
+        const std::vector<Pick> picks{pick(R1), pick(R3, true), pick(hdzR3), pick(R6)};
+        // 5660: en R1; 5733 analogico: R3 esta fijado (no cuenta) y el de HDZero es otro sistema; 5800: en ninguno;
+        // 5845 y 5841: los dos en R6
+        const auto on = race::already_on(picks, {sig(5660), sig(5733), sig(5800), sig(5845), sig(5841)});
+        check(on.size() == picks.size(), "already_on: una lista por recomendacion");
+        check(on.size() == 4 && on[0] == std::vector<int>{0}, "already_on: el de 5660 MHz esta en R1");
+        check(on.size() == 4 && on[1].empty() && on[2].empty(),
+              "already_on: un canal fijado o de otro sistema no cuenta");
+        check(on.size() == 4 && on[3] == std::vector<int>({3, 4}), "already_on: dos mios cerca de R6, los dos");
+        const auto hdz = race::already_on(picks, {sig(5731, true)});
+        check(hdz.size() == 4 && hdz[2] == std::vector<int>{0}, "already_on: un HDZero en el R3 de HDZero");
+    }
     std::printf("\n%s\n", failures ? "HAY FALLOS" : "todo bien");
     return failures ? 1 : 0;
 }

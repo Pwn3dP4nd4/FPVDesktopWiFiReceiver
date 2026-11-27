@@ -77,6 +77,12 @@ struct Move {
 // su fin automatico (ya no queda ninguno)
 int present(const std::vector<advisor::Candidate> &pinned, const std::vector<advisor::Signal> &now);
 
+// Mis pilotos (marcados en el analizador, sin canal fijado) que ya estan en un canal recomendado: por cada pick (en su
+// orden), los indices de mine que estan en el (mismo sistema, a menos de kMatchMhz). Los fijados no cuentan: su
+// piloto ya es suyo. Los que no salen en ninguno tienen que cambiar de canal
+std::vector<std::vector<int>> already_on(const std::vector<advisor::Pick> &picks,
+                                         const std::vector<advisor::Signal> &mine);
+
 class Monitor {
    public:
     // Empieza (o vuelve a empezar) con estos canales fijados; borra lo apuntado

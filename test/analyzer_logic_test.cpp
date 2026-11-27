@@ -6,7 +6,9 @@
 #include <QApplication>
 #include <QSettings>
 #include <QTemporaryDir>
+#include <QLabel>
 #include <QTimer>
+#include <QTreeWidget>
 
 #include <algorithm>
 #include <cstdio>
@@ -230,6 +232,56 @@ int main(int argc, char **argv) {
         check(s2.filter(QStringLiteral("(race 1)")).size() == s.size(), "la primera carrera sigue igual");
     }
 
+    {
+        // mis pilotos (marcados en "En el aire"): cada uno, o ya esta en un canal recomendado (lo dice su fila) o
+        // tiene que cambiar (lo dice el resumen), nunca las dos cosas ni ninguna. Se lee la ventana como el usuario
+        FakeBackend b;
+        ChannelAnalyzer w(&b);
+        open(b);
+        w.setPinnedForTest({});  // los fijados de los casos de antes se guardan en el .ini
+        w.setCounts(3, 0);
+        w.startForTest();
+        const QVector<Pilot> air{pilot(kR1), pilot(5769), pilot(kR8)};
+        for (int k = 0; k < 4; k++) emit b.surveyUpdated(survey(k, air));
+        // la ventana les pone el nombre de su canal (src/channel_names.h): esa es la clave de "mio"
+        const QStringList mine{QStringLiteral("R1"), QStringLiteral("R4"), QStringLiteral("R8")};
+        w.setMineForTest(mine);
+        QTreeWidget *table = nullptr;
+        for (auto *t : w.findChildren<QTreeWidget *>())
+            if (t->headerItem()->text(6) == QStringLiteral("Notes")) table = t;
+        QString summary;
+        for (auto *l : w.findChildren<QLabel *>())
+            if (l->text().startsWith(QStringLiteral("Recommended:"))) summary = l->text();
+        check(table && table->topLevelItemCount() == 3 && !summary.isEmpty(),
+              "mios: la tabla con 3 recomendados y el resumen");
+        int placed = 0, moving = 0, both = 0;
+        for (const QString &ch : mine) {
+            bool inRow = false;
+            for (int i = 0; table && i < table->topLevelItemCount(); i++)
+                inRow = inRow || table->topLevelItem(i)->text(6).contains(QStringLiteral("your pilot %1").arg(ch));
+            const bool inSummary = summary.contains(QStringLiteral("<b>%1").arg(ch));
+            placed += inRow && !inSummary;
+            moving += inSummary && !inRow;
+            both += inRow == inSummary;
+        }
+        std::printf("    mios: %d ya en un recomendado, %d tienen que cambiar\n", placed, moving);
+        check(both == 0 && placed + moving == 3, "mios: cada uno, o en su fila o en 'tienen que cambiar'");
+        // solo quedan R1, R4 y R8 por analizar: la recomendacion son sus canales y ninguno tiene que cambiar
+        QStringList others;
+        for (const char *band : {"A", "B", "E", "F", "R"})
+            for (int n = 1; n <= 8; n++) others << QStringLiteral("%1%2").arg(QLatin1String(band)).arg(n);
+        for (const QString &ch : mine) others.removeAll(ch);
+        w.setExcludedForTest(others);
+        for (int k = 4; k < 8; k++) emit b.surveyUpdated(survey(k, air));
+        summary.clear();
+        for (auto *l : w.findChildren<QLabel *>())
+            if (l->text().startsWith(QStringLiteral("Recommended:"))) summary = l->text();
+        int here = 0;
+        for (int i = 0; table && i < table->topLevelItemCount(); i++)
+            here += table->topLevelItem(i)->text(6).contains(QStringLiteral("is already here"));
+        check(here == 3 && !summary.contains(QStringLiteral("must change")),
+              "mios: los tres ya en los recomendados (R1, R4, R8): ninguno tiene que cambiar");
+    }
     std::printf("\n%s\n", failures ? "HAY FALLOS" : "todo bien");
     return failures ? 1 : 0;
 }
