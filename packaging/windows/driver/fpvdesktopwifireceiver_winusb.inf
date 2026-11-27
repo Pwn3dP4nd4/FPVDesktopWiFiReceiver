@@ -30,6 +30,7 @@ PnpLockdown = 1
 %DevT4Uv3%    = WinUsb_Install, USB\VID_2357&PID_0115
 %DevT3U%      = WinUsb_Install, USB\VID_2357&PID_012D
 %DevT3UPlus%  = WinUsb_Install, USB\VID_2357&PID_0138
+%DevWUSB6300v2% = WinUsb_Install, USB\VID_13B1&PID_0045
 
 [Devices.NTarm64]
 %Dev8812BU%   = WinUsb_Install, USB\VID_0BDA&PID_B812&REV_0210
@@ -37,6 +38,7 @@ PnpLockdown = 1
 %DevT4Uv3%    = WinUsb_Install, USB\VID_2357&PID_0115
 %DevT3U%      = WinUsb_Install, USB\VID_2357&PID_012D
 %DevT3UPlus%  = WinUsb_Install, USB\VID_2357&PID_0138
+%DevWUSB6300v2% = WinUsb_Install, USB\VID_13B1&PID_0045
 
 [WinUsb_Install]
 Include      = winusb.inf
@@ -60,3 +62,4 @@ Dev8812BU    = "RTL8812BU (FPVDesktopWiFiReceiver, WinUSB)"
 DevT4Uv3     = "TP-Link Archer T4U v3 (FPVDesktopWiFiReceiver, WinUSB)"
 DevT3U       = "TP-Link Archer T3U (FPVDesktopWiFiReceiver, WinUSB)"
 DevT3UPlus   = "TP-Link Archer T3U Plus (FPVDesktopWiFiReceiver, WinUSB)"
+DevWUSB6300v2 = "Linksys WUSB6300 V2 (FPVDesktopWiFiReceiver, WinUSB)"

@@ -11,3 +11,5 @@ SUBSYSTEM=="usb", ATTRS{idVendor}=="0bda", ATTRS{idProduct}=="a81a", TAG+="uacce
 SUBSYSTEM=="usb", ATTRS{idVendor}=="2357", ATTRS{idProduct}=="0115", TAG+="uaccess"
 SUBSYSTEM=="usb", ATTRS{idVendor}=="2357", ATTRS{idProduct}=="012d", TAG+="uaccess"
 SUBSYSTEM=="usb", ATTRS{idVendor}=="2357", ATTRS{idProduct}=="0138", TAG+="uaccess"
+# Linksys WUSB6300 V2 (RTL8812BU; la V1, 13b1:003f, es RTL8812AU y no vale)
+SUBSYSTEM=="usb", ATTRS{idVendor}=="13b1", ATTRS{idProduct}=="0045", TAG+="uaccess"
