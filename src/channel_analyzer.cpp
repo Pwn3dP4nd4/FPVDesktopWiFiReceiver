@@ -937,36 +937,7 @@ QWidget *ChannelAnalyzer::buildRacePage() {
     raceTable_->setSelectionMode(QAbstractItemView::NoSelection);
     // clic derecho en una fila: aplicar solo la recomendacion de ese canal
     raceTable_->setContextMenuPolicy(Qt::CustomContextMenu);
-    connect(raceTable_, &QWidget::customContextMenuRequested, this, [this](const QPoint &pos) {
-        QTreeWidgetItem *it = raceTable_->itemAt(pos);
-        if (!it) return;
-        const int row = raceTable_->indexOfTopLevelItem(it);
-        const auto ms = moves_;  // la tabla se rehace en cada barrido: lo de ahora
-        const auto &hs = race_.health();
-        QMenu menu(this);
-        for (const auto &m : ms) {
-            if (m.from != row || m.from >= static_cast<int>(hs.size())) continue;
-            const QString t = QStringLiteral("%1 \u2192 %2").arg(QString::fromStdString(hs[m.from].ch.name),
-                                                                 QString::fromStdString(m.to.name));
-            QAction *a = menu.addAction(canApplyAlone(m) ? tr("Apply %1 only").arg(t)
-                                                         : tr("Apply %1 only (apply the others first)").arg(t));
-            a->setEnabled(canApplyAlone(m));
-            // con el menu abierto siguen llegando barridos: solo si sigue recomendada (y cabe sola)
-            connect(a, &QAction::triggered, this, [this, m] {
-                const auto v = stillValid({m});
-                if (!v.empty() && canApplyAlone(v.front())) applyMoves(v);
-            });
-        }
-        if (ms.size() > 1) {
-            QAction *all = menu.addAction(tr("Apply all (%1)").arg(ms.size()));
-            // todas o ninguna: cada una cuenta con las anteriores ya aplicadas
-            connect(all, &QAction::triggered, this, [this, ms] {
-                const auto v = stillValid(ms);
-                if (v.size() == ms.size()) applyMoves(v);
-            });
-        }
-        if (!menu.isEmpty()) menu.exec(raceTable_->viewport()->mapToGlobal(pos));
-    });
+    connect(raceTable_, &QWidget::customContextMenuRequested, this, &ChannelAnalyzer::raceTableMenu);
     v->addWidget(raceTable_, 1);
     auto *r = new QHBoxLayout;
     raceAdvice_ = new QLabel;
@@ -980,6 +951,38 @@ QWidget *ChannelAnalyzer::buildRacePage() {
     r->addWidget(applyBtn_);
     v->addLayout(r);
     return page;
+}
+
+// clic derecho en una fila de la tabla de carrera: aplicar solo la recomendacion de ese canal, o todas
+void ChannelAnalyzer::raceTableMenu(const QPoint &pos) {
+    QTreeWidgetItem *it = raceTable_->itemAt(pos);
+    if (!it) return;
+    const int row = raceTable_->indexOfTopLevelItem(it);
+    const auto ms = moves_;  // la tabla se rehace en cada barrido: lo de ahora
+    const auto &hs = race_.health();
+    QMenu menu(this);
+    for (const auto &m : ms) {
+        if (m.from != row || m.from >= static_cast<int>(hs.size())) continue;
+        const QString t = QStringLiteral("%1 \u2192 %2").arg(QString::fromStdString(hs[m.from].ch.name),
+                                                             QString::fromStdString(m.to.name));
+        QAction *a = menu.addAction(canApplyAlone(m) ? tr("Apply %1 only").arg(t)
+                                                     : tr("Apply %1 only (apply the others first)").arg(t));
+        a->setEnabled(canApplyAlone(m));
+        // con el menu abierto siguen llegando barridos: solo si sigue recomendada (y cabe sola)
+        connect(a, &QAction::triggered, this, [this, m] {
+            const auto v = stillValid({m});
+            if (!v.empty() && canApplyAlone(v.front())) applyMoves(v);
+        });
+    }
+    if (ms.size() > 1) {
+        QAction *all = menu.addAction(tr("Apply all (%1)").arg(ms.size()));
+        // todas o ninguna: cada una cuenta con las anteriores ya aplicadas
+        connect(all, &QAction::triggered, this, [this, ms] {
+            const auto v = stillValid(ms);
+            if (v.size() == ms.size()) applyMoves(v);
+        });
+    }
+    if (!menu.isEmpty()) menu.exec(raceTable_->viewport()->mapToGlobal(pos));
 }
 
 void ChannelAnalyzer::retranslate() {
