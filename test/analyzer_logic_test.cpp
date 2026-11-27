@@ -15,6 +15,7 @@
 #include <string>
 
 #include "analyzer_driver.h"
+#include "analyzer_style.h"  // kAnalogColour
 
 namespace {
 int failures = 0;
@@ -290,6 +291,10 @@ int main(int argc, char **argv) {
             if (l->text().startsWith(QStringLiteral("Recommended:"))) summary = l->text();
         check(table && table->topLevelItemCount() == 3 && !summary.isEmpty(),
               "mios: la tabla con 3 recomendados y el resumen");
+        // cada recomendado, en una pastilla del color de su sistema (analogico: kAnalogColour translucido)
+        const QString chip = QStringLiteral("background-color:rgba(%1,%2,%3,")
+                                 .arg(kAnalogColour.red()).arg(kAnalogColour.green()).arg(kAnalogColour.blue());
+        check(summary.count(chip) == 3, "resumen: los 3 recomendados, en pastillas del color analogico");
         int placed = 0, moving = 0, both = 0;
         for (const QString &ch : mine) {
             bool inRow = false;

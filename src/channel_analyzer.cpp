@@ -1621,8 +1621,15 @@ advisor::Advice ChannelAnalyzer::pinnedOnlyAdvice() const {
 }
 
 namespace {
+// un canal en el resumen: una pastilla del color de su sistema (el de la franja de la grafica), translucida para que
+// el texto se lea con cualquier tema. El texto enriquecido de QLabel no redondea esquinas.
 QString pinLabel(const QString &name, bool hdz) {
-    return QStringLiteral("<b>%1</b>%2").arg(name, hdz ? QStringLiteral(" (HDZero)") : QString());
+    const QColor c = hdz ? kHdzColour : kAnalogColour;
+    return QStringLiteral("<span style='background-color:rgba(%1,%2,%3,70)'>&nbsp;<b>%4</b>%5&nbsp;</span>")
+        .arg(c.red())
+        .arg(c.green())
+        .arg(c.blue())
+        .arg(name, hdz ? QStringLiteral(" HDZero") : QString());
 }
 }  // namespace
 
