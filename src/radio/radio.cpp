@@ -858,22 +858,11 @@ void Radio::add_cut_steps(const std::vector<float> &psd_db) {
   }
 }
 
-void Radio::scan_step_done() {
-  const double centre = _cap_centre;  // the samples are centred on the hardware centre, not the request
-  // start the next retune now; the chip settles while this step is analysed
-  const bool recheck = _pass != SurveyPass::Gapped;
-  _pass = SurveyPass::Gapped;  // survey: back to gapped
-  _step++;
-  if (_step < _plan.size()) {
-    tune(_plan[_step], 1);
-    _phase = StepPhase::Retuned;
-  }
+std::vector<Pilot> Radio::step_pilots(double centre, bool recheck, std::vector<SurveyKnown> &checked) {
   std::vector<cf> x(_humps.empty() ? 0 : _cap.size());
   for (size_t i = 0; i < x.size(); i++) x[i] = cf(_cap[i].real(), _cap[i].imag());
-  const auto humps = _humps;
   std::vector<Pilot> found;
-  std::vector<SurveyKnown> checked;
-  for (const auto &h : humps) {
+  for (const auto &h : _humps) {
     const auto vc = check_video(x.data(), x.size(), kFs, h.offset_hz);
     const double mhz = (centre + h.offset_hz) / 1e6;
     if (recheck) checked.push_back({mhz, vc.video, 0});
@@ -906,70 +895,96 @@ void Radio::scan_step_done() {
       pl.bw_mhz = static_cast<float>(d.width_hz / 1e6);
       found.push_back(pl);
     }
-  bool done = _step >= _plan.size();
+  return found;
+}
+
+void Radio::merge_pilots(std::vector<SurveyKnown> &checked, const std::vector<Pilot> &found) {
+  for (auto &c : checked) {  // survey: remember what this check found
+    c.sweep = _grid.sweeps();
+    _survey_known.erase(std::remove_if(_survey_known.begin(), _survey_known.end(),
+                                       [&](const SurveyKnown &k) { return std::fabs(k.mhz - c.mhz) < 3; }),
+                        _survey_known.end());
+    _survey_known.push_back(c);
+  }
+  for (const auto &f : found) {
+    auto it = std::find_if(_pilots.begin(), _pilots.end(), [&](const Pilot &p) { return std::fabs(p.mhz - f.mhz) < 4; });
+    if (it == _pilots.end()) _pilots.push_back(f);
+    else if (f.snr_db >= it->snr_db - 3) *it = f;  // prefer the newer sighting unless much weaker
+    else it->seen_ms = f.seen_ms;
+  }
+  std::sort(_pilots.begin(), _pilots.end(), [](const Pilot &a, const Pilot &b) { return a.snr_db > b.snr_db; });
+  if (!_survey) return;
+  // survey: an analog VTX has a copy of its signal ~12 MHz away, a few dB weaker, whose video can lock too
+  // (measured: R3 at 5731.4 MHz 35 dB and 5743.4 MHz 32 dB, lock 0.75). An analog pilot that close to a
+  // stronger one is taken as that copy, not as another pilot (two real ones that close would be unflyable)
+  std::vector<Pilot> kept;
+  for (const auto &p : _pilots) {  // strongest first
+    const bool copy = p.digital.empty() && std::any_of(kept.begin(), kept.end(), [&](const Pilot &k) {
+      return k.digital.empty() && std::fabs(k.mhz - p.mhz) < kSurveySidebandMhz && k.snr_db >= p.snr_db + 2;
+    });
+    if (!copy) kept.push_back(p);
+  }
+  _pilots.swap(kept);
+}
+
+void Radio::end_sweep() {
+  // survey: sweep again; pilots not seen for kSurveyLostSweeps sweeps are gone
+  _grid.end_sweep();
+  const int64_t t = now_ms();
+  _sweep_ms = t - _sweep_start_ms;
+  _sweep_start_ms = t;
+  const int64_t keep = t - kSurveyLostSweeps * std::max<int64_t>(_sweep_ms, 1000);
+  _pilots.erase(std::remove_if(_pilots.begin(), _pilots.end(), [&](const Pilot &p) { return p.seen_ms < keep; }),
+                _pilots.end());
+}
+
+void Radio::end_scan() {
+  // after a scan: the pilot watched before, if still there, else the strongest seen in this scan. Only pilots
+  // seen in this scan: _pilots keeps older ones, and a VTX moved to another channel left one behind that the
+  // scan went back to (measured: F4 seen at 00:36, the VTX moved to R3, the 00:40 scan found R3 and watched F4)
   double next_watch = 0;
+  for (const auto &p : _pilots)
+    if (_resume_hz > 0 && p.seen_ms >= _scan_start_ms && std::fabs(p.mhz * 1e6 - _resume_hz) < 4e6)
+      next_watch = p.mhz * 1e6;
+  if (next_watch == 0)
+    for (const auto &p : _pilots)
+      if (p.seen_ms >= _scan_start_ms && p.digital.empty()) {  // a digital one shows no picture
+        next_watch = p.mhz * 1e6;
+        break;
+      }
+  if (next_watch == 0 && _resume_hz > 0) next_watch = _resume_hz;
+  KP_LOGI("scan: done, %zu pilot(s)%s", _pilots.size(), next_watch > 0 ? ", watching" : "");
+  if (next_watch > 0) {
+    _watch_hz = next_watch;
+    _mode = Mode::Watch;
+  } else {
+    _mode = Mode::Idle;
+  }
+  _mode_epoch++;
+}
+
+void Radio::scan_step_done() {
+  const double centre = _cap_centre;  // the samples are centred on the hardware centre, not the request
+  // start the next retune now; the chip settles while this step is analysed
+  const bool recheck = _pass != SurveyPass::Gapped;
+  _pass = SurveyPass::Gapped;  // survey: back to gapped
+  _step++;
+  if (_step < _plan.size()) {
+    tune(_plan[_step], 1);
+    _phase = StepPhase::Retuned;
+  }
+  std::vector<SurveyKnown> checked;
+  const std::vector<Pilot> found = step_pilots(centre, recheck, checked);
+  const bool done = _step >= _plan.size();
   bool restart = false;
   {
     std::lock_guard<std::mutex> l(_m);
-    for (auto &c : checked) {  // survey: remember what this check found
-      c.sweep = _grid.sweeps();
-      _survey_known.erase(std::remove_if(_survey_known.begin(), _survey_known.end(),
-                                         [&](const SurveyKnown &k) { return std::fabs(k.mhz - c.mhz) < 3; }),
-                          _survey_known.end());
-      _survey_known.push_back(c);
-    }
-    for (const auto &f : found) {
-      auto it = std::find_if(_pilots.begin(), _pilots.end(), [&](const Pilot &p) { return std::fabs(p.mhz - f.mhz) < 4; });
-      if (it == _pilots.end()) _pilots.push_back(f);
-      else if (f.snr_db >= it->snr_db - 3) *it = f;  // prefer the newer sighting unless much weaker
-      else it->seen_ms = f.seen_ms;
-    }
-    std::sort(_pilots.begin(), _pilots.end(), [](const Pilot &a, const Pilot &b) { return a.snr_db > b.snr_db; });
-    if (_survey) {
-      // survey: an analog VTX has a copy of its signal ~12 MHz away, a few dB weaker, whose video can lock too
-      // (measured: R3 at 5731.4 MHz 35 dB and 5743.4 MHz 32 dB, lock 0.75). An analog pilot that close to a
-      // stronger one is taken as that copy, not as another pilot (two real ones that close would be unflyable)
-      std::vector<Pilot> kept;
-      for (const auto &p : _pilots) {  // strongest first
-        const bool copy = p.digital.empty() && std::any_of(kept.begin(), kept.end(), [&](const Pilot &k) {
-          return k.digital.empty() && std::fabs(k.mhz - p.mhz) < kSurveySidebandMhz && k.snr_db >= p.snr_db + 2;
-        });
-        if (!copy) kept.push_back(p);
-      }
-      _pilots.swap(kept);
-    }
+    merge_pilots(checked, found);
     if (done && _survey) {
-      // survey: sweep again; pilots not seen for kSurveyLostSweeps sweeps are gone
-      _grid.end_sweep();
+      end_sweep();
       restart = true;
-      const int64_t t = now_ms();
-      _sweep_ms = t - _sweep_start_ms;
-      _sweep_start_ms = t;
-      const int64_t keep = t - kSurveyLostSweeps * std::max<int64_t>(_sweep_ms, 1000);
-      _pilots.erase(std::remove_if(_pilots.begin(), _pilots.end(), [&](const Pilot &p) { return p.seen_ms < keep; }),
-                    _pilots.end());
     } else if (done) {
-      // after a scan: the pilot watched before, if still there, else the strongest seen in this scan. Only pilots
-      // seen in this scan: _pilots keeps older ones, and a VTX moved to another channel left one behind that the
-      // scan went back to (measured: F4 seen at 00:36, the VTX moved to R3, the 00:40 scan found R3 and watched F4)
-      for (const auto &p : _pilots)
-        if (_resume_hz > 0 && p.seen_ms >= _scan_start_ms && std::fabs(p.mhz * 1e6 - _resume_hz) < 4e6)
-          next_watch = p.mhz * 1e6;
-      if (next_watch == 0)
-        for (const auto &p : _pilots)
-          if (p.seen_ms >= _scan_start_ms && p.digital.empty()) {  // a digital one shows no picture
-            next_watch = p.mhz * 1e6;
-            break;
-          }
-      if (next_watch == 0 && _resume_hz > 0) next_watch = _resume_hz;
-      KP_LOGI("scan: done, %zu pilot(s)%s", _pilots.size(), next_watch > 0 ? ", watching" : "");
-      if (next_watch > 0) {
-        _watch_hz = next_watch;
-        _mode = Mode::Watch;
-      } else {
-        _mode = Mode::Idle;
-      }
-      _mode_epoch++;
+      end_scan();
     }
   }
   _cap.clear();

@@ -136,6 +136,15 @@ private:
   void skip_known_humps();  // survey: humps checked in the last few sweeps, not again
   void handle_test(Bank &b);
   void scan_step_done();
+  // ---- scan_step_done(), por partes ----
+  struct SurveyKnown;
+  // the pilots of this step: its humps with video (sync check) and the digital scan's; recheck: what each check
+  // found goes to checked (survey)
+  std::vector<Pilot> step_pilots(double centre, bool recheck, std::vector<SurveyKnown> &checked);
+  // (under _m) into _survey_known and _pilots; survey: an analog pilot's sideband copy is dropped
+  void merge_pilots(std::vector<SurveyKnown> &checked, const std::vector<Pilot> &found);
+  void end_sweep();  // (under _m) survey: the sweep is over; pilots not seen for a while are gone
+  void end_scan();   // (under _m) scan: watch the pilot it found (or the one before), or go idle
   void add_cut_steps(const std::vector<float> &psd_db);
   void unpack(const Bank &b, std::vector<cf> &out);
 
