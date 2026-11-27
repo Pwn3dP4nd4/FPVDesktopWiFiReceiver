@@ -13,6 +13,8 @@ class QLabel;
 class QPushButton;
 class QStackedWidget;
 class QTreeWidget;
+class QTreeWidgetItem;
+class QFont;
 
 // Historial de las carreras de una ventana del analizador (src/channel_analyzer.h, pestana Historial): lo que ha ido
 // avisando y recomendando el seguimiento, los cambios aplicados y el resumen final. Por piloto (cual ha tenido mas
@@ -85,6 +87,18 @@ private:
     bool histShows(const RaceEvent &e) const;
     void addHistRow(const RaceEvent &e);  // a la vista cronologica
     void rebuild();  // las dos vistas (cambia la carrera elegida, Borrar, idioma)
+    // una fila de la vista por piloto: cuantos eventos de cada categoria (Cat) y como le fue
+    struct PilotRow {
+        int race = 0, pilot = -1;  // pilot -1: lo de toda la carrera
+        int n[4] = {0, 0, 0, 0};
+        const PilotRec *rec = nullptr;
+        // no se le ha visto nunca (VTX apagado o roto): no ha tenido video, cuenta como un grave
+        bool neverSeen() const { return rec && rec->health.sweeps > 0 && rec->health.seen == 0; }
+        int score() const { return n[0] * 3 + n[1] + (neverSeen() ? 3 : 0); }  // cuantos problemas
+    };
+    QVector<PilotRow> pilotRows() const;  // de la carrera elegida, de mas a menos problemas
+    QTreeWidgetItem *addPilotRow(const PilotRow &r, bool withRace, const QFont &bold);
+    QString verdictText(const QVector<PilotRow> &rows, bool withRace) const;  // "Most trouble: ..."
     void rebuildPilotView();
     void showPilotEvents();  // eventos del piloto elegido, por categoria
     void countChanged();     // los botones (sin eventos no hay nada que copiar) y eventsChanged

@@ -219,6 +219,10 @@ int main(int argc, char **argv) {
         check(s.size() >= 2 && s[1].startsWith(QStringLiteral("R1: 0 serious, 0 warnings")),
               "por piloto: R1 sin problemas");
         check(!s.isEmpty() && s.back().startsWith(QStringLiteral("race:")), "lo de toda la carrera, al final");
+        const QString verdict = drive::find<QLabel>(&w, "historyVerdict")->text();
+        check(verdict.startsWith(QStringLiteral("Most trouble: <b>Pilot 2 (R3)</b>: ")) &&
+                  verdict.endsWith(QStringLiteral("No trouble: Pilot 1 (R1).")),
+              "por piloto: el que mas problemas ha tenido (R3) y los que ninguno (R1)");
         check(s.filter(QStringLiteral("(race 1)")).size() == s.size(), "primera carrera: todo en la carrera 1");
         drive::setRace(w, true);  // otra carrera, numerada aparte; en esta R3 no sale nunca (VTX apagado)
         for (int k = 20; k < 24; k++) emit b.surveyUpdated(survey(k, {pilot(kR1)}));

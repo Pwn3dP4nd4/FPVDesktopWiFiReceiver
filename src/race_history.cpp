@@ -71,6 +71,7 @@ RaceHistory::RaceHistory(QWidget *parent) : QWidget(parent) {
     connect(histView_, &QComboBox::currentIndexChanged, this, [this](int i) { histStack_->setCurrentIndex(i); });
     top->addWidget(histView_);
     histVerdict_ = new QLabel;
+    histVerdict_->setObjectName(QStringLiteral("historyVerdict"));
     histVerdict_->setWordWrap(true);
     histVerdict_->setTextFormat(Qt::RichText);
     top->addWidget(histVerdict_, 1);
@@ -323,18 +324,13 @@ void RaceHistory::rebuild() {
     countChanged();
 }
 
-void RaceHistory::rebuildPilotView() {
+QVector<RaceHistory::PilotRow> RaceHistory::pilotRows() const {
     // cuenta por piloto (carrera, indice) de cada categoria
-    struct Row {
-        int race = 0, pilot = -1;
-        int n[4] = {0, 0, 0, 0};
-        const PilotRec *rec = nullptr;
-    };
-    QVector<Row> rows;
-    const auto rowOf = [&](int race, int pilot) -> Row & {
-        for (Row &r : rows)
+    QVector<PilotRow> rows;
+    const auto rowOf = [&](int race, int pilot) -> PilotRow & {
+        for (PilotRow &r : rows)
             if (r.race == race && r.pilot == pilot) return r;
-        Row r;
+        PilotRow r;
         r.race = race;
         r.pilot = pilot;
         const RaceRec *rr = raceRec(race);
@@ -349,18 +345,66 @@ void RaceHistory::rebuildPilotView() {
     for (const RaceEvent &e : events_)
         if (e.race > 0 && histShows(e)) rowOf(e.race, e.pilot).n[static_cast<int>(category(e.kind))]++;
     // de mas a menos problemas: graves, avisos, peor video; lo de toda la carrera al final
-    // un piloto al que no se ha visto nunca (VTX apagado o roto) no ha tenido video: cuenta como un grave
-    const auto neverSeen = [](const Row &r) { return r.rec && r.rec->health.sweeps > 0 && r.rec->health.seen == 0; };
-    const auto score = [&](const Row &r) { return r.n[0] * 3 + r.n[1] + (neverSeen(r) ? 3 : 0); };
-    std::stable_sort(rows.begin(), rows.end(), [&](const Row &a, const Row &b) {
+    std::stable_sort(rows.begin(), rows.end(), [](const PilotRow &a, const PilotRow &b) {
         if ((a.pilot < 0) != (b.pilot < 0)) return b.pilot < 0;
-        if (score(a) != score(b)) return score(a) > score(b);
+        if (a.score() != b.score()) return a.score() > b.score();
         const float qa = a.rec && a.rec->health.seen > 0 ? a.rec->health.quality : 1e9f;
         const float qb = b.rec && b.rec->health.seen > 0 ? b.rec->health.quality : 1e9f;
         if (qa != qb) return qa < qb;
         return a.race != b.race ? a.race > b.race : a.pilot < b.pilot;
     });
+    return rows;
+}
 
+QTreeWidgetItem *RaceHistory::addPilotRow(const PilotRow &r, bool withRace, const QFont &bold) {
+    auto *it = new QTreeWidgetItem(pilotTable_);
+    it->setData(0, Qt::UserRole, r.race);
+    it->setData(0, Qt::UserRole + 1, r.pilot);
+    it->setText(0, pilotLabel(r.race, r.pilot, withRace));
+    if (r.rec && !r.rec->channels.isEmpty() && r.rec->health.ch.mhz > 0)
+        it->setIcon(0, pinIcon(r.rec->health.ch.hdzero ? kHdzColour : kAnalogColour));
+    if (r.rec) {
+        const race::ChannelHealth &h = r.rec->health;
+        if (h.seen > 0) {
+            it->setText(1, QStringLiteral("%1 dB (SNR %2)").arg(h.quality, 0, 'f', 0).arg(h.snr_low, 0, 'f', 0));
+            if (h.snr_low < kLowSnrDb) it->setForeground(1, catColour(1));
+        } else {
+            it->setText(1, h.sweeps > 0 ? tr("not seen") : QStringLiteral("-"));
+        }
+        it->setToolTip(1, healthText(h, true));
+    }
+    for (int c = 0; c < 4; c++) {
+        it->setText(2 + c, QString::number(r.n[c]));
+        it->setTextAlignment(2 + c, Qt::AlignCenter);
+        if (r.n[c] > 0 && c < 3) {
+            it->setForeground(2 + c, catColour(c));
+            it->setFont(2 + c, bold);
+        }
+    }
+    return it;
+}
+
+QString RaceHistory::verdictText(const QVector<PilotRow> &rows, bool withRace) const {
+    const PilotRow *worst = nullptr;  // el primero: rows va de mas a menos problemas
+    int pilots = 0;
+    QStringList clean;  // los que no han tenido ninguno
+    for (const PilotRow &r : rows) {
+        if (r.pilot < 0) continue;
+        pilots++;
+        if (!worst) worst = &r;
+        if (r.score() == 0) clean << pilotLabel(r.race, r.pilot, withRace).toHtmlEscaped();
+    }
+    if (!worst || worst->score() == 0) return pilots > 0 ? tr("No pilot had any trouble.") : QString();
+    const QString who = pilotLabel(worst->race, worst->pilot, withRace).toHtmlEscaped();
+    QString v = worst->neverSeen() ? tr("Most trouble: <b>%1</b>: its pilot was never seen.").arg(who)
+                                   : tr("Most trouble: <b>%1</b>: %2 serious, %3 warning(s).")
+                                         .arg(who).arg(worst->n[0]).arg(worst->n[1]);
+    if (!clean.isEmpty()) v += QLatin1Char(' ') + tr("No trouble: %1.").arg(clean.join(QStringLiteral(", ")));
+    return v;
+}
+
+void RaceHistory::rebuildPilotView() {
+    const QVector<PilotRow> rows = pilotRows();
     // lo elegido a mano se conserva al rehacer; si no, el que mas problemas ha tenido (el primero)
     int keepRace = -1, keepPilot = -2;
     if (auto *cur = pilotTable_->currentItem(); cur && pilotPicked_) {
@@ -373,58 +417,20 @@ void RaceHistory::rebuildPilotView() {
     QFont bold = pilotTable_->font();
     bold.setBold(true);
     QTreeWidgetItem *keep = nullptr;
-    const bool withRace = sel == 0 && races_.size() > 1;
-    for (const Row &r : rows) {
-        auto *it = new QTreeWidgetItem(pilotTable_);
-        it->setData(0, Qt::UserRole, r.race);
-        it->setData(0, Qt::UserRole + 1, r.pilot);
-        it->setText(0, pilotLabel(r.race, r.pilot, withRace));
-        if (r.rec && !r.rec->channels.isEmpty() && r.rec->health.ch.mhz > 0)
-            it->setIcon(0, pinIcon(r.rec->health.ch.hdzero ? kHdzColour : kAnalogColour));
-        if (r.rec) {
-            const race::ChannelHealth &h = r.rec->health;
-            if (h.seen > 0) {
-                it->setText(1, QStringLiteral("%1 dB (SNR %2)").arg(h.quality, 0, 'f', 0).arg(h.snr_low, 0, 'f', 0));
-                if (h.snr_low < kLowSnrDb) it->setForeground(1, catColour(1));
-            } else {
-                it->setText(1, h.sweeps > 0 ? tr("not seen") : QStringLiteral("-"));
-            }
-            it->setToolTip(1, healthText(h, true));
-        }
-        for (int c = 0; c < 4; c++) {
-            it->setText(2 + c, QString::number(r.n[c]));
-            it->setTextAlignment(2 + c, Qt::AlignCenter);
-            if (r.n[c] > 0 && c < 3) {
-                it->setForeground(2 + c, catColour(c));
-                it->setFont(2 + c, bold);
-            }
-        }
+    const bool withRace = histRace() == 0 && races_.size() > 1;
+    for (const PilotRow &r : rows) {
+        QTreeWidgetItem *it = addPilotRow(r, withRace, bold);
         if (r.race == keepRace && r.pilot == keepPilot) keep = it;
     }
     // el que mas problemas ha tenido, resaltado (si alguno ha tenido)
-    const Row *worst = nullptr;
-    int pilots = 0;
-    QStringList clean;  // los que no han tenido ninguno
-    for (const Row &r : rows) {
-        if (r.pilot < 0) continue;
-        pilots++;
-        if (!worst) worst = &r;
-        if (score(r) == 0) clean << pilotLabel(r.race, r.pilot, withRace).toHtmlEscaped();
-    }
-    if (worst && score(*worst) > 0) {
+    const auto worst = std::find_if(rows.begin(), rows.end(), [](const PilotRow &r) { return r.pilot >= 0; });
+    if (worst != rows.end() && worst->score() > 0) {
         QTreeWidgetItem *w = pilotTable_->topLevelItem(0);
         for (int c = 0; c < pilotTable_->columnCount(); c++) w->setBackground(c, QColor(0xd9, 0x48, 0x3b, 50));
         w->setFont(0, bold);
         w->setToolTip(0, tr("The most trouble"));
-        const QString who = pilotLabel(worst->race, worst->pilot, withRace).toHtmlEscaped();
-        QString v = neverSeen(*worst) ? tr("Most trouble: <b>%1</b>: its pilot was never seen.").arg(who)
-                                      : tr("Most trouble: <b>%1</b>: %2 serious, %3 warning(s).")
-                                            .arg(who).arg(worst->n[0]).arg(worst->n[1]);
-        if (!clean.isEmpty()) v += QLatin1Char(' ') + tr("No trouble: %1.").arg(clean.join(QStringLiteral(", ")));
-        histVerdict_->setText(v);
-    } else {
-        histVerdict_->setText(pilots > 0 ? tr("No pilot had any trouble.") : QString());
     }
+    histVerdict_->setText(verdictText(rows, withRace));
     for (int c = 0; c < pilotTable_->columnCount(); c++) pilotTable_->resizeColumnToContents(c);
     if (!keep) keep = pilotTable_->topLevelItem(0);
     if (keep) pilotTable_->setCurrentItem(keep);
