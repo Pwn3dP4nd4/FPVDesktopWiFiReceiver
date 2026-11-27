@@ -220,12 +220,13 @@ void Radio::tune(double hz, int rate_sel) {
   s.wide = true;
   {
     std::lock_guard<std::mutex> l(_m);
-    // survey: fixed gain for the spectrum; the candidate check (_survey_cont) with the usual gain (AGC): a VTX
+    // survey: fixed gain for the spectrum; the candidate check (_pass) with the usual gain (AGC): a VTX
     // close by clips at the survey's fixed gain and its video never locks (measured: lock 0.08 vs 0.96)
-    const double g = _survey && !_survey_cont ? survey_gain(hz) : _gain_db;
+    const bool gapped = _survey && _pass == SurveyPass::Gapped;
+    const double g = gapped ? survey_gain(hz) : _gain_db;
     // survey: one bank at a time (cmake/kepyur_patches.cmake, set "gapped"): it needs no contiguous samples
     // and the chip then never misses a deadline while it retunes nonstop
-    s.allow_gapped = _survey && !_survey_cont;
+    s.allow_gapped = gapped;
     s.agc = g < 0;
     if (g >= 0) s.gain_db = g;
   }
@@ -263,7 +264,6 @@ void Radio::survey(double lo_hz, double hi_hz, bool spectrum_only) {
   }
   _sweep_start_ms = now_ms();
   _sweep_ms = 0;
-  _survey_cont = false;
   _survey_gain.clear();
   _survey_known.clear();
   _pilots.clear();
@@ -423,7 +423,8 @@ void Radio::dsp_loop() {
         }
         _step = 0;
         _cap.clear();
-        _settle = -1;
+        _phase = StepPhase::Retuned;
+        _pass = SurveyPass::Gapped;
         _cut_steps.clear();
         _whole_spans.clear();
         _scan_start_ms = now_ms();
@@ -688,146 +689,146 @@ void Radio::handle_scan(Bank &b) {
   if (_step >= _plan.size()) return;
   const double req = _plan[_step];
   if (std::fabs(b.centre_hz + b.shift_hz - req) > 1e3 || b.fs != kFs) return;
+  if (!capture(b)) return;
+  if (_phase == StepPhase::Spectrum && !spectrum_step(req)) return;
+  scan_step_done();
+}
+
+bool Radio::capture(const Bank &b) {
   // survey: the step taken again streaming, on the same frequency: banks still gapped are from before the change
-  if (_survey_cont && b.gapped) return;
-  if (_settle < 0) {
+  if (_pass != SurveyPass::Gapped && b.gapped) return false;
+  if (_phase == StepPhase::Retuned) {
+    _phase = StepPhase::Settling;
     _settle = kSettleBanks;
     _cap.clear();
-    _cap_need = static_cast<size_t>(kPsdSpan * kFs);  // first just enough for the spectrum
     _humps.clear();
   }
-  if (_settle > 0) {
-    _settle--;
-    _cap_last_seq = b.seq;
-    return;
+  if (_phase == StepPhase::Settling) {
+    if (_settle > 0) {
+      _settle--;
+      _cap_last_seq = b.seq;
+      return false;
+    }
+    _phase = StepPhase::Spectrum;  // first just enough for the spectrum
   }
   if (!_cap.empty() && b.seq != _cap_last_seq + 1) _cap.clear();  // a gap: start the capture over
   _cap_last_seq = b.seq;
   _cap_centre = b.centre_hz;
+  const size_t need = static_cast<size_t>((_phase == StepPhase::Spectrum ? kPsdSpan : kCapture) * kFs);
   const size_t ns = b.data.size() / 8;
   const uint8_t *p = b.data.data();
-  for (size_t i = 0; i < ns && _cap.size() < _cap_need; i++) {
+  for (size_t i = 0; i < ns && _cap.size() < need; i++) {
     uint64_t w;
     std::memcpy(&w, p + 8 * i, 8);
     _cap.emplace_back(static_cast<int16_t>(wsdr::la_i(w)), static_cast<int16_t>(wsdr::la_q(w)));
   }
-  if (_cap.size() < _cap_need) return;
-  if (_cap_need < static_cast<size_t>(kCapture * kFs)) {
-    // spectrum first: a step with no candidate is done now; otherwise keep capturing for the sync check
-    std::vector<cf> x(_cap.size());
-    for (size_t i = 0; i < _cap.size(); i++) x[i] = cf(_cap[i].real(), _cap[i].imag());
-    Psd psd(1024);
-    psd.add(x.data(), x.size());
-    const std::vector<float> psd_db = psd.db();
-    _humps = find_humps(psd_db, kFs, kEdge);
-    bool survey;
-    double floor_hint;
-    {
-      std::lock_guard<std::mutex> l(_m);
-      survey = _survey;
-      floor_hint = _grid.reference(_cap_centre);
-    }
-    // the survey streams gapped (one bank of ~0.2 ms, then a gap): fine for the spectrum, but the digital scan's
-    // timing (band_duty, tdd_frame) needs contiguous samples. A step with a block that may be digital is taken
-    // again streaming, as for the video sync check, and that capture replaces this one. Measured with a real DJI
-    // in R2: gapped, its 2.5 ms frame read as 1.28 ms (every burst and gap half as long) and it was never listed.
-    const bool gapped = survey && !_survey_cont;
-    bool spectrum_only;
-    {
-      std::lock_guard<std::mutex> l(_m);
-      spectrum_only = survey && _survey_spectrum_only;
-    }
-    // spectrum only (2.4 GHz): no video sync or digital checks, just the spectrum of every step
-    if (spectrum_only) _humps.clear();
-    if (_digital && !spectrum_only) _digital->analyse(psd_db, x.data(), x.size(), kFs, kEdge);
-    const bool digital_timing = gapped && !spectrum_only && _digital && _digital->wants_timing();
-    if (digital_timing) KP_LOGI("survey: %.1f MHz taken again streaming, for the digital scan", req / 1e6);
-    if (_survey_cont && _digital_only_recheck) _humps.clear();  // already checked: no second sync check
-    if (!survey) {  // the survey keeps its fixed steps: they tile its spectrum
-      for (const auto &h : _humps)  // whole here: an edge of it cut in another step needs no step of its own
-        _whole_spans.emplace_back(_cap_centre + h.offset_hz - h.width_hz / 2, _cap_centre + h.offset_hz + h.width_hz / 2);
-      add_cut_steps(psd_db);
-    }
-    if (survey && !_survey_cont) {  // (a step taken again to check a candidate is already counted)
-      double gain;
-      {
-        std::lock_guard<std::mutex> l(_m);
-        gain = survey_gain(req);
-      }
-      // measured gain dB under the survey's: back to its scale (the hint comes in that scale)
-      const double corr = kSurveyGainDb - gain;
-      // [-reach, +reach) of the centre; with a band (survey(lo, hi)), the end steps out to its edges
-      double from = -kSurveyReach, to = kSurveyReach, grid_lo;
-      {
-        std::lock_guard<std::mutex> l(_m);
-        grid_lo = _grid.lo_hz();
-        if (_survey_hi > _survey_lo) {
-          if (_step == 0) from = std::min(from, std::max(-kSurveyEdgeReach, _survey_lo - _cap_centre));
-          if (_step + 1 == _plan.size()) to = std::max(to, std::min(kSurveyEdgeReach, _survey_hi - _cap_centre));
-        }
-      }
-      SurveyStep st = survey_measure(x.data(), x.size(), _cap_centre, kFs, from, to, grid_lo,
-                                     floor_hint > 0 ? floor_hint / std::pow(10.0, corr / 10) : 0);
-      survey_scale(st, corr);
-      const bool clipped = st.clip > kSurveyClipMax;
-      std::lock_guard<std::mutex> l(_m);
-      const long key = std::lround(req / 1e3);
-      if (clipped && gain > kSurveyGainMin) {
-        // a strong signal close by clips the ADC: its spurious products would read as interference. Not
-        // counted; next sweep with less gain
-        _survey_gain[key] = std::max(kSurveyGainMin, gain - kSurveyGainStepDown);
-        KP_LOGI("survey: %.1f MHz clips (%.3f%% of samples): gain %.0f -> %.0f dB", req / 1e6, st.clip * 100.0,
-                gain, _survey_gain[key]);
-      } else {
-        if (_survey) _grid.merge(st);
-        if (!clipped && st.peak_abs < kSurveyRaiseUnder && gain < kSurveyGainDb)
-          _survey_gain[key] = std::min(kSurveyGainDb, gain + kSurveyGainStepUp);
-      }
-    }
-    if (!_humps.empty() && survey && !_survey_cont) {
-      // humps checked in the last few sweeps are not checked again: a pilot with video stays listed, a hump
-      // without (a spur of the chip) is left alone
-      bool known = true;
-      {
-        std::lock_guard<std::mutex> l(_m);
-        const int sw = _grid.sweeps();
-        for (const auto &h : _humps) {
-          const double mhz = (_cap_centre + h.offset_hz) / 1e6;
-          const auto k = std::find_if(_survey_known.begin(), _survey_known.end(), [&](const SurveyKnown &s) {
-            return std::fabs(s.mhz - mhz) < 3 && sw - s.sweep < kSurveyRecheckSweeps;
-          });
-          if (k == _survey_known.end()) {
-            known = false;
-            break;
-          }
-        }
-        if (known)
-          for (const auto &h : _humps) {
-            const double mhz = (_cap_centre + h.offset_hz) / 1e6;
-            for (auto &p : _pilots)
-              if (p.digital.empty() && std::fabs(p.mhz - mhz) < 4) p.seen_ms = now_ms();
-          }
-      }
-      if (known) _humps.clear();
-    }
-    if (gapped && (!_humps.empty() || digital_timing)) {
-      // the video sync check needs contiguous samples, and the survey streams gapped: the same step again,
-      // streaming (the humps are found again on its spectrum)
-      {
-        std::lock_guard<std::mutex> l(_m);
-        _survey_cont = true;
-      }
-      _digital_only_recheck = _humps.empty();
-      tune(req, 1);
-      _settle = -1;
-      return;
-    }
-    if (!_humps.empty()) {
-      _cap_need = static_cast<size_t>(kCapture * kFs);
-      return;
-    }
+  return _cap.size() >= need;
+}
+
+Radio::SurveyView Radio::survey_view(double req) const {
+  std::lock_guard<std::mutex> l(_m);
+  SurveyView v;
+  v.survey = _survey;
+  v.spectrum_only = _survey && _survey_spectrum_only;
+  v.floor_hint = _grid.reference(_cap_centre);
+  v.gain = survey_gain(req);
+  v.grid_lo = _grid.lo_hz();
+  v.lo = _survey_lo;
+  v.hi = _survey_hi;
+  return v;
+}
+
+bool Radio::spectrum_step(double req) {
+  // spectrum first: a step with no candidate is done now; otherwise keep capturing for the sync check
+  std::vector<cf> x(_cap.size());
+  for (size_t i = 0; i < _cap.size(); i++) x[i] = cf(_cap[i].real(), _cap[i].imag());
+  Psd psd(1024);
+  psd.add(x.data(), x.size());
+  const std::vector<float> psd_db = psd.db();
+  _humps = find_humps(psd_db, kFs, kEdge);
+  const SurveyView sv = survey_view(req);
+  // the survey streams gapped (one bank of ~0.2 ms, then a gap): fine for the spectrum, but the digital scan's
+  // timing (band_duty, tdd_frame) needs contiguous samples. A step with a block that may be digital is taken
+  // again streaming, as for the video sync check, and that capture replaces this one. Measured with a real DJI
+  // in R2: gapped, its 2.5 ms frame read as 1.28 ms (every burst and gap half as long) and it was never listed.
+  const bool gapped = sv.survey && _pass == SurveyPass::Gapped;
+  // spectrum only (2.4 GHz): no video sync or digital checks, just the spectrum of every step
+  if (sv.spectrum_only) _humps.clear();
+  if (_digital && !sv.spectrum_only) _digital->analyse(psd_db, x.data(), x.size(), kFs, kEdge);
+  const bool digital_timing = gapped && !sv.spectrum_only && _digital && _digital->wants_timing();
+  if (digital_timing) KP_LOGI("survey: %.1f MHz taken again streaming, for the digital scan", req / 1e6);
+  if (_pass == SurveyPass::DigitalRecheck) _humps.clear();  // already checked: no second sync check
+  if (!sv.survey) {  // the survey keeps its fixed steps: they tile its spectrum
+    for (const auto &h : _humps)  // whole here: an edge of it cut in another step needs no step of its own
+      _whole_spans.emplace_back(_cap_centre + h.offset_hz - h.width_hz / 2, _cap_centre + h.offset_hz + h.width_hz / 2);
+    add_cut_steps(psd_db);
   }
-  scan_step_done();
+  if (gapped) {  // (a step taken again to check a candidate is already counted)
+    survey_step(x, req, sv);
+    skip_known_humps();
+  }
+  if (gapped && (!_humps.empty() || digital_timing)) {
+    // the video sync check needs contiguous samples, and the survey streams gapped: the same step again,
+    // streaming (the humps are found again on its spectrum)
+    _pass = _humps.empty() ? SurveyPass::DigitalRecheck : SurveyPass::Recheck;
+    tune(req, 1);
+    _phase = StepPhase::Retuned;
+    return false;
+  }
+  if (!_humps.empty()) {
+    _phase = StepPhase::SyncCheck;
+    return false;
+  }
+  return true;
+}
+
+void Radio::survey_step(const std::vector<cf> &x, double req, const SurveyView &sv) {
+  // measured gain dB under the survey's: back to its scale (the hint comes in that scale)
+  const double corr = kSurveyGainDb - sv.gain;
+  // [-reach, +reach) of the centre; with a band (survey(lo, hi)), the end steps out to its edges
+  double from = -kSurveyReach, to = kSurveyReach;
+  if (sv.hi > sv.lo) {
+    if (_step == 0) from = std::min(from, std::max(-kSurveyEdgeReach, sv.lo - _cap_centre));
+    if (_step + 1 == _plan.size()) to = std::max(to, std::min(kSurveyEdgeReach, sv.hi - _cap_centre));
+  }
+  SurveyStep st = survey_measure(x.data(), x.size(), _cap_centre, kFs, from, to, sv.grid_lo,
+                                 sv.floor_hint > 0 ? sv.floor_hint / std::pow(10.0, corr / 10) : 0);
+  survey_scale(st, corr);
+  const bool clipped = st.clip > kSurveyClipMax;
+  std::lock_guard<std::mutex> l(_m);
+  const long key = std::lround(req / 1e3);
+  if (clipped && sv.gain > kSurveyGainMin) {
+    // a strong signal close by clips the ADC: its spurious products would read as interference. Not
+    // counted; next sweep with less gain
+    _survey_gain[key] = std::max(kSurveyGainMin, sv.gain - kSurveyGainStepDown);
+    KP_LOGI("survey: %.1f MHz clips (%.3f%% of samples): gain %.0f -> %.0f dB", req / 1e6, st.clip * 100.0,
+            sv.gain, _survey_gain[key]);
+  } else {
+    if (_survey) _grid.merge(st);
+    if (!clipped && st.peak_abs < kSurveyRaiseUnder && sv.gain < kSurveyGainDb)
+      _survey_gain[key] = std::min(kSurveyGainDb, sv.gain + kSurveyGainStepUp);
+  }
+}
+
+void Radio::skip_known_humps() {
+  if (_humps.empty()) return;
+  // humps checked in the last few sweeps are not checked again: a pilot with video stays listed, a hump
+  // without (a spur of the chip) is left alone
+  std::lock_guard<std::mutex> l(_m);
+  const int sw = _grid.sweeps();
+  for (const auto &h : _humps) {
+    const double mhz = (_cap_centre + h.offset_hz) / 1e6;
+    const auto k = std::find_if(_survey_known.begin(), _survey_known.end(), [&](const SurveyKnown &s) {
+      return std::fabs(s.mhz - mhz) < 3 && sw - s.sweep < kSurveyRecheckSweeps;
+    });
+    if (k == _survey_known.end()) return;
+  }
+  for (const auto &h : _humps) {
+    const double mhz = (_cap_centre + h.offset_hz) / 1e6;
+    for (auto &p : _pilots)
+      if (p.digital.empty() && std::fabs(p.mhz - mhz) < 4) p.seen_ms = now_ms();
+  }
+  _humps.clear();
 }
 
 // find_humps lists only humps whole inside the step's +-kEdge. With steps kStep apart that is sure only up to
@@ -860,17 +861,12 @@ void Radio::add_cut_steps(const std::vector<float> &psd_db) {
 void Radio::scan_step_done() {
   const double centre = _cap_centre;  // the samples are centred on the hardware centre, not the request
   // start the next retune now; the chip settles while this step is analysed
-  bool recheck;
-  {
-    std::lock_guard<std::mutex> l(_m);
-    recheck = _survey_cont;
-    _survey_cont = false;  // survey: back to gapped
-    _digital_only_recheck = false;
-  }
+  const bool recheck = _pass != SurveyPass::Gapped;
+  _pass = SurveyPass::Gapped;  // survey: back to gapped
   _step++;
   if (_step < _plan.size()) {
     tune(_plan[_step], 1);
-    _settle = -1;
+    _phase = StepPhase::Retuned;
   }
   std::vector<cf> x(_humps.empty() ? 0 : _cap.size());
   for (size_t i = 0; i < x.size(); i++) x[i] = cf(_cap[i].real(), _cap[i].imag());
@@ -979,7 +975,7 @@ void Radio::scan_step_done() {
   _cap.clear();
   if (restart) {
     _step = 0;
-    _settle = -1;
+    _phase = StepPhase::Retuned;
     if (_digital) _digital->reset();
     tune(_plan[0], 1);
   }

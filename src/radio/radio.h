@@ -119,6 +119,21 @@ private:
   void record_bank(const Bank &b);
   void abort_record(const char *why);
   void handle_scan(Bank &b);
+  // ---- handle_scan(), por partes (DSP thread) ----
+  // The step's samples: after a retune, kSettleBanks banks are dropped while the chip settles; then contiguous
+  // banks up to what _phase needs (a gap starts the capture over). true: the capture is complete
+  bool capture(const Bank &b);
+  // What the spectrum step reads of the survey, in one lock
+  struct SurveyView {
+    bool survey = false, spectrum_only = false;
+    double floor_hint = 0, gain = 0, grid_lo = 0, lo = 0, hi = 0;
+  };
+  SurveyView survey_view(double req) const;
+  // The step's spectrum (the first kPsdSpan): its candidates (humps), the survey's measure and the digital scan.
+  // true: the step is done now; false: it goes on (a sync check of its candidates, or the same step again streaming)
+  bool spectrum_step(double req);
+  void survey_step(const std::vector<cf> &x, double req, const SurveyView &sv);  // measure and merge into _grid
+  void skip_known_humps();  // survey: humps checked in the last few sweeps, not again
   void handle_test(Bank &b);
   void scan_step_done();
   void add_cut_steps(const std::vector<float> &psd_db);
@@ -190,10 +205,17 @@ private:
   // scan
   std::vector<double> _plan;
   size_t _step = 0;
+  // What the scan does with the banks of the current step
+  enum class StepPhase {
+    Retuned,    // just retuned: the next bank starts the step
+    Settling,   // dropping _settle more banks while the chip settles
+    Spectrum,   // capturing kPsdSpan for the spectrum
+    SyncCheck,  // the spectrum has candidates: capturing kCapture for the video sync check
+  };
+  StepPhase _phase = StepPhase::Retuned;
   int _settle = 0;
   uint64_t _cap_last_seq = 0;
   std::vector<std::complex<int16_t>> _cap;
-  size_t _cap_need = 0;
   double _cap_centre = 0;
   std::vector<Hump> _humps;  // this step's candidates (from the first kPsdSpan of the capture)  // hardware centre of the capture (humps are measured from it)
   double _resume_hz = 0;
@@ -208,8 +230,11 @@ private:
   bool _survey_spectrum_only = false;   // survey(): only the spectrum (under _m)
   double _survey_lo = 0, _survey_hi = 0;  // survey(): the band (Hz; 0 = the default grid) (under _m)
   SurveyGrid _grid;
-  bool _survey_cont = false;  // survey: this step taken again streaming, to check a candidate (under _m)
-  bool _digital_only_recheck = false;  // survey: taken again only for the digital scan's timing (no new humps)
+  // survey: how this step is taken (DSP thread; tune() reads it). Gapped: one bank at a time, for the spectrum;
+  // Recheck: again streaming, to check its candidates; DigitalRecheck: again streaming only for the digital scan's
+  // timing (no new humps)
+  enum class SurveyPass { Gapped, Recheck, DigitalRecheck };
+  SurveyPass _pass = SurveyPass::Gapped;
   std::map<long, double> _survey_gain;  // survey: gain per step (kHz -> dB), lowered where it clips (under _m)
   struct SurveyKnown {  // survey: a hump already checked (video or not), not checked again for a few sweeps
     double mhz;
