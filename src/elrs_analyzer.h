@@ -4,6 +4,8 @@
 #include <QHash>
 #include <QFontMetrics>
 #include <QMap>
+#include <QPixmap>
+#include <QVector>
 
 #include <algorithm>
 
@@ -13,6 +15,7 @@
 
 class QCheckBox;
 class QComboBox;
+class QGridLayout;
 class QHBoxLayout;
 class QLabel;
 class QPushButton;
@@ -91,6 +94,7 @@ private:
     // ---- el constructor, por bloques de la ventana ----
     QHBoxLayout *buildControls();
     QWidget *buildGraph();
+    int addLegendRow(QGridLayout *legend, int row, const QVector<QPixmap> &swatches);
     QWidget *buildBottom();
     void connectSettings();
     void retranslate();
