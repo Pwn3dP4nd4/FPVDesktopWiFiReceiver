@@ -745,32 +745,14 @@ void ChannelAnalyzer::addPilotsPanel(QVBoxLayout *side) {
     g->addWidget(nHdz_, 1, 1);
     narrow_ = new QCheckBox;
     narrow_->setChecked(appSettings().value("analyzer/narrow", false).toBool());
-    connect(narrow_, &QCheckBox::toggled, this, [this](bool on) {
-        appSettings().setValue("analyzer/narrow", on);
-        // los HDZero fijados cambian de ancho: el seguimiento tiene que usar el mismo que la recomendacion. Solo
-        // vuelven a empezar ellos; lo de los analogicos sigue
-        if (raceOn_) {
-            moves_.clear();
-            const auto pins = pinnedCandidates();
-            const auto &hs = race_.health();
-            for (int i = 0; i < static_cast<int>(pins.size()) && i < static_cast<int>(hs.size()); i++)
-                if (pins[i].hdzero) race_.moved(i, pins[i]);
-        }
-        recompute();
-        updateRace();
-    });
+    connect(narrow_, &QCheckBox::toggled, this, &ChannelAnalyzer::narrowChanged);
     g->addWidget(narrow_, 2, 0, 1, 2);
     regionLbl_ = new QLabel;
     region_ = new QComboBox;
     region_->addItem(QString(), 0);  // UE
     region_->addItem(QString(), 1);  // EE. UU. y otros
     region_->setCurrentIndex(qBound(0, appSettings().value("analyzer/region", defaultRegion()).toInt(), 1));
-    connect(region_, &QComboBox::currentIndexChanged, this, [this] {
-        appSettings().setValue("analyzer/region", region_->currentData().toInt());
-        wifiMem_.reset();  // los bloques cambian: se vuelve a aprender con el ultimo barrido
-        feedWifi();
-        recompute();
-    });
+    connect(region_, &QComboBox::currentIndexChanged, this, &ChannelAnalyzer::regionChanged);
     g->addWidget(regionLbl_, 3, 0);
     g->addWidget(region_, 3, 1);
     memoryLbl_ = new QLabel;
@@ -784,6 +766,29 @@ void ChannelAnalyzer::addPilotsPanel(QVBoxLayout *side) {
     });
 
     side->addLayout(g);
+}
+
+// modo estrecho de HDZero: los HDZero fijados cambian de ancho y el seguimiento tiene que usar el mismo que la
+// recomendacion. Solo vuelven a empezar ellos; lo de los analogicos sigue
+void ChannelAnalyzer::narrowChanged(bool on) {
+    appSettings().setValue("analyzer/narrow", on);
+    if (raceOn_) {
+        moves_.clear();
+        const auto pins = pinnedCandidates();
+        const auto &hs = race_.health();
+        for (int i = 0; i < static_cast<int>(pins.size()) && i < static_cast<int>(hs.size()); i++)
+            if (pins[i].hdzero) race_.moved(i, pins[i]);
+    }
+    recompute();
+    updateRace();
+}
+
+// normas WiFi (UE / EE. UU.): los bloques cambian, se vuelve a aprender con el ultimo barrido
+void ChannelAnalyzer::regionChanged() {
+    appSettings().setValue("analyzer/region", region_->currentData().toInt());
+    wifiMem_.reset();
+    feedWifi();
+    recompute();
 }
 
 // panel de la izquierda: bandas, pilotos, en el aire, Empezar y el estado
