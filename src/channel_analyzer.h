@@ -16,6 +16,7 @@
 #include "survey_session.h"
 
 class QCheckBox;
+class QFont;
 class QComboBox;
 class QListWidget;
 class QLabel;
@@ -179,6 +180,10 @@ private:
     void setRace(bool on, const QString &why = QString());
     void updateRaceControls();
     void updateRace();  // panel de carrera
+    void refreshMoves();  // moves_: las recomendaciones de mover de ahora (las mostradas se mantienen si siguen valiendo)
+    // fila i de la tabla de la carrera; worst: resaltada (el peor video). false: su recomendacion no es OK
+    bool addRaceRow(int i, bool worst, const QFont &bold);
+    QString raceAdviceText(bool allOk) const;  // bajo la tabla: los cambios a hacer, o que no hace falta ninguno
     void applyMoves(const std::vector<race::Move> &moves);  // fija los canales nuevos (Aplicar)
     // las de moves que siguen entre las recomendaciones de ahora (mismo piloto y canal nuevo) con la carrera en marcha:
     // un menu abierto mientras llegan barridos no aplica una ya pasada

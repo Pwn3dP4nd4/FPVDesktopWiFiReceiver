@@ -2063,75 +2063,80 @@ QString ChannelAnalyzer::raceStateText() const {
     return tr("Following %n pinned channel(s): %1 sweeps.", nullptr, n).arg(sw);
 }
 
-void ChannelAnalyzer::updateRace() {
-    if (!raceTable_) return;
-    updateRaceControls();
-    const auto &hs = race_.health();
-    const int worst = race_.worst();
-    const int n = static_cast<int>(hs.size()), sw = race_.sweeps();
+void ChannelAnalyzer::refreshMoves() {
     // las recomendaciones (una por canal): las que se estan mostrando se mantienen mientras sigan valiendo (no
     // cambian de canal por poco entre barridos)
     const std::vector<race::Move> prev = moves_;
     moves_.clear();
-    if (raceOn_) {
-        for (const auto &m : race_.suggest_all(analogCands(), hdzCands(), prev))
-            if (m.from >= 0 && m.from < n && m.from < pinned_.size()) moves_.push_back(m);
-    }
+    if (!raceOn_) return;
+    const int n = static_cast<int>(race_.health().size());
+    for (const auto &m : race_.suggest_all(analogCands(), hdzCands(), prev))
+        if (m.from >= 0 && m.from < n && m.from < pinned_.size()) moves_.push_back(m);
+}
 
-    raceTable_->clear();
-    QFont bold = raceTable_->font();
-    bold.setBold(true);
-    bool allOk = true;
-    for (int i = 0; i < n; i++) {
-        const race::ChannelHealth &h = hs[i];
-        auto *it = new QTreeWidgetItem(raceTable_);
-        it->setIcon(0, pinIcon(h.ch.hdzero ? kHdzColour : kAnalogColour));
-        it->setText(0, chName(h.ch));
-        it->setText(1, QString::number(h.ch.mhz, 'f', 0));
-        if (h.seen > 0) {
-            it->setText(2, QStringLiteral("%1 / %2 dB").arg(h.snr_med, 0, 'f', 0).arg(h.snr_low, 0, 'f', 0));
-            it->setText(6, QStringLiteral("%1 dB").arg(h.quality, 0, 'f', 0));
-        } else {
-            it->setText(2, h.sweeps > 0 ? tr("not seen") : QStringLiteral("-"));
-            it->setText(6, QStringLiteral("-"));
-        }
-        it->setText(3, QString::number(h.lost));
-        it->setText(4, QStringLiteral("%1 %").arg(h.sweeps > 0 ? qRound(100.0 * h.intruders / h.sweeps) : 0));
-        it->setText(5, QStringLiteral("%1 dB").arg(h.channel_cost, 0, 'f', 1));
-        QString rec, tip;
-        QColor col;
-        bool noBetter = false;
-        rowAdvice(i, rec, tip, col, noBetter);
-        if (noBetter_.size() < n) noBetter_.resize(n);
-        noBetter_[i] = noBetter;
-        if (!rec.isEmpty() && col != QColor(0x3a, 0xa8, 0x5a)) allOk = false;
-        logRaceRow(i, rec, tip, col);
-        it->setText(7, rec);
-        if (!tip.isEmpty()) it->setToolTip(7, tip);
-        if (col.isValid()) it->setForeground(7, col);
-        it->setFont(7, bold);
-        if (i == worst && n > 1) {
-            for (int c = 0; c < raceTable_->columnCount(); c++) {
-                it->setBackground(c, QColor(0xd9, 0x48, 0x3b, 50));
-                if (c != 7) it->setFont(c, bold);
-            }
-            it->setToolTip(0, tr("The worst video so far"));
-        }
+bool ChannelAnalyzer::addRaceRow(int i, bool worst, const QFont &bold) {
+    const race::ChannelHealth &h = race_.health()[i];
+    auto *it = new QTreeWidgetItem(raceTable_);
+    it->setIcon(0, pinIcon(h.ch.hdzero ? kHdzColour : kAnalogColour));
+    it->setText(0, chName(h.ch));
+    it->setText(1, QString::number(h.ch.mhz, 'f', 0));
+    if (h.seen > 0) {
+        it->setText(2, QStringLiteral("%1 / %2 dB").arg(h.snr_med, 0, 'f', 0).arg(h.snr_low, 0, 'f', 0));
+        it->setText(6, QStringLiteral("%1 dB").arg(h.quality, 0, 'f', 0));
+    } else {
+        it->setText(2, h.sweeps > 0 ? tr("not seen") : QStringLiteral("-"));
+        it->setText(6, QStringLiteral("-"));
     }
-    for (int c = 0; c < 7; c++) raceTable_->resizeColumnToContents(c);
-    raceState_->setText(raceStateText());
+    it->setText(3, QString::number(h.lost));
+    it->setText(4, QStringLiteral("%1 %").arg(h.sweeps > 0 ? qRound(100.0 * h.intruders / h.sweeps) : 0));
+    it->setText(5, QStringLiteral("%1 dB").arg(h.channel_cost, 0, 'f', 1));
+    QString rec, tip;
+    QColor col;
+    bool noBetter = false;
+    rowAdvice(i, rec, tip, col, noBetter);
+    if (noBetter_.size() <= i) noBetter_.resize(static_cast<int>(race_.health().size()));
+    noBetter_[i] = noBetter;
+    logRaceRow(i, rec, tip, col);
+    it->setText(7, rec);
+    if (!tip.isEmpty()) it->setToolTip(7, tip);
+    if (col.isValid()) it->setForeground(7, col);
+    it->setFont(7, bold);
+    if (worst) {
+        for (int c = 0; c < raceTable_->columnCount(); c++) {
+            it->setBackground(c, QColor(0xd9, 0x48, 0x3b, 50));
+            if (c != 7) it->setFont(c, bold);
+        }
+        it->setToolTip(0, tr("The worst video so far"));
+    }
+    return rec.isEmpty() || col == QColor(0x3a, 0xa8, 0x5a);  // OK (verde) o sin nada que decir
+}
 
-    // abajo, el resumen: los cambios a hacer (todos a la vez son compatibles) o que no hace falta ninguno
-    QString adv;
+QString ChannelAnalyzer::raceAdviceText(bool allOk) const {
+    // los cambios a hacer (todos a la vez son compatibles) o que no hace falta ninguno
     if (!moves_.empty()) {
         QStringList l;
         for (const auto &m : moves_)
-            l << QStringLiteral("<b>%1</b> → <b>%2</b>").arg(chName(hs[m.from].ch), chName(m.to));
-        adv = tr("Change: %1. Tell the pilots, then Apply.").arg(l.join(QStringLiteral(", ")));
-    } else if (raceOn_ && sw >= race::kMinSweeps && worst >= 0 && allOk) {
-        adv = tr("No change needed: no pilot would clearly do better on another free channel.");
+            l << QStringLiteral("<b>%1</b> → <b>%2</b>").arg(chName(race_.health()[m.from].ch), chName(m.to));
+        return tr("Change: %1. Tell the pilots, then Apply.").arg(l.join(QStringLiteral(", ")));
     }
-    raceAdvice_->setText(adv);
+    if (raceOn_ && race_.sweeps() >= race::kMinSweeps && race_.worst() >= 0 && allOk)
+        return tr("No change needed: no pilot would clearly do better on another free channel.");
+    return QString();
+}
+
+void ChannelAnalyzer::updateRace() {
+    if (!raceTable_) return;
+    updateRaceControls();
+    refreshMoves();
+    raceTable_->clear();
+    QFont bold = raceTable_->font();
+    bold.setBold(true);
+    const int n = static_cast<int>(race_.health().size()), worst = race_.worst();
+    bool allOk = true;
+    for (int i = 0; i < n; i++) allOk = addRaceRow(i, i == worst && n > 1, bold) && allOk;
+    for (int c = 0; c < 7; c++) raceTable_->resizeColumnToContents(c);
+    raceState_->setText(raceStateText());
+    raceAdvice_->setText(raceAdviceText(allOk));
     if (raceOn_) {
         history_->syncHealth(race_.health());
         if (tabs_->currentIndex() == 2) history_->refreshPilots();  // su video, en vivo
