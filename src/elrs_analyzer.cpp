@@ -431,6 +431,7 @@ QWidget *ElrsAnalyzer::buildBottom() {
     detectedTitle_ = new QLabel;
     detectedTitle_->setFont(bold);
     detected_ = new QTreeWidget;
+    detected_->setObjectName(QStringLiteral("detected"));
     detected_->setRootIsDecorated(false);
     detected_->setColumnCount(4);
     detected_->header()->setSectionResizeMode(QHeaderView::ResizeToContents);
@@ -760,6 +761,19 @@ QString ElrsAnalyzer::verdictText() const {
 
 void ElrsAnalyzer::updateDetected() {
     const double t = session_.now();
+    holdReport(t);
+    // lo que lleva un rato sin verse, fuera (al parar, se queda lo ultimo)
+    if (session_.running())
+        for (auto it = run_.held.begin(); it != run_.held.end();)
+            it = t - it->seen > kKeepS ? run_.held.erase(it) : std::next(it);
+    QStringList keys = run_.held.keys();
+    if (keys.isEmpty() && run_.report.measured > 0) keys << QStringLiteral("z:none");
+    if (keys != run_.shownKeys) setDetectedRows(keys, t);
+    showDetectedTexts(keys, t);
+}
+
+// lo que dice el ultimo informe, en run_.held (una fila por clave; el orden de las claves es el de la lista)
+void ElrsAnalyzer::holdReport(double t) {
     const auto put = [&](const QString &key, const QStringList &cols, const QColor &colour) {
         run_.held[key] = Held{cols, colour, t};
     };
@@ -793,25 +807,25 @@ void ElrsAnalyzer::updateDetected() {
             break;
         }
     }
-    // lo que lleva un rato sin verse, fuera (al parar, se queda lo ultimo)
+}
+
+// otras filas: rehacer la lista (conservando el desplazamiento); los textos los pone showDetectedTexts
+void ElrsAnalyzer::setDetectedRows(const QStringList &keys, double t) {
     if (session_.running())
-        for (auto it = run_.held.begin(); it != run_.held.end();)
-            it = t - it->seen > kKeepS ? run_.held.erase(it) : std::next(it);
-    QStringList keys = run_.held.keys();
-    if (keys.isEmpty() && run_.report.measured > 0) keys << QStringLiteral("z:none");
-    if (keys != run_.shownKeys) {  // otras filas: rehacer la lista (conservando el desplazamiento)
-        if (session_.running())
-            KP_LOGI("elrs: en el aire a los %.0f s: %s", t, qUtf8Printable(keys.join(QLatin1Char(' '))));
-        const int scroll = detected_->verticalScrollBar()->value();
-        detected_->clear();
-        for (const auto &k : keys) {
-            auto *it = new QTreeWidgetItem(detected_);
-            if (k == QLatin1String("z:none")) it->setText(0, tr("Nothing besides noise"));
-        }
-        detected_->verticalScrollBar()->setValue(scroll);
-        run_.shownKeys = keys;
+        KP_LOGI("elrs: en el aire a los %.0f s: %s", t, qUtf8Printable(keys.join(QLatin1Char(' '))));
+    const int scroll = detected_->verticalScrollBar()->value();
+    detected_->clear();
+    for (const auto &k : keys) {
+        auto *it = new QTreeWidgetItem(detected_);
+        if (k == QLatin1String("z:none")) it->setText(0, tr("Nothing besides noise"));
     }
-    for (int r = 0; r < keys.size(); r++) {  // y los textos, en su sitio
+    detected_->verticalScrollBar()->setValue(scroll);
+    run_.shownKeys = keys;
+}
+
+// los textos de cada fila, en su sitio (solo los que cambian); lo visto hace un rato, mas tenue
+void ElrsAnalyzer::showDetectedTexts(const QStringList &keys, double t) {
+    for (int r = 0; r < keys.size(); r++) {
         const auto it = run_.held.constFind(keys[r]);
         if (it == run_.held.constEnd()) continue;
         QTreeWidgetItem *item = detected_->topLevelItem(r);
@@ -820,7 +834,6 @@ void ElrsAnalyzer::updateDetected() {
                 item->setText(c, it->cols[c]);
                 item->setToolTip(c, it->cols[c]);  // una columna estrecha corta el texto
             }
-        if (it->colour.isValid()) item->setForeground(0, it->colour);
         // visto hace un rato (no en este barrido): mas tenue
         const bool stale = t - it->seen > kDimS;
         for (int c = 0; c < 4; c++) {

@@ -94,10 +94,12 @@ RaceHistory::RaceHistory(QWidget *parent) : QWidget(parent) {
         auto *rv = new QVBoxLayout(right);
         rv->setContentsMargins(0, 0, 0, 0);
         pilotInfo_ = new QLabel;
+        pilotInfo_->setObjectName(QStringLiteral("historyPilotInfo"));
         pilotInfo_->setWordWrap(true);
         pilotInfo_->setTextFormat(Qt::RichText);
         rv->addWidget(pilotInfo_);
         pilotEvents_ = new QTreeWidget;
+        pilotEvents_->setObjectName(QStringLiteral("historyEvents"));
         pilotEvents_->setColumnCount(3);
         pilotEvents_->header()->setStretchLastSection(true);
         pilotEvents_->setWordWrap(true);
@@ -445,36 +447,52 @@ void RaceHistory::showPilotEvents() {
     const int nowRace = now ? now->data(0, Qt::UserRole).toInt() : -1;
     const int nowPilot = now ? now->data(0, Qt::UserRole + 1).toInt() : -2;
     const bool same = now && nowRace == shownRace_ && nowPilot == shownPilot_ &&
-                      pilotEvents_->topLevelItemCount() == 4;
-    bool wasOpen[4] = {}, wasEmpty[4] = {};
+                      pilotEvents_->topLevelItemCount() == kGroups;
+    const GroupsShown was = same ? groupsShown() : GroupsShown{};
     const int eventsScroll = pilotEvents_->verticalScrollBar()->value();
-    if (same)
-        for (int c = 0; c < 4; c++) {
-            wasOpen[c] = pilotEvents_->topLevelItem(c)->isExpanded();
-            wasEmpty[c] = pilotEvents_->topLevelItem(c)->childCount() == 0;
-        }
     shownRace_ = nowRace;
     shownPilot_ = nowPilot;
     pilotEvents_->clear();
     pilotInfo_->clear();
     if (!now) return;
-    const RaceRec *rr = raceRec(nowRace);
-    QString info = QStringLiteral("<b>%1</b>").arg(pilotLabel(nowRace, nowPilot, true).toHtmlEscaped());
-    if (rr && nowPilot >= 0 && nowPilot < rr->pilots.size())
-        info += QStringLiteral(": ") + healthText(rr->pilots[nowPilot].health, true).toHtmlEscaped();
+    showPilotInfo(nowRace, nowPilot);
+    const std::array<int, kGroups> count = addPilotEvents(nowRace, nowPilot);
+    setGroupStates(count, same ? &was : nullptr);
+    sizeEventColumns();
+    if (same) pilotEvents_->verticalScrollBar()->setValue(eventsScroll);
+}
+
+RaceHistory::GroupsShown RaceHistory::groupsShown() const {
+    GroupsShown g;
+    for (int c = 0; c < kGroups; c++) {
+        g.open[c] = pilotEvents_->topLevelItem(c)->isExpanded();
+        g.empty[c] = pilotEvents_->topLevelItem(c)->childCount() == 0;
+    }
+    return g;
+}
+
+void RaceHistory::showPilotInfo(int race, int pilot) {
+    const RaceRec *rr = raceRec(race);
+    QString info = QStringLiteral("<b>%1</b>").arg(pilotLabel(race, pilot, true).toHtmlEscaped());
+    if (rr && pilot >= 0 && pilot < rr->pilots.size())
+        info += QStringLiteral(": ") + healthText(rr->pilots[pilot].health, true).toHtmlEscaped();
     pilotInfo_->setText(info);
+}
+
+// un grupo por categoria (aun sin texto) y en cada uno los eventos del piloto; devuelve cuantos hay en cada grupo
+std::array<int, RaceHistory::kGroups> RaceHistory::addPilotEvents(int race, int pilot) {
     QFont bold = pilotEvents_->font();
     bold.setBold(true);
-    QTreeWidgetItem *cats[4] = {};
-    int count[4] = {0, 0, 0, 0};
-    for (int c = 0; c < 4; c++) {
+    QTreeWidgetItem *cats[kGroups] = {};
+    for (int c = 0; c < kGroups; c++) {
         cats[c] = new QTreeWidgetItem(pilotEvents_);
         cats[c]->setFont(0, bold);
         cats[c]->setForeground(0, catColour(c));
         cats[c]->setFirstColumnSpanned(true);
     }
+    std::array<int, kGroups> count{};
     for (const RaceEvent &e : events_) {
-        if (e.race != nowRace || e.pilot != nowPilot) continue;
+        if (e.race != race || e.pilot != pilot) continue;
         const int c = static_cast<int>(category(e.kind));
         count[c]++;
         auto *it = new QTreeWidgetItem(cats[c]);
@@ -486,28 +504,36 @@ void RaceHistory::showPilotEvents() {
         it->setToolTip(2, e.detail);
         if (e.kind == Ev::Ok) it->setForeground(0, QColor(0x3a, 0xa8, 0x5a));
     }
-    for (int c = 0; c < 4; c++) {
-        cats[c]->setText(0, QStringLiteral("%1 (%2)").arg(catName(Cat(c))).arg(count[c]));
+    return count;
+}
+
+// el texto de cada grupo con su cuenta, los vacios atenuados, y cuales abiertos: los problemas abiertos y la
+// informacion (OK, resumenes) cerrada, salvo que el usuario los haya dejado de otra forma (was: el mismo piloto)
+void RaceHistory::setGroupStates(const std::array<int, kGroups> &count, const GroupsShown *was) {
+    for (int c = 0; c < kGroups; c++) {
+        QTreeWidgetItem *cat = pilotEvents_->topLevelItem(c);
+        cat->setText(0, QStringLiteral("%1 (%2)").arg(catName(Cat(c))).arg(count[c]));
         if (count[c] == 0) {
             QColor dim = pilotEvents_->palette().color(QPalette::Text);  // Disabled no siempre se distingue (oscuro)
             dim.setAlpha(110);
-            cats[c]->setForeground(0, dim);
-            cats[c]->setFont(0, pilotEvents_->font());
-            cats[c]->setFlags(cats[c]->flags() & ~Qt::ItemIsSelectable);
+            cat->setForeground(0, dim);
+            cat->setFont(0, pilotEvents_->font());
+            cat->setFlags(cat->flags() & ~Qt::ItemIsSelectable);
         }
-        // los problemas abiertos; la informacion (OK, resumenes), cerrada
         // un grupo que estaba vacio y ahora tiene algo, como si fuera nuevo
         const bool byDefault = count[c] > 0 && c != static_cast<int>(Cat::Info);
-        cats[c]->setExpanded(same && !wasEmpty[c] ? wasOpen[c] : byDefault);
+        cat->setExpanded(was && !was->empty[c] ? was->open[c] : byDefault);
     }
-    // con los grupos cerrados no se mide lo de dentro: un minimo para que no salga estrecha
+}
+
+// con los grupos cerrados no se mide lo de dentro: un minimo para que no salga estrecha
+void RaceHistory::sizeEventColumns() {
     const QFontMetrics fm(pilotEvents_->font());
     pilotEvents_->resizeColumnToContents(0);
     pilotEvents_->setColumnWidth(0, std::max(pilotEvents_->columnWidth(0), fm.horizontalAdvance(QLatin1Char('M')) * 18));
     pilotEvents_->resizeColumnToContents(1);
     pilotEvents_->setColumnWidth(1, std::max(pilotEvents_->columnWidth(1),
                                              fm.horizontalAdvance(QStringLiteral("+00:00  "))));
-    if (same) pilotEvents_->verticalScrollBar()->setValue(eventsScroll);
 }
 
 QString RaceHistory::healthText(const race::ChannelHealth &h, bool summary) {

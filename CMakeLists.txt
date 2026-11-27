@@ -132,7 +132,7 @@ set(KP_GUI_SRC
   src/channel_analyzer.cpp src/channel_analyzer.h src/channel_advisor.cpp src/channel_advisor.h
   src/elrs_analyzer.cpp src/elrs_analyzer.h src/elrs_advisor.cpp src/elrs_advisor.h
   src/race_monitor.cpp src/race_monitor.h src/race_history.cpp src/race_history.h src/analyzer_style.h
-  src/channel_names.cpp src/channel_names.h
+  src/channel_names.cpp src/channel_names.h src/status_text.cpp src/status_text.h
   src/i18n.cpp src/i18n.h
   src/app_settings.h src/survey_session.h
   src/video_recorder.cpp src/video_recorder.h src/video_encoder.h src/video_params.cpp
@@ -294,6 +294,12 @@ add_executable(radio_status_test EXCLUDE_FROM_ALL test/radio_status_test.cpp src
                src/backend.h)
 target_include_directories(radio_status_test PRIVATE src)
 target_link_libraries(radio_status_test PRIVATE Qt6::Gui)
+
+# Textos del estado de la radio en la ventana principal (OSD e info): --target status_text_test
+add_executable(status_text_test EXCLUDE_FROM_ALL test/status_text_test.cpp src/status_text.cpp src/status_text.h
+               src/channel_names.cpp src/backend.h)
+target_include_directories(status_text_test PRIVATE src)
+target_link_libraries(status_text_test PRIVATE Qt6::Gui kepyur_dsp)
 
 # Captura de la ventana principal con el backend de demo: QT_QPA_PLATFORM=offscreen main_window_shot salida.png [s]
 add_executable(main_window_shot EXCLUDE_FROM_ALL test/main_window_shot.cpp ${KP_GUI_SRC} ${KP_VIDEO_SRC})

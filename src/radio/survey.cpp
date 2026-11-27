@@ -106,31 +106,38 @@ std::vector<SurveyBin> SurveyGrid::spectrum() const {
   return out;
 }
 
-SurveyStep survey_measure(const cfs *x, size_t n, double centre_hz, double fs, double reach_hz, double floor_hint,
-                          float full_scale) {
-  return survey_measure(x, n, centre_hz, fs, -reach_hz, reach_hz, SurveyGrid::kLo, floor_hint, full_scale);
+namespace {
+// survey_measure: slices of 16 FFTs of 256 (4096 samples, ~0.1 ms at 40 MS/s)
+constexpr int kN = 256, kFrames = 16, kSlice = kN * kFrames;
+
+double bin_freq(int k, double fs) { return (k < kN / 2 ? k : k - kN) * fs / kN; }  // no fftshift
+
+// how close the samples come to the ADC's full scale (clip, peak_abs)
+void measure_clipping(const cfs *x, size_t n, float full_scale, SurveyStep &out) {
+  const float clip_at = 0.95f * full_scale;
+  size_t clipped = 0;
+  float pk = 0;
+  for (size_t i = 0; i < n; i++) {
+    const float a = std::max(std::fabs(x[i].real()), std::fabs(x[i].imag()));
+    pk = std::max(pk, a);
+    clipped += a >= clip_at;
+  }
+  out.clip = static_cast<float>(clipped) / static_cast<float>(n);
+  out.peak_abs = pk / full_scale;
 }
 
-SurveyStep survey_measure(const cfs *x, size_t n, double centre_hz, double fs, double from_hz, double to_hz,
-                          double grid_lo_hz, double floor_hint, float full_scale) {
-  constexpr double kFloorReach = 10e6;
-  constexpr int kN = 256, kFrames = 16, kSlice = kN * kFrames;
-  SurveyStep out;
-  out.centre_hz = centre_hz;
-  const size_t slices = n / kSlice;
-  if (slices < 8) return out;
-  {
-    const float clip_at = 0.95f * full_scale;
-    size_t clipped = 0;
-    float pk = 0;
-    for (size_t i = 0; i < n; i++) {
-      const float a = std::max(std::fabs(x[i].real()), std::fabs(x[i].imag()));
-      pk = std::max(pk, a);
-      clipped += a >= clip_at;
-    }
-    out.clip = static_cast<float>(clipped) / static_cast<float>(n);
-    out.peak_abs = pk / full_scale;
+// the FFT bins inside [from, to), without the DC spur (+-0.3 MHz)
+std::vector<int> usable_bins(double fs, double from_hz, double to_hz) {
+  std::vector<int> use;
+  for (int k = 0; k < kN; k++) {
+    const double f = bin_freq(k, fs);
+    if (f >= from_hz && f < to_hz && std::fabs(f) > 0.3e6) use.push_back(k);
   }
+  return use;
+}
+
+// power per slice and FFT bin (Hann window, average of the slice's FFTs)
+std::vector<std::vector<float>> slice_power(const cfs *x, size_t slices) {
   std::vector<float> win(kN);
   for (int i = 0; i < kN; i++) win[i] = static_cast<float>(0.5 - 0.5 * std::cos(2 * M_PI * i / kN));
   std::vector<cfs> buf(kN);
@@ -142,25 +149,45 @@ SurveyStep survey_measure(const cfs *x, size_t n, double centre_hz, double fs, d
       kp::fft_inplace(buf.data(), kN);
       for (int k = 0; k < kN; k++) p[s][k] += std::norm(buf[k]) / kFrames;
     }
-  const auto freq = [&](int k) { return (k < kN / 2 ? k : k - kN) * fs / kN; };
-  std::vector<int> use;
-  for (int k = 0; k < kN; k++)
-    if (freq(k) >= from_hz && freq(k) < to_hz && std::fabs(freq(k)) > 0.3e6) use.push_back(k);
+  return p;
+}
+
+// 10th percentile of the bins' mean power, from the step's middle only: the 2.4 GHz end steps measure out to
+// +-20 MHz, where the RX filter already attenuates (measured: -1..-2 dB there against +2..+3 dB in the quiet middle
+// of the band)
+double step_floor(const std::vector<double> &mean, const std::vector<int> &use, double fs) {
+  constexpr double kFloorReach = 10e6;
+  std::vector<double> m;
+  for (int k : use)
+    if (std::fabs(bin_freq(k, fs)) <= kFloorReach) m.push_back(mean[k]);
+  if (m.empty())
+    for (int k : use) m.push_back(mean[k]);
+  std::nth_element(m.begin(), m.begin() + m.size() / 10, m.end());
+  return std::max(m[m.size() / 10], 1e-30);
+}
+}  // namespace
+
+SurveyStep survey_measure(const cfs *x, size_t n, double centre_hz, double fs, double reach_hz, double floor_hint,
+                          float full_scale) {
+  return survey_measure(x, n, centre_hz, fs, -reach_hz, reach_hz, SurveyGrid::kLo, floor_hint, full_scale);
+}
+
+SurveyStep survey_measure(const cfs *x, size_t n, double centre_hz, double fs, double from_hz, double to_hz,
+                          double grid_lo_hz, double floor_hint, float full_scale) {
+  SurveyStep out;
+  out.centre_hz = centre_hz;
+  const size_t slices = n / kSlice;
+  if (slices < 8) return out;
+  measure_clipping(x, n, full_scale, out);
+  const std::vector<int> use = usable_bins(fs, from_hz, to_hz);
   if (use.empty()) return out;
+  const std::vector<std::vector<float>> p = slice_power(x, slices);
   std::vector<double> mean(kN, 0);
   for (int k : use) {
     for (size_t s = 0; s < slices; s++) mean[k] += p[s][k];
     mean[k] /= static_cast<double>(slices);
   }
-  // the floor from the step's middle only: the 2.4 GHz end steps measure out to +-20 MHz, where the RX filter
-  // already attenuates (measured: -1..-2 dB there against +2..+3 dB in the quiet middle of the band)
-  std::vector<double> m;
-  for (int k : use)
-    if (std::fabs(freq(k)) <= kFloorReach) m.push_back(mean[k]);
-  if (m.empty())
-    for (int k : use) m.push_back(mean[k]);
-  std::nth_element(m.begin(), m.begin() + m.size() / 10, m.end());
-  out.floor = std::max(m[m.size() / 10], 1e-30);
+  out.floor = step_floor(mean, use, fs);
   const double thr = SurveyGrid::kDutyOver * (floor_hint > 0 ? std::min(floor_hint, out.floor) : out.floor);
   for (int k : use) {
     float pk = 0;
@@ -169,7 +196,7 @@ SurveyStep survey_measure(const cfs *x, size_t n, double centre_hz, double fs, d
       pk = std::max(pk, p[s][k]);
       on += p[s][k] > thr;
     }
-    const long i = static_cast<long>(std::floor((centre_hz + freq(k) - grid_lo_hz) / SurveyGrid::kBin));
+    const long i = static_cast<long>(std::floor((centre_hz + bin_freq(k, fs) - grid_lo_hz) / SurveyGrid::kBin));
     out.bins.push_back({i, mean[k], pk, static_cast<float>(on) / static_cast<float>(slices)});
   }
   return out;

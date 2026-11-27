@@ -224,6 +224,19 @@ int main(int argc, char **argv) {
                   verdict.endsWith(QStringLiteral("No trouble: Pilot 1 (R1).")),
               "por piloto: el que mas problemas ha tenido (R3) y los que ninguno (R1)");
         check(s.filter(QStringLiteral("(race 1)")).size() == s.size(), "primera carrera: todo en la carrera 1");
+        {
+            // los eventos del elegido (R3, el primero): los graves abiertos, la informacion cerrada, sin eventos atenuado
+            const QStringList e = drive::pilotEvents(w);
+            check(e.size() == 7 && e[0].startsWith(QStringLiteral("Race 1 · Pilot 2 (R3): SNR ")) &&
+                      e[1] == QStringLiteral("Serious (1) [+]") && e[2].startsWith(QStringLiteral("  → E8 ")) &&
+                      e[2].contains(QStringLiteral("| +0:00 | Someone else is transmitting on top of it.")) &&
+                      e[3] == QStringLiteral("Warnings (0) [-]") && e[4] == QStringLiteral("Channel changes (0) [-]") &&
+                      e[5] == QStringLiteral("Information (1) [-]") &&
+                      e[6].startsWith(QStringLiteral("  Summary (worst video) | +0:00 | SNR ")),
+                  "eventos de R3: el intruso en graves (abierto), el resumen en informacion (cerrado)");
+        }
+        drive::setEventGroupOpen(w, 0, false);  // a mano: graves cerrado, informacion abierta
+        drive::setEventGroupOpen(w, 3, true);
         drive::setRace(w, true);  // otra carrera, numerada aparte; en esta R3 no sale nunca (VTX apagado)
         for (int k = 20; k < 24; k++) emit b.surveyUpdated(survey(k, {pilot(kR1)}));
         drive::showHistory(w);  // la tabla en vivo (como se ve al abrir la pestaña)
@@ -234,6 +247,25 @@ int main(int argc, char **argv) {
                   r2[2].startsWith(QStringLiteral("race:")),
               "segunda carrera: sus dos pilotos y lo general, aparte de la primera");
         check(s2.filter(QStringLiteral("(race 1)")).size() == s.size(), "la primera carrera sigue igual");
+        {
+            // rehecho en cada barrido de la segunda carrera: el mismo piloto conserva lo abierto y cerrado a mano
+            const QStringList e = drive::pilotEvents(w);
+            check(e.size() == 7 && e[1] == QStringLiteral("Serious (1) [-]") &&
+                      e[5] == QStringLiteral("Information (1) [+]"),
+                  "eventos de R3 rehechos: los grupos se quedan como los dejo el usuario");
+            auto *pilots = drive::find<QTreeWidget>(&w, "historyPilots");
+            pilots->setCurrentItem(pilots->topLevelItem(1));  // otro piloto: R3 en la segunda carrera
+            check(drive::pilotEvents(w) ==
+                      QStringList{QStringLiteral("Race 2 · Pilot 2 (R3): Its pilot was never seen."),
+                                  QStringLiteral("Serious (0) [-]"), QStringLiteral("Warnings (0) [-]"),
+                                  QStringLiteral("Channel changes (0) [-]"), QStringLiteral("Information (0) [-]")},
+                  "otro piloto (R3, carrera 2, nunca visto): grupos vacios y cerrados");
+            pilots->setCurrentItem(pilots->topLevelItem(0));  // y de vuelta a R3: como al principio
+            const QStringList back = drive::pilotEvents(w);
+            check(back.size() == 7 && back[1] == QStringLiteral("Serious (1) [+]") &&
+                      back[5] == QStringLiteral("Information (1) [-]"),
+                  "de vuelta a R3: sus grupos como al principio (graves abiertos)");
+        }
     }
 
     {

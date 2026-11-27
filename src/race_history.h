@@ -4,6 +4,7 @@
 #include <QVector>
 #include <QWidget>
 
+#include <array>
 #include <vector>
 
 #include "race_monitor.h"
@@ -101,6 +102,15 @@ private:
     QString verdictText(const QVector<PilotRow> &rows, bool withRace) const;  // "Most trouble: ..."
     void rebuildPilotView();
     void showPilotEvents();  // eventos del piloto elegido, por categoria
+    static constexpr int kGroups = int(Cat::Info) + 1;  // grupos de pilotEvents_: uno por categoria
+    struct GroupsShown {  // como estaban los grupos de pilotEvents_ antes de rehacerlos
+        bool open[kGroups] = {}, empty[kGroups] = {};
+    };
+    GroupsShown groupsShown() const;
+    void showPilotInfo(int race, int pilot);
+    std::array<int, kGroups> addPilotEvents(int race, int pilot);
+    void setGroupStates(const std::array<int, kGroups> &count, const GroupsShown *was);
+    void sizeEventColumns();
     void countChanged();     // los botones (sin eventos no hay nada que copiar) y eventsChanged
     QString historyText(bool csv) const;
     void save();

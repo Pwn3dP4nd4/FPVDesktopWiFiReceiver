@@ -72,7 +72,6 @@ private:
     void onPilots(const QVector<Pilot> &p);
     void onStatus(const RadioStatus &s);
     // Senales digitales (HDZero...): salen en la lista de pilotos pero no tienen imagen
-    QString digitalKind(const Pilot &p) const;  // "HDZero", "HDZero estrecho", "digital 18 MHz"
     const Pilot *digitalPilotAt(double mhz) const;
     void watchChannelFromCombo();
     // Clic derecho en un piloto que puede ser varios canales estandar: elegir cual (src/channel_names.h)
