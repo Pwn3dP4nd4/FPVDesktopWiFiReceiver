@@ -10,6 +10,7 @@
 #include "race_monitor.h"
 
 class QComboBox;
+class QHBoxLayout;
 class QLabel;
 class QPushButton;
 class QStackedWidget;
@@ -101,6 +102,11 @@ private:
     QTreeWidgetItem *addPilotRow(const PilotRow &r, bool withRace, const QFont &bold);
     QString verdictText(const QVector<PilotRow> &rows, bool withRace) const;  // "Most trouble: ..."
     void rebuildPilotView();
+    // el constructor, por bloques
+    QHBoxLayout *buildTop();
+    QWidget *buildPilotView();
+    QWidget *buildTimeline();
+    QHBoxLayout *buildButtons();
     void showPilotEvents();  // eventos del piloto elegido, por categoria
     static constexpr int kGroups = int(Cat::Info) + 1;  // grupos de pilotEvents_: uno por categoria
     struct GroupsShown {  // como estaban los grupos de pilotEvents_ antes de rehacerlos
