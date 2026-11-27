@@ -52,6 +52,9 @@ const char kBands[] = "ABEFRL";
 // borde del primer paso y no se reconocia nunca (src/kp_ext/digital_scan.cpp une un corte solo con el paso vecino):
 // con 35 hay un paso mas a cada lado que la ve entera
 constexpr double kMargin = 35;
+// En el aire: un piloto visto en el ultimo minuto (lo que se lista, se recomienda y se marca como mio). Pasado esto,
+// el backend aun lo recuerda pero ya no cuenta
+constexpr int kOnAirS = 60;
 // Seguimiento de carrera: un piloto visto hace menos de esto sigue en el aire. El barrido del espectro va cada ~3 s
 // pero los pilotos solo se vuelven a medir cada ~14 s (medido): con "solo los de este barrido" su propia portadora
 // contaba como interferencia de su canal (30-40 dB) y como corte en 3 de cada 4 barridos
@@ -71,6 +74,7 @@ bool onPinned(const std::vector<advisor::Candidate> &pins, const Pilot &p) {
 QString pilotKey(const Pilot &p) { return p.name.isEmpty() ? QString::number(p.freqMHz, 'f', 0) : p.name; }
 // como se muestra ("R5/A4" mientras no se elija cual es)
 QString pilotShown(const Pilot &p) { return p.name.isEmpty() ? pilotKey(p) : p.shownName(); }
+bool onAir(const Pilot &p) { return p.ageS < kOnAirS; }
 advisor::Signal toSignal(const Pilot &p) {
     return advisor::Signal{p.freqMHz, p.bwMHz, p.isDigital(), p.name.toStdString(), float(p.snrDb), p.ageS == 0};
 }
@@ -460,7 +464,7 @@ void SpectrumView::paintEvent(QPaintEvent *) {
 
     // lo que hay en el aire
     for (const auto &s : data_.pilots) {
-        if (s.ageS >= 60 || s.freqMHz < lo_ || s.freqMHz > hi_) continue;
+        if (!onAir(s) || s.freqMHz < lo_ || s.freqMHz > hi_) continue;
         const QString key = pilotKey(s);
         const bool mine = mine_.contains(key);
         const QString shown = pilotShown(s);  // "R5/A4" mientras no se elija
@@ -1429,7 +1433,7 @@ void ChannelAnalyzer::updateAir() {
     QStringList keys, texts;
     QVector<bool> onPin;  // en un canal fijado: cuenta como mio sin marcarlo
     for (const auto &p : last_.pilots) {
-        if (p.ageS >= 60) continue;
+        if (!onAir(p)) continue;
         const QString key = pilotKey(p);
         if (keys.contains(key)) continue;
         keys << key;
@@ -1531,7 +1535,7 @@ QByteArray ChannelAnalyzer::airKey() const {
     // lo que hay en el aire tal como lo usan la recomendacion y el seguimiento (sin la edad, que sube cada segundo)
     QByteArray key;
     for (const Pilot &p : last_.pilots)
-        if (p.ageS < 60)
+        if (onAir(p))
             key += pilotKey(p).toUtf8() + (p.isDigital() ? "d" : "a") + (p.ageS < kRaceHoldS ? "+" : "-") + ';';
     return key;
 }
@@ -1540,7 +1544,7 @@ QStringList ChannelAnalyzer::mineForView() const {
     // mios para la grafica: los marcados y los que estan en un canal fijado
     QStringList mine = mine_;
     for (const Pilot &p : last_.pilots)
-        if (p.ageS < 60 && pinnedMine(p)) mine << pilotKey(p);
+        if (onAir(p) && pinnedMine(p)) mine << pilotKey(p);
     return mine;
 }
 
@@ -1590,11 +1594,11 @@ void ChannelAnalyzer::prepare(std::vector<advisor::Bin> &bins, std::vector<advis
         for (const auto &c : race_.leaving()) pins.push_back(c);
     std::vector<advisor::Signal> recent;  // todos: el nivel con que se tapa a uno mio no sale de un vecino
     for (const Pilot &p : last_.pilots)
-        if (p.ageS < 60) recent.push_back(toSignal(p));
+        if (onAir(p)) recent.push_back(toSignal(p));
     if (all) *all = recent;
     for (int i = 0; i < last_.pilots.size(); i++) {
         const Pilot &p = last_.pilots[i];
-        if (p.ageS >= 60) continue;
+        if (!onAir(p)) continue;
         const QString key = pilotKey(p);
         const advisor::Signal sig = toSignal(p);
         if (mine_.contains(key) || onPinned(pins, p)) {
@@ -1691,7 +1695,7 @@ void ChannelAnalyzer::recompute() {
     QVector<double> tickedMhz;
     QVector<bool> tickedHdz;
     for (const Pilot &p : last_.pilots) {
-        if (p.ageS >= 60 || pinnedMine(p)) continue;
+        if (!onAir(p) || pinnedMine(p)) continue;
         const QString key = pilotKey(p);
         if (!mine_.contains(key)) continue;
         ticked << pilotShown(p);
@@ -1723,7 +1727,7 @@ void ChannelAnalyzer::recompute() {
         if (p.pinned)
             // se da por mio sin preguntar (los fijados se guardan: otro dia puede ser otro piloto): que se vea
             for (const Pilot &pl : last_.pilots)
-                if (pl.ageS < 60 && onPinned({p.r.ch}, pl)) {
+                if (onAir(pl) && onPinned({p.r.ch}, pl)) {
                     if (!note.isEmpty()) note += QStringLiteral("; ");
                     note += tr("%1 is on the air here: taken as yours (if it is not, unpin this channel)")
                                 .arg(pilotShown(pl));
