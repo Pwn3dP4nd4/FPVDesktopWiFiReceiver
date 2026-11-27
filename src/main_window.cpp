@@ -1042,7 +1042,11 @@ void MainWindow::onPilots(const QVector<Pilot> &pilots) {
     list_->clear();
     for (const Pilot &p : pilots_) {
         if (p.isDigital() && !expMode_) continue;  // de un escaneo con el modo experimental activo
-        QString text = p.label();
+        const chnames::Resolved ch = chnames::resolved(p);
+        const QString n = ch.label();
+        QString text = n.isEmpty() ? QStringLiteral("%1 MHz").arg(p.freqMHz, 0, 'f', 0)
+                                   : QStringLiteral("%1  %2 MHz").arg(n).arg(p.freqMHz, 0, 'f', 0);
+        if (!p.stdName.isEmpty()) text += QStringLiteral("  ") + p.stdName;
         if (p.isDigital()) {
             text = p.name.isEmpty() ? QStringLiteral("%1 MHz").arg(p.freqMHz, 0, 'f', 0)
                                     : QStringLiteral("%1  %2 MHz").arg(p.name).arg(p.freqMHz, 0, 'f', 0);
@@ -1050,7 +1054,7 @@ void MainWindow::onPilots(const QVector<Pilot> &pilots) {
         }
         auto *it = new QListWidgetItem(QStringLiteral("%1   %2 dB").arg(text).arg(p.snrDb, 0, 'f', 1));
         it->setData(Qt::UserRole, p.freqMHz);
-        if (p.ambiguous())
+        if (ch.ambiguous())
             it->setToolTip(tr("%1 MHz is between several standard channels (%2): from the frequency alone it is not "
                               "possible to tell which one. Right-click to say which one is yours.")
                                .arg(p.freqMHz, 0, 'f', 1)

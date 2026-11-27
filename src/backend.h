@@ -18,20 +18,11 @@ struct Pilot {
     // Senal digital (no se decodifica): "hdzero", "hdzero_narrow", "dji" o "digital"; vacio = video analogico
     QString digital;
     double bwMHz = 0;  // ancho ocupado de la senal digital
-    // La GUI (src/channel_names.h): los canales estandar que puede ser ("R5", "A4"...), primero name; vacia si solo
-    // uno. nameChosen: el usuario dijo cual es el suyo.
+    // La GUI (chnames::apply, src/channel_names.h): los canales estandar que puede ser ("R5", "A4"...), primero
+    // name; vacia si solo uno. nameChosen: el usuario dijo cual es el suyo. Como se muestra: chnames::resolved()
     QStringList altNames;
     bool nameChosen = false;
     bool isDigital() const { return !digital.isEmpty(); }
-    bool ambiguous() const { return altNames.size() > 1 && !nameChosen; }
-    QString shownName() const { return ambiguous() ? altNames.join(QLatin1Char('/')) : name; }
-    QString label() const {
-        const QString n = shownName();
-        QString s = n.isEmpty() ? QStringLiteral("%1 MHz").arg(freqMHz, 0, 'f', 0)
-                                : QStringLiteral("%1  %2 MHz").arg(n).arg(freqMHz, 0, 'f', 0);
-        if (!stdName.isEmpty()) s += QStringLiteral("  ") + stdName;
-        return s;
-    }
 };
 
 // Resumen de fpv::Radio::status_json() para la GUI.

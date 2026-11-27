@@ -74,7 +74,7 @@ bool onPinned(const std::vector<advisor::Candidate> &pins, const Pilot &p) {
 // clave de un piloto en el aire: su canal ("R4") o, si no coincide con ninguno, sus MHz (la de "mio")
 QString pilotKey(const Pilot &p) { return p.name.isEmpty() ? QString::number(p.freqMHz, 'f', 0) : p.name; }
 // como se muestra ("R5/A4" mientras no se elija cual es)
-QString pilotShown(const Pilot &p) { return p.name.isEmpty() ? pilotKey(p) : p.shownName(); }
+QString pilotShown(const Pilot &p) { return p.name.isEmpty() ? pilotKey(p) : chnames::resolved(p).label(); }
 bool onAir(const Pilot &p) { return p.ageS < kOnAirS; }
 advisor::Signal toSignal(const Pilot &p) {
     return advisor::Signal{p.freqMHz, p.bwMHz, p.isDigital(), p.name.toStdString(), float(p.snrDb), p.ageS == 0};

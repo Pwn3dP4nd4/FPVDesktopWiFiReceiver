@@ -92,6 +92,14 @@ void apply(Pilot &p) {
     p.nameChosen = r.chosen;
 }
 
+Resolved resolved(const Pilot &p) {
+    Resolved r;
+    r.name = p.name;
+    r.alternatives = p.altNames;
+    r.chosen = p.nameChosen;
+    return r;
+}
+
 void choose(const QString &name) {
     const double f = channelMHz(name);
     if (f <= 0) return;

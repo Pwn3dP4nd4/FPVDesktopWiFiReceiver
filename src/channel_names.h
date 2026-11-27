@@ -25,6 +25,8 @@ struct Resolved {
 Resolved resolve(double mhz, bool digital = false);
 // Pone name/altNames/nameChosen del piloto segun resolve()
 void apply(Pilot &p);
+// Lo que apply() dejo en el piloto (ambiguous(), label(): "R5/A4" mientras no se elija cual es)
+Resolved resolved(const Pilot &p);
 // El usuario dice que su canal es este: se prefiere a los otros posibles cerca de el (y se olvida otra eleccion
 // entre ellos). Nombre de kp::fpv_channels() ("F4"); uno que no exista se ignora.
 void choose(const QString &name);
