@@ -120,28 +120,9 @@ QWidget *MainWindow::buildSide() {
     list_ = new QListWidget;
     left->addWidget(list_, 1);
 
-    channels_ = new QComboBox;
-    channels_->addItem(QString(), 0.0);  // "Canal manual..." (retranslate)
-    for (const auto &c : kp::fpv_channels())
-        channels_->addItem(QStringLiteral("%1  %2 MHz").arg(c.name).arg(c.mhz, 0, 'f', 0), c.mhz);
-    left->addWidget(channels_);
+    left->addWidget(buildChannelPicker());
 
-    devBox_ = new QWidget;
-    auto *form = new QFormLayout(devBox_);
-    form->setContentsMargins(0, 0, 0, 0);
-    rate_ = new QComboBox;
-    rate_->addItem(QString(), 1);
-    rate_->addItem(QStringLiteral("20 MS/s"), 2);
-    rate_->setCurrentIndex(qBound(0, appSettings().value("rateIndex", kDefaultRateIndex).toInt(), 1));
-    gain_ = new QComboBox;
-    gain_->addItem(QString(), -1.0);  // "AGC"
-    for (int db : {10, 20, 30, 40, 50}) gain_->addItem(QStringLiteral("%1 dB").arg(db), double(db));
-    gain_->setCurrentIndex(qBound(0, appSettings().value("gainIndex", 0).toInt(), gain_->count() - 1));
-    rateLabel_ = new QLabel;
-    gainLabel_ = new QLabel;
-    form->addRow(rateLabel_, rate_);
-    form->addRow(gainLabel_, gain_);
-    left->addWidget(devBox_);
+    left->addWidget(buildDevBox());
 
     left->addWidget(stopBtn_);
     auto *mediaRow = new QHBoxLayout;  // captura (PNG) y grabacion de video (MP4)
@@ -157,6 +138,35 @@ QWidget *MainWindow::buildSide() {
     info_->setStyleSheet(QStringLiteral("QLabel{font-family:monospace;font-size:11px;}"));
     left->addWidget(info_);
     return side_;
+}
+
+// canal manual: "Canal manual..." (retranslate) y los canales de kepyur con sus MHz
+QComboBox *MainWindow::buildChannelPicker() {
+    channels_ = new QComboBox;
+    channels_->addItem(QString(), 0.0);  // "Canal manual..." (retranslate)
+    for (const auto &c : kp::fpv_channels())
+        channels_->addItem(QStringLiteral("%1  %2 MHz").arg(c.name).arg(c.mhz, 0, 'f', 0), c.mhz);
+    return channels_;
+}
+
+// modo desarrollador: velocidad de muestreo y ganancia
+QWidget *MainWindow::buildDevBox() {
+    devBox_ = new QWidget;
+    auto *form = new QFormLayout(devBox_);
+    form->setContentsMargins(0, 0, 0, 0);
+    rate_ = new QComboBox;
+    rate_->addItem(QString(), 1);
+    rate_->addItem(QStringLiteral("20 MS/s"), 2);
+    rate_->setCurrentIndex(qBound(0, appSettings().value("rateIndex", kDefaultRateIndex).toInt(), 1));
+    gain_ = new QComboBox;
+    gain_->addItem(QString(), -1.0);  // "AGC"
+    for (int db : {10, 20, 30, 40, 50}) gain_->addItem(QStringLiteral("%1 dB").arg(db), double(db));
+    gain_->setCurrentIndex(qBound(0, appSettings().value("gainIndex", 0).toInt(), gain_->count() - 1));
+    rateLabel_ = new QLabel;
+    gainLabel_ = new QLabel;
+    form->addRow(rateLabel_, rate_);
+    form->addRow(gainLabel_, gain_);
+    return devBox_;
 }
 
 // el video y su grabacion (DVR)

@@ -54,6 +54,8 @@ private:
     enum class Screen { Idle, Connecting, Ready, Error, Lost };
     // ---- el constructor, por partes ----
     QWidget *buildSide();
+    QComboBox *buildChannelPicker();
+    QWidget *buildDevBox();
     void setupVideo();
     void connectBackend(Backend *backend);
     void connectControls();
