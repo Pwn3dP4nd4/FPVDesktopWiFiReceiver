@@ -68,6 +68,31 @@ MainWindow::MainWindow(Backend *backend, QWidget *parent) : QMainWindow(parent),
     auto *h = new QHBoxLayout(central);
     h->setContentsMargins(6, 6, 6, 6);
 
+    h->addWidget(buildSide());
+
+    setupVideo();
+    h->addWidget(video_, 1);
+    setCentralWidget(central);
+    buildMenus();
+    setupShortcuts();
+
+    connectBackend(backend);
+    connectControls();
+    // seleccion guardada (sin clave = todos); llega al backend antes de cualquier escaneo (cola del hilo)
+    scanChannels_ = appSettings().value("scanChannels").toStringList();
+    if (ScanChannelsDialog::frequencies(scanChannels_).isEmpty()) scanChannels_.clear();
+    emit requestScanChannels(ScanChannelsDialog::frequencies(scanChannels_));
+    expMode_ = expModeAct_->isChecked();
+    emit requestDigitalScan(expMode_);
+
+    applyDeveloperMode(devModeAct_->isChecked());
+    retranslate();
+    onOpened(false, {});
+    if (!restoreGeometry(appSettings().value("geometry").toByteArray())) resize(1100, 660);
+}
+
+// panel de la izquierda: conectar, escanear, pilotos, canal manual, ajustes de desarrollador y la grabacion
+QWidget *MainWindow::buildSide() {
     side_ = new QWidget;
     side_->setFixedWidth(260);
     auto *left = new QVBoxLayout(side_);
@@ -130,7 +155,11 @@ MainWindow::MainWindow(Backend *backend, QWidget *parent) : QMainWindow(parent),
     info_->setTextInteractionFlags(Qt::TextSelectableByMouse);
     info_->setStyleSheet(QStringLiteral("QLabel{font-family:monospace;font-size:11px;}"));
     left->addWidget(info_);
+    return side_;
+}
 
+// el video y su grabacion (DVR)
+void MainWindow::setupVideo() {
     video_ = new VideoWidget;
     video_->setLogo(QPixmap(QStringLiteral(":/icons/app-128.png")));
     dvr_ = new VideoRecorder(this);
@@ -143,12 +172,10 @@ MainWindow::MainWindow(Backend *backend, QWidget *parent) : QMainWindow(parent),
     connect(dvr_, &VideoRecorder::finished, this, [this](const VideoRecorder::Result &r) {
         onVideoRecorded(r.path, r.ok, r.noPicture, r.error, r.frames, r.dropped, r.seconds);
     });
-    h->addWidget(side_);
-    h->addWidget(video_, 1);
-    setCentralWidget(central);
-    buildMenus();
-    setupShortcuts();
+}
 
+// ordenes al backend (otro hilo: conexiones en cola) y lo que llega de el
+void MainWindow::connectBackend(Backend *backend) {
     // GUI -> backend (otro hilo: conexiones en cola)
     connect(this, &MainWindow::requestOpen, backend, &Backend::openDevice);
     connect(this, &MainWindow::requestClose, backend, &Backend::closeDevice);
@@ -171,7 +198,10 @@ MainWindow::MainWindow(Backend *backend, QWidget *parent) : QMainWindow(parent),
     connect(backend, &Backend::pilotsChanged, this, &MainWindow::onPilots);
     connect(backend, &Backend::statusChanged, this, &MainWindow::onStatus);
     connect(backend, &Backend::message, this, [this](const QString &s) { statusBar()->showMessage(s, 8000); });
+}
 
+// los botones y la lista de pilotos
+void MainWindow::connectControls() {
     connect(connectBtn_, &QPushButton::clicked, this, [this] {
         if (opening_) return;
         if (open_) {
@@ -189,12 +219,6 @@ MainWindow::MainWindow(Backend *backend, QWidget *parent) : QMainWindow(parent),
         emit requestScan();
     });
     connect(scanCfgBtn_, &QToolButton::clicked, this, &MainWindow::chooseScanChannels);
-    // seleccion guardada (sin clave = todos); llega al backend antes de cualquier escaneo (cola del hilo)
-    scanChannels_ = appSettings().value("scanChannels").toStringList();
-    if (ScanChannelsDialog::frequencies(scanChannels_).isEmpty()) scanChannels_.clear();
-    emit requestScanChannels(ScanChannelsDialog::frequencies(scanChannels_));
-    expMode_ = expModeAct_->isChecked();
-    emit requestDigitalScan(expMode_);
     connect(stopBtn_, &QPushButton::clicked, this, [this] {
         emit requestStop();
         video_->clear();
@@ -226,11 +250,6 @@ MainWindow::MainWindow(Backend *backend, QWidget *parent) : QMainWindow(parent),
     recCheck_->setInterval(500);
     connect(recCheck_, &QTimer::timeout, this, &MainWindow::checkRecording);
     connect(video_, &VideoWidget::doubleClicked, this, &MainWindow::toggleFullScreen);
-
-    applyDeveloperMode(devModeAct_->isChecked());
-    retranslate();
-    onOpened(false, {});
-    if (!restoreGeometry(appSettings().value("geometry").toByteArray())) resize(1100, 660);
 }
 
 // La grabacion de video se termina en closeEvent(): main.cpp destruye el backend antes que la ventana.

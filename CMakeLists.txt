@@ -121,8 +121,8 @@ if(WIN32)
 endif()
 
 # ---- GUI ----------------------------------------------------------------------------------------------------
-add_executable(FPVDesktopWiFiReceiver
-  src/main.cpp
+# (KP_GUI_SRC: la ventana sin main(); tambien la usa test/main_window_shot.cpp)
+set(KP_GUI_SRC
   src/main_window.cpp src/main_window.h
   src/video_widget.cpp src/video_widget.h
   src/backend.h
@@ -138,6 +138,7 @@ add_executable(FPVDesktopWiFiReceiver
   src/video_recorder.cpp src/video_recorder.h src/video_encoder.h src/video_params.cpp
   assets/icons.qrc
 )
+add_executable(FPVDesktopWiFiReceiver src/main.cpp ${KP_GUI_SRC})
 target_link_libraries(FPVDesktopWiFiReceiver PRIVATE Qt6::Widgets kepyur_dsp)
 
 # ---- Grabacion de video (MP4 H.264): el codificador del sistema -----------------------------------------------
@@ -293,6 +294,16 @@ add_executable(radio_status_test EXCLUDE_FROM_ALL test/radio_status_test.cpp src
                src/backend.h)
 target_include_directories(radio_status_test PRIVATE src)
 target_link_libraries(radio_status_test PRIVATE Qt6::Gui)
+
+# Captura de la ventana principal con el backend de demo: QT_QPA_PLATFORM=offscreen main_window_shot salida.png [s]
+add_executable(main_window_shot EXCLUDE_FROM_ALL test/main_window_shot.cpp ${KP_GUI_SRC} ${KP_VIDEO_SRC})
+target_include_directories(main_window_shot PRIVATE src)
+target_compile_definitions(main_window_shot PRIVATE KP_VERSION="${PROJECT_VERSION}")
+target_link_libraries(main_window_shot PRIVATE Qt6::Widgets kepyur_dsp ${KP_VIDEO_LIBS})
+if(WIN32)
+  target_compile_definitions(main_window_shot PRIVATE KP_DRIVER_PS1_SHA256="${KP_DRIVER_PS1_SHA256}"
+                             KP_DRIVER_INF_SHA256="${KP_DRIVER_INF_SHA256}")
+endif()
 
 # Seguimiento de carrera (canales fijados) con espectros sinteticos: cmake --build <dir> --target race_monitor_test
 add_executable(race_monitor_test EXCLUDE_FROM_ALL test/race_monitor_test.cpp src/race_monitor.cpp src/channel_advisor.cpp)

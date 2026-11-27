@@ -52,6 +52,11 @@ protected:
 
 private:
     enum class Screen { Idle, Connecting, Ready, Error, Lost };
+    // ---- el constructor, por partes ----
+    QWidget *buildSide();
+    void setupVideo();
+    void connectBackend(Backend *backend);
+    void connectControls();
     void buildMenus();
     void setupShortcuts();  // F / F11 / Esc / O
     void retranslate();  // todos los textos visibles; se llama al crear y al cambiar de idioma
