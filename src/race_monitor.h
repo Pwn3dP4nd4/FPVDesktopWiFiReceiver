@@ -159,6 +159,19 @@ class Monitor {
     std::optional<Move> suggest_for(int i, const std::vector<advisor::Candidate> &chans,
                                     const std::vector<advisor::Candidate> &cand,
                                     const std::vector<advisor::Signal> &foreign, const std::vector<Move> &prev) const;
+    struct Choice {  // el canal al que mover a un piloto y lo que gana (gain < 0: ninguno)
+        advisor::Candidate to;
+        float gain = -1;
+        bool kept = false;  // es la recomendacion anterior, que se mantiene
+    };
+    static bool fits(const advisor::Candidate &c, const advisor::Candidate &from,
+                     const std::vector<advisor::Candidate> &others);
+    std::optional<advisor::Rating> best_channel(const advisor::Candidate &from,
+                                                const std::vector<advisor::Candidate> &others,
+                                                const std::vector<advisor::Candidate> &cand,
+                                                const std::vector<advisor::Signal> &foreign) const;
+    void keep_previous(int i, const std::vector<advisor::Candidate> &others, const std::vector<advisor::Candidate> &cand,
+                       const std::vector<advisor::Signal> &foreign, const std::vector<Move> &prev, Choice &c) const;
 };
 
 }  // namespace race
