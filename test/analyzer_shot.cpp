@@ -1,11 +1,11 @@
 // Captura del analizador de canales con el backend de demostracion (sin adaptador), para revisar la ventana:
 //   analyzer_shot SALIDA.png [ANALOGICOS HDZERO [SEGUNDOS]] [--pin R1,R3,hdz:R6] [--race] [--auto N] [--history] [--idle] [--exclude R2,R7] [--menu R] [--apply] [--mine R4/A6/B3]
-//   [--qm TRADUCCION.qm] [--dark] [--tab N]
+//   [--qm TRADUCCION.qm] [--dark] [--tab N] [--cursor F]
 // (QT_QPA_PLATFORM=offscreen: sin pantalla). --pin: canales fijados (hdz: = HDZero); --race: escenario de carrera
 // del backend de demo y el seguimiento de carrera activado; --apply: pulsa Aplicar 1.5 s antes de la captura; --mine: pilotos marcados como mios en "En el aire"
 // (su nombre o sus MHz, a los 2 s); --dark: tema oscuro (Fusion); --qm: textos traducidos (build/x/*_es.qm). Usa su
 // propio .ini (en la carpeta temporal), no el del usuario. --tab: la pestana que se ve (0 recomendacion, 1 carrera, 2
-// historial).
+// historial). --cursor: el raton sobre la grafica, a esa fraccion de su ancho (0.5: en medio).
 #include <QApplication>
 #include <QPalette>
 #include <QStyleFactory>
@@ -25,6 +25,7 @@ int main(int argc, char **argv) {
     bool race = false, apply = false, history = false, idle = false;  // --idle: sin empezar el analisis
     int tab = -1;  // --tab N
     int autoN = -1;  // --auto N: armar el auto-inicio (0 = todos los fijados) en vez de --race
+    double cursor = -1;  // --cursor F
     QTranslator tr;
     for (int i = 1; i < argc; i++) {
         const QString a = QString::fromLocal8Bit(argv[i]);
@@ -35,6 +36,7 @@ int main(int argc, char **argv) {
         } else if (a == QLatin1String("--history")) history = true;
         else if (a == QLatin1String("--idle")) idle = true;
         else if (a == QLatin1String("--tab") && i + 1 < argc) tab = QString::fromLocal8Bit(argv[++i]).toInt();
+        else if (a == QLatin1String("--cursor") && i + 1 < argc) cursor = QString::fromLocal8Bit(argv[++i]).toDouble();
         else if (a == QLatin1String("--exclude") && i + 1 < argc)
             excl = QString::fromLocal8Bit(argv[++i]).split(QLatin1Char(','), Qt::SkipEmptyParts);
         else if (a == QLatin1String("--menu") && i + 1 < argc)
@@ -95,6 +97,7 @@ int main(int argc, char **argv) {
     QTimer::singleShot(secs * 1000, &w, [&] {
         if (history) drive::showHistory(w);
         if (tab >= 0) drive::find<QTabWidget>(&w, "tabs")->setCurrentIndex(tab);
+        if (cursor >= 0) drive::moveMouse(drive::view(w), int(cursor * drive::view(w)->width()));
         // el desplegable de canales es otra ventana: su propia captura (SALIDA-menu.png)
         if (QWidget *pop = QApplication::activePopupWidget()) {
             QString m = out;

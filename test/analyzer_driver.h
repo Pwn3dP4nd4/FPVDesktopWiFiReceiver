@@ -2,9 +2,12 @@
 // Manejar las ventanas de los analizadores (src/channel_analyzer.h, src/elrs_analyzer.h) como el usuario: por sus
 // controles (objectName), sin entrar en su estado. Para las pruebas y las capturas de test/.
 #include <QAbstractButton>
+#include <QApplication>
 #include <QCheckBox>
 #include <QComboBox>
 #include <QFrame>
+#include <QImage>
+#include <QMouseEvent>
 #include <QLabel>
 #include <QListWidget>
 #include <QPushButton>
@@ -40,6 +43,35 @@ inline void setChecked(QAbstractButton *b, bool on) {
 template <class W>
 void start(W &w) {
     if (!w.isRunning()) find<QPushButton>(&w, "start")->click();
+}
+
+// El raton sobre una grafica en x (a media altura), sin pulsar
+inline void moveMouse(QWidget *view, int x) {
+    const QPointF at(x, view->height() / 2);
+    QMouseEvent move(QEvent::MouseMove, at, view->mapToGlobal(at), Qt::NoButton, Qt::NoButton, Qt::NoModifier);
+    QApplication::sendEvent(view, &move);
+}
+
+// Pasar el raton por una grafica en x (a media altura) y sacarlo: lo pintado antes, con el raton encima y despues
+struct Hover {
+    QImage before, over, after;
+    // con el raton encima ha cambiado algo en la columna x
+    bool marksColumn(int x) const {
+        for (int y = 0; y < before.height(); y++)
+            if (before.pixel(x, y) != over.pixel(x, y)) return true;
+        return false;
+    }
+};
+inline Hover hover(QWidget *view, int x) {
+    Hover h;
+    view->grab();  // la primera captura aun pule el widget (fuente, estilo): no vale para comparar
+    h.before = view->grab().toImage();
+    moveMouse(view, x);
+    h.over = view->grab().toImage();
+    QEvent leave(QEvent::Leave);
+    QApplication::sendEvent(view, &leave);
+    h.after = view->grab().toImage();
+    return h;
 }
 
 // ---- analizador de 5,8 GHz ----

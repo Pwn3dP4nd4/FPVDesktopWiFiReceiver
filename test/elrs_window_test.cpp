@@ -215,6 +215,18 @@ int main(int argc, char **argv) {
         }
         check(c.isRunning(), "parar solo desactivado: sigue midiendo");
     }
+    {
+        // cursor: con el raton sobre la grafica, una linea en esa frecuencia; al salir, nada
+        NullBackend backend_h;
+        ElrsAnalyzer h(&backend_h);
+        auto *v = h.findChild<ElrsView *>();
+        v->resize(760, 300);
+        const drive::Hover over = drive::hover(v, 380);
+        check(over.marksColumn(380), "cursor: con el raton encima se marca su frecuencia");
+        check(over.after == over.before, "cursor: al salir el raton no queda nada");
+        const drive::Hover margin = drive::hover(v, 3);
+        check(margin.over == margin.before, "cursor: fuera del eje de frecuencias no se marca nada");
+    }
     std::printf("\n%s\n", failures ? "FALLAN algunos casos" : "OK");
     return failures ? 1 : 0;
 }

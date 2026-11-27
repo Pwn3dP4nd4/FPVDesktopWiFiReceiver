@@ -318,6 +318,18 @@ int main(int argc, char **argv) {
         check(here == 3 && !summary.contains(QStringLiteral("must change")),
               "mios: los tres ya en los recomendados (R1, R4, R8): ninguno tiene que cambiar");
     }
+    {
+        // cursor: con el raton sobre la grafica, una linea en esa frecuencia; al salir, nada
+        FakeBackend b;
+        ChannelAnalyzer w(&b);
+        SpectrumView *v = drive::view(w);
+        v->resize(760, 300);
+        const drive::Hover h = drive::hover(v, 380);
+        check(h.marksColumn(380), "cursor: con el raton encima se marca su frecuencia");
+        check(h.after == h.before, "cursor: al salir el raton no queda nada");
+        const drive::Hover margin = drive::hover(v, 3);
+        check(margin.over == margin.before, "cursor: fuera del eje de frecuencias no se marca nada");
+    }
     std::printf("\n%s\n", failures ? "HAY FALLOS" : "todo bien");
     return failures ? 1 : 0;
 }
