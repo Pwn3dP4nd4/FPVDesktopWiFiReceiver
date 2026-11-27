@@ -306,6 +306,12 @@ add_executable(theme_test EXCLUDE_FROM_ALL test/theme_test.cpp src/theme.cpp src
 target_include_directories(theme_test PRIVATE src)
 target_link_libraries(theme_test PRIVATE Qt6::Widgets)
 
+# Tarjeta de un piloto en la lista de la ventana principal (textos, nivel de SNR): --target pilot_card_test
+add_executable(pilot_card_test EXCLUDE_FROM_ALL test/pilot_card_test.cpp src/pilot_card.cpp src/pilot_card.h
+               src/status_text.cpp src/status_text.h src/channel_names.cpp src/backend.h)
+target_include_directories(pilot_card_test PRIVATE src)
+target_link_libraries(pilot_card_test PRIVATE Qt6::Gui kepyur_dsp)
+
 # Captura de la ventana principal con el backend de demo: QT_QPA_PLATFORM=offscreen main_window_shot salida.png [s]
 add_executable(main_window_shot EXCLUDE_FROM_ALL test/main_window_shot.cpp ${KP_GUI_SRC} ${KP_VIDEO_SRC})
 target_include_directories(main_window_shot PRIVATE src)
