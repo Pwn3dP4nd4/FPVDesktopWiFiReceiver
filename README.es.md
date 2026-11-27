@@ -12,7 +12,8 @@ vídeo y `native/radio` con [wifi-sdr](https://github.com/gilankpam/wifi-sdr) +
 Android.
 
 Adaptadores: cualquier RTL8812BU — BrosTrend AC1200 (AC1L/AC3L/AC5L, USB `0bda:b812`), TP-Link Archer T4U v3
-(`2357:0115`), T3U (`2357:012d`), T3U Plus (`2357:0138`). Probado con un BrosTrend AC1200 (`0bda:b812`).
+(`2357:0115`), T3U (`2357:012d`), T3U Plus (`2357:0138`), Linksys WUSB6300 **V2** (`13b1:0045`; la V1,
+`13b1:003f`, es un RTL8812AU y no vale). Probado con un BrosTrend AC1200 (`0bda:b812`).
 Hace falta un **puerto USB 3** para 40 MS/s (con USB 2 funciona más limitado, a 20 MS/s o menos).
 
 **Qué puerto USB 3 usar:** conecta el adaptador **directamente a un puerto USB 3 trasero de la placa base** que

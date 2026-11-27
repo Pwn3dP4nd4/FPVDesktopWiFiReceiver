@@ -9,6 +9,8 @@
 #   gapped     wifi-sdr Receiver: con RxSettings::allow_gapped, a cualquier velocidad se captura a huecos (un
 #              banco, parar, enviar, rearmar): el analizador de canales (fpv::Radio::survey) no necesita muestras
 #              contiguas y asi el 8812BU no falla por "deadline" al resintonizar sin parar
+#   linksys    wifi-sdr model_pid (receiver.h): el Linksys WUSB6300 V2 (13b1:0045) es un RTL8812BU con el ID de
+#              Linksys; sin esto wifi-sdr no lo reconoce como adaptador y no lo abre
 #
 # La radio ya no se parchea: es propia (src/radio) y native/radio de kepyur no se compila.
 #
@@ -71,6 +73,21 @@ _kp_change(gapped third_party/wifi-sdr/src/receiver.cpp
 ]=]
   [=[    // [FPVDesktopWiFiReceiver, added at build time] allow_gapped: gapped at any rate (channel survey)
     c.gapped = cur.rate_sel < _caps.min_rate_sel || cur.allow_gapped;
+]=])
+
+# ---- linksys -----------------------------------------------------------------------------------------------
+# model_pid es la unica lista de IDs USB de wifi-sdr (session.cpp, usbmode.cpp y src/usb3_switch.cpp la usan): el
+# chip lo distingue devourer por registro, asi que basta con anadir el ID. 13b1:0045 = Linksys WUSB6300 V2
+# (RTL8812BU; la V1, 13b1:003f, es un RTL8812AU y no vale). Es un .h: ver en CMakeLists.txt como se compila.
+_kp_change(linksys third_party/wifi-sdr/src/receiver.h
+  [=[  if (vid == 0x2357 && (pid == 0x0115 || pid == 0x012d || pid == 0x0138))
+    return kPid8812bu;
+]=]
+  [=[  if (vid == 0x2357 && (pid == 0x0115 || pid == 0x012d || pid == 0x0138))
+    return kPid8812bu;
+  // [FPVDesktopWiFiReceiver, added at build time] Linksys WUSB6300 V2 (RTL8812BU)
+  if (vid == 0x13b1 && pid == 0x0045)
+    return kPid8812bu;
 ]=])
 
 list(REMOVE_DUPLICATES _KP_PATCH_FILES)

@@ -25,8 +25,8 @@ $InfName = 'fpvdesktopwifireceiver_winusb.inf'
 # Junto al script (carpeta driver\ de la version portable) o en el repositorio
 $InfSrc = @((Join-Path $PSScriptRoot $InfName), (Join-Path $PSScriptRoot "..\packaging\windows\driver\$InfName")) |
     Where-Object { Test-Path $_ } | Select-Object -First 1
-# BrosTrend AC1200 y otros RTL8812BU, TP-Link Archer T4U v3 / T3U / T3U Plus
-$DevPattern = 'USB\\VID_0BDA&PID_B812\\|USB\\VID_2357&PID_(0115|012D|0138)\\'
+# BrosTrend AC1200 y otros RTL8812BU, TP-Link Archer T4U v3 / T3U / T3U Plus, Linksys WUSB6300 V2
+$DevPattern = 'USB\\VID_0BDA&PID_B812\\|USB\\VID_2357&PID_(0115|012D|0138)\\|USB\\VID_13B1&PID_0045\\'
 
 function Show-Adapter {
     $devs = Get-PnpDevice -PresentOnly | Where-Object { $_.InstanceId -match $DevPattern }

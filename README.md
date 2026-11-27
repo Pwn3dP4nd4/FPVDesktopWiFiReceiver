@@ -11,7 +11,8 @@ adapter through [wifi-sdr](https://github.com/gilankpam/wifi-sdr) + [devourer](h
 + libusb). The GUI replaces the Android app's JNI/Kotlin layer.
 
 Adapters: any RTL8812BU — BrosTrend AC1200 (AC1L/AC3L/AC5L, USB `0bda:b812`), TP-Link Archer T4U v3
-(`2357:0115`), T3U (`2357:012d`), T3U Plus (`2357:0138`). Tested with a BrosTrend AC1200 (`0bda:b812`).
+(`2357:0115`), T3U (`2357:012d`), T3U Plus (`2357:0138`), Linksys WUSB6300 **V2** (`13b1:0045`; the V1,
+`13b1:003f`, is an RTL8812AU and won't work). Tested with a BrosTrend AC1200 (`0bda:b812`).
 A **USB 3 port** is needed for 40 MS/s (on USB 2 it works with less, at 20 MS/s or lower).
 
 **Which USB 3 port:** plug the adapter **straight into a rear USB 3 port on the motherboard** that hangs off the

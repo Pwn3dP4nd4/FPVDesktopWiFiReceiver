@@ -62,18 +62,30 @@ add_subdirectory("${KEPYUR_DIR}/native" kepyur_native EXCLUDE_FROM_ALL)
 # Copias en el build con los cambios: el submodulo no se toca.
 #   rxdma: desatascar el RX DMA del 8822B al reiniciar el flujo (wifi-sdr receiver.cpp)
 #   gapped: allow_gapped captura a huecos a cualquier velocidad, para el analizador (wifi-sdr receiver.cpp)
+#   linksys: el Linksys WUSB6300 V2 (13b1:0045) en la lista de adaptadores de wifi-sdr (receiver.h, model_pid)
 include(cmake/kepyur_patches.cmake)
 set(_kp_out "${CMAKE_BINARY_DIR}/kepyur_patched")
 # (comb, el filtro peine de croma NTSC, ya esta en kepyur: gilankpam/kepyur PR 2; native/dsp se compila tal cual)
 if(KP_WITH_RADIO)
-  kp_patch_files("${KEPYUR_DIR}" "${_kp_out}" rxdma gapped)
+  kp_patch_files("${KEPYUR_DIR}" "${_kp_out}" rxdma gapped linksys)
 endif()
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/cmake/kepyur_patches.cmake")
-if(TARGET wsdrcore)  # rxdma: solo receiver.cpp (sus #include "x.h" siguen viendo wifi-sdr/src por el include PUBLIC)
+if(TARGET wsdrcore)
+  # rxdma, gapped: receiver.cpp parcheado. linksys: receiver.h parcheado, y model_pid es inline, asi que todo lo que
+  # lo incluye tiene que ver el mismo. Fuera de wifi-sdr/src se ve por el include BEFORE. Dentro, un #include
+  # "receiver.h" mira antes la carpeta del propio .cpp (el original): session.cpp y usbmode.cpp se compilan desde
+  # copias sin cambios junto al .h parcheado, como receiver.cpp. Sus otros #include "x.h" siguen viendo wifi-sdr/src
+  # por el include PUBLIC.
+  set(_ws_src "${KEPYUR_DIR}/third_party/wifi-sdr/src")
+  set(_ws_out "${_kp_out}/third_party/wifi-sdr/src")
+  foreach(_f session.cpp usbmode.cpp)
+    configure_file("${_ws_src}/${_f}" "${_ws_out}/${_f}" COPYONLY)
+  endforeach()
   get_target_property(_src wsdrcore SOURCES)
-  list(TRANSFORM _src REPLACE "^(.*/)?src/receiver\.cpp$" "${_kp_out}/third_party/wifi-sdr/src/receiver.cpp")
+  list(TRANSFORM _src REPLACE "^(.*/)?src/(receiver|session|usbmode)\\.cpp$" "${_ws_out}/\\2.cpp")
   set_property(TARGET wsdrcore PROPERTY SOURCES ${_src})
-  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${KEPYUR_DIR}/third_party/wifi-sdr/src/receiver.cpp")
+  target_include_directories(wsdrcore BEFORE PUBLIC "${_ws_out}")
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${_ws_src}/receiver.cpp" "${_ws_src}/receiver.h")
 endif()
 
 # ---- radio propia (src/radio): fpv::Radio sobre wsdr::Receiver, con el DSP de kepyur ----------------------------
