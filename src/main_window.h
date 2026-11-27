@@ -58,6 +58,10 @@ private:
     void connectBackend(Backend *backend);
     void connectControls();
     void buildMenus();
+    void buildFileMenu();
+    void buildViewMenu();
+    void buildOptionsMenu();
+    void buildLanguageMenu();
     void setupShortcuts();  // F / F11 / Esc / O
     void retranslate();  // todos los textos visibles; se llama al crear y al cambiar de idioma
     void updatePlaceholder();

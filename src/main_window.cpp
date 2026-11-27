@@ -262,6 +262,22 @@ void MainWindow::buildMenus() {
     // plasma-integration Qt::AA_DontUseNativeMenuBar no basta; esto si. KP_GLOBAL_MENU=1 deja el menu global.
     if (qEnvironmentVariableIntValue("KP_GLOBAL_MENU") != 1) menuBar()->setNativeMenuBar(false);
 #endif
+    buildFileMenu();
+    buildViewMenu();
+    buildOptionsMenu();
+    buildLanguageMenu();
+    toolsMenu_ = menuBar()->addMenu(QString());
+    analyzerAct_ = toolsMenu_->addAction(QString(), this, &MainWindow::openAnalyzer);
+    elrsAct_ = toolsMenu_->addAction(QString(), this, &MainWindow::openElrsAnalyzer);
+
+    helpMenu_ = menuBar()->addMenu(QString());
+    manualAct_ = helpMenu_->addAction(QString(), this, [] { QDesktopServices::openUrl(QUrl(QString::fromLatin1(kRepoUrl))); });
+    aboutAct_ = helpMenu_->addAction(QString(), this, &MainWindow::showAbout);
+}
+
+// Archivo: captura y video, sus carpetas, la de las grabaciones de IQ, el registro, acceso directo y driver
+// (Windows) y salir
+void MainWindow::buildFileMenu() {
     fileMenu_ = menuBar()->addMenu(QString());
     // Los atajos S / R van en setupShortcuts() (funcionan tambien en pantalla completa); aqui solo se muestran
     snapAct_ = fileMenu_->addAction(QString(), this, &MainWindow::takeSnapshot);
@@ -300,8 +316,10 @@ void MainWindow::buildMenus() {
 #endif
     fileMenu_->addSeparator();
     quitAct_ = fileMenu_->addAction(QString(), QKeySequence::Quit, this, &QWidget::close);
+}
 
-    // Ver: forma de la imagen y recorte de bordes (se guardan)
+// Ver: forma de la imagen y recorte de bordes (se guardan)
+void MainWindow::buildViewMenu() {
     viewMenu_ = menuBar()->addMenu(QString());
     aspectSection_ = viewMenu_->addSection(QString());
     auto *aspGrp = new QActionGroup(this);
@@ -330,7 +348,10 @@ void MainWindow::buildMenus() {
     viewMenu_->addSeparator();
     fullScreenAct_ = viewMenu_->addAction(QString(), this, &MainWindow::toggleFullScreen);
     fullScreenAct_->setShortcutVisibleInContextMenu(true);
+}
 
+// Opciones: conectar al abrir, modo desarrollador, modo experimental...
+void MainWindow::buildOptionsMenu() {
     optMenu_ = menuBar()->addMenu(QString());
     autoConnectAct_ = optMenu_->addAction(QString());
     autoConnectAct_->setCheckable(true);
@@ -367,8 +388,10 @@ void MainWindow::buildMenus() {
         onStatus(lastStatus_);   // y dejar de tratar como digital el canal que se esta viendo
         if (on) statusBar()->showMessage(tr("Experimental mode: digital signals will be listed from the next scan"), 8000);
     });
+}
 
-    // Idioma: los nombres de cada idioma van siempre en ese idioma
+// Idioma: los nombres de cada idioma van siempre en ese idioma
+void MainWindow::buildLanguageMenu() {
     langMenu_ = menuBar()->addMenu(QString());
     langGroup_ = new QActionGroup(this);
     langSystemAct_ = langMenu_->addAction(QString());
@@ -385,14 +408,6 @@ void MainWindow::buildMenus() {
         if (a->data().toString() == cur) a->setChecked(true);
     }
     connect(langGroup_, &QActionGroup::triggered, this, [](QAction *a) { i18n::apply(a->data().toString()); });
-
-    toolsMenu_ = menuBar()->addMenu(QString());
-    analyzerAct_ = toolsMenu_->addAction(QString(), this, &MainWindow::openAnalyzer);
-    elrsAct_ = toolsMenu_->addAction(QString(), this, &MainWindow::openElrsAnalyzer);
-
-    helpMenu_ = menuBar()->addMenu(QString());
-    manualAct_ = helpMenu_->addAction(QString(), this, [] { QDesktopServices::openUrl(QUrl(QString::fromLatin1(kRepoUrl))); });
-    aboutAct_ = helpMenu_->addAction(QString(), this, &MainWindow::showAbout);
 }
 
 void MainWindow::openAnalyzer() {
