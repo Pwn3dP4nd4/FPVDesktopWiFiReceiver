@@ -32,7 +32,6 @@ public:
     // Arranque: conecta si el ajuste "Conectar el adaptador al abrir" esta activo (por defecto) o si se pidio
     // por linea de comandos. Tras conectar: watchMHz > 0 -> ese canal; si no, el ultimo canal visto o un escaneo.
     void startup(bool autoConnect, double watchMHz, bool forceScan);
-    static QSettings &settings();
     void toggleFullScreen();
 
 signals:
@@ -53,7 +52,16 @@ protected:
 
 private:
     enum class Screen { Idle, Connecting, Ready, Error, Lost };
+    // ---- el constructor, por partes ----
+    QWidget *buildSide();
+    void setupVideo();
+    void connectBackend(Backend *backend);
+    void connectControls();
     void buildMenus();
+    void buildFileMenu();
+    void buildViewMenu();
+    void buildOptionsMenu();
+    void buildLanguageMenu();
     void setupShortcuts();  // F / F11 / Esc / O
     void retranslate();  // todos los textos visibles; se llama al crear y al cambiar de idioma
     void updatePlaceholder();

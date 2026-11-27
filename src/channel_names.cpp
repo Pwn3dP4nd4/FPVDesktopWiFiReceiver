@@ -1,4 +1,5 @@
 #include "channel_names.h"
+#include "app_settings.h"
 
 #include <QSettings>
 
@@ -16,15 +17,8 @@ namespace {
 const char kKey[] = "channelChoices";
 const char kOrder[] = "RFABEL";  // como kepyur: Raceband primero, es con mucho la mas usada
 
-// el mismo .ini que MainWindow::settings() y el analizador (mismo proceso: lo que escribe uno lo ven los demas)
-QSettings &settings() {
-    static QSettings s(QSettings::IniFormat, QSettings::UserScope, QStringLiteral("FPVDesktopWiFiReceiver"),
-                       QStringLiteral("FPVDesktopWiFiReceiver"));
-    return s;
-}
-
 QStringList &choices() {
-    static QStringList c = settings().value(kKey).toStringList();
+    static QStringList c = appSettings().value(kKey).toStringList();
     return c;
 }
 
@@ -98,6 +92,14 @@ void apply(Pilot &p) {
     p.nameChosen = r.chosen;
 }
 
+Resolved resolved(const Pilot &p) {
+    Resolved r;
+    r.name = p.name;
+    r.alternatives = p.altNames;
+    r.chosen = p.nameChosen;
+    return r;
+}
+
 void choose(const QString &name) {
     const double f = channelMHz(name);
     if (f <= 0) return;
@@ -109,7 +111,7 @@ void choose(const QString &name) {
             }),
             c.end());
     c << name;
-    settings().setValue(kKey, c);
+    appSettings().setValue(kKey, c);
 }
 
 }  // namespace chnames

@@ -3,15 +3,20 @@
 #include <QDialog>
 #include <QElapsedTimer>
 #include <QHash>
+#include <algorithm>
+#include <QFontMetrics>
 #include <QVector>
 
 #include <optional>
 
 #include "backend.h"
 #include "channel_advisor.h"
+#include "race_history.h"
 #include "race_monitor.h"
+#include "survey_session.h"
 
 class QCheckBox;
+class QFont;
 class QComboBox;
 class QListWidget;
 class QLabel;
@@ -22,6 +27,8 @@ class QTabWidget;
 class QTimer;
 class QToolButton;
 class QTreeWidget;
+class QTreeWidgetItem;
+class QVBoxLayout;
 
 // Grafica del analizador: espectro medio y picos (dB sobre el suelo), zonas con rafagas, los canales candidatos
 // coloreados por interferencia, lo que ya hay en el aire y los canales recomendados (los fijados, distintos).
@@ -37,7 +44,8 @@ public:
     QSize sizeHint() const override { return {760, 300}; }
     // analisis en marcha: la barra de barrido se anima; al empezar, lo de antes se olvida
     void setScanning(bool on);
-    // test/analyzer_logic_test.cpp: MHz (de 1 en 1) refrescados en la ultima actualizacion y los ya medidos alguna vez
+    // test/analyzer_logic_test.cpp (solo se ve en los pixeles de la barra): MHz (de 1 en 1) refrescados en la ultima
+    // actualizacion y los ya medidos alguna vez
     QVector<int> sweepHeadForTest() const { return head_; }
     int sweepCellsForTest() const { return int(cellT_.size()); }
 
@@ -51,6 +59,22 @@ protected:
 
 private:
     bool isPinned(const advisor::Candidate &c) const;
+    // ---- paintEvent(), por capas ----
+    struct Geometry {  // ejes del pintado: x por MHz (lo..hi), y por dB (0..dbMax); filas de canales debajo
+        QFontMetrics fm;
+        int rowH = 0, left = 0, right = 0, barTop = 0, barH = 0, top = 0, plotBottom = 0;
+        double lo = 0, hi = 1, dbMax = 40;
+        double x(double mhz) const { return left + (mhz - lo) / (hi - lo) * (right - left); }
+        double y(double db) const { return plotBottom - std::clamp(db, 0.0, dbMax) / dbMax * (plotBottom - top); }
+    };
+    void drawAxes(QPainter &p, const Geometry &g) const;
+    void drawPicks(QPainter &p, const Geometry &g) const;      // los recomendados (franjas) y los fijados
+    void drawSpectrum(QPainter &p, const Geometry &g) const;   // rafagas, picos y media
+    void drawWifi(QPainter &p, const Geometry &g) const;       // las redes WiFi que recuerda el analisis
+    void drawSweepBar(QPainter &p, const Geometry &g) const;   // la barra de barrido
+    void drawSweepHead(QPainter &p, const Geometry &g, qint64 t) const;  // donde va ahora
+    void drawAir(QPainter &p, const Geometry &g) const;        // lo que hay en el aire
+    void drawChannelRows(QPainter &p, const Geometry &g) const;
     SurveyData data_;              // los bins juntados de 1 en 1 MHz (se dibujan mas limpios)
     advisor::Advice advice_;
     QStringList mine_;
@@ -77,35 +101,14 @@ class ChannelAnalyzer : public QDialog {
 public:
     ChannelAnalyzer(Backend *backend, QWidget *parent = nullptr);
     void setAdapterOpen(bool open);
-    bool isRunning() const { return running_; }
+    bool isRunning() const { return session_.running(); }
     // el analizador de 2,4 GHz se ha puesto en marcha (el barrido ya es suyo): parar sin pedirselo al backend
     void abandon(const QString &why);
-    // test/analyzer_shot.cpp: pilotos (< 0 = los guardados) y empezar sin clic
-    void setCounts(int analog, int hdzero);
-    void startForTest() { if (!running_) toggle(); }
-    // canales fijados ("R3", "hdz:R3"; se guardan como los del usuario) y activar el seguimiento de carrera
-    void setPinnedForTest(const QStringList &pins);
-    void setRaceForTest(bool on);
-    void applyForTest() { applyMoves(moves_); }  // pulsar Aplicar (todas las recomendaciones)
-    void setExcludedForTest(const QStringList &names);  // canales sin analizar ("R2")
-    void openChannelMenuForTest(int band) { showChannelMenu(band, bandBtns_[band]); }
-    // marcar como mios en "En el aire" (clave: el nombre del piloto o sus MHz); se aplica a lo que ya se ve
-    void setMineForTest(const QStringList &keys);
-    // pulsar "Empezar al salir los pilotos" con este numero de pilotos (<= 0: todos los fijados)
-    void armForTest(int pilots);
-    void showHistoryForTest(bool timeline = false);  // pestana Historial (por piloto o cronologico)
-    // historial por piloto de la ultima carrera, de mas a menos problemas: "R3>R2: 2 serious, 1 warnings, 1 changes"
-    QStringList pilotSummaryForTest() const;
-    SpectrumView *viewForTest() const { return view_; }
-    // test/analyzer_logic_test.cpp: reloj del analisis (s) en lugar del real (< 0: el real) y estado interno
-    void setTimeForTest(double s) { testTimeS_ = s; }
-    bool runningForTest() const { return running_; }
-    bool raceOnForTest() const { return raceOn_; }
-    bool armedForTest() const { return armed_; }
-    int raceSweepsForTest() const { return race_.sweeps(); }
+    // Las pruebas manejan la ventana por sus controles (test/analyzer_driver.h). Esto no se ve en ellos: el reloj del
+    // analisis (s; < 0: el real) y cuantas veces se ha recalculado la recomendacion (una por barrido, no por
+    // actualizacion: test/analyzer_logic_test.cpp)
+    void setTimeForTest(double s) { session_.setTimeForTest(s); }
     int recomputesForTest() const { return recomputes_; }
-    QStringList pinnedForTest() const;   // "R3", "hdz:R3", en el orden de pinned_
-    QStringList historyForTest() const;  // lo que dice cada evento del Historial (RaceEvent::what)
 
 signals:
     void requestStart(double loMHz, double hiMHz);
@@ -118,16 +121,32 @@ protected:
     void changeEvent(QEvent *e) override;
 
 private:
+    // ---- el constructor, por bloques de la ventana ----
+    QWidget *buildSide();
+    void addBandsPanel(QVBoxLayout *side);
+    void addPilotsPanel(QVBoxLayout *side);
+    QWidget *buildLegend();
+    QWidget *buildAdvicePage();
+    QWidget *buildRacePage();
     void retranslate();
     void toggle();
     void stop();
     void onStopped();     // el backend lo ha parado (otra orden): solo la ventana
-    double now() const;   // s desde que empezo el analisis (clock_, o el de setTimeForTest)
+    void showStopped(const QString &state, const QString &why);  // ya parado: boton, estado, carrera
     QByteArray airKey() const;        // los pilotos en el aire, sin la edad (cambia: hay que recomendar de nuevo)
     QStringList mineForView() const;  // mios para la grafica: marcados y en un canal fijado
     void updateAir();     // lista de pilotos en el aire
     void onSurvey(const SurveyData &d);
     void recompute();
+    // ---- recompute(), por partes ----
+    advisor::Advice pinnedOnlyAdvice() const;  // sin barridos: solo los fijados, sin medir
+    QTreeWidgetItem *addPickRow(const advisor::Pick &p);  // fila de la tabla: casilla, sistema, canal, MHz
+    void showUnmeasured(const advisor::Advice &a);  // tabla y resumen sin barridos
+    // fila de un canal recomendado; mineHere: mis pilotos que ya estan en el (race::already_on)
+    void addAdviceRow(const advisor::Pick &p, const std::vector<advisor::Wifi> &wifi, const QStringList &mineHere);
+    QString summaryText(const advisor::Advice &a, const QStringList &toMove) const;
+    static QStringList wifiChannels(const std::vector<advisor::Wifi> &wifi, const QString &dash);  // "1", "5-7"
+    void logAdvice(const advisor::Advice &a, const QStringList &moving);  // al log, solo si cambia
     QString bands() const;
     // Candidatos de las bandas marcadas sin los canales quitados (excluded_): lo que se analiza y se recomienda
     std::vector<advisor::Candidate> analogCands() const;
@@ -164,6 +183,10 @@ private:
     void setRace(bool on, const QString &why = QString());
     void updateRaceControls();
     void updateRace();  // panel de carrera
+    void refreshMoves();  // moves_: las recomendaciones de mover de ahora (las mostradas se mantienen si siguen valiendo)
+    // fila i de la tabla de la carrera; worst: resaltada (el peor video). false: su recomendacion no es OK
+    bool addRaceRow(int i, bool worst, const QFont &bold);
+    QString raceAdviceText(bool allOk) const;  // bajo la tabla: los cambios a hacer, o que no hace falta ninguno
     void applyMoves(const std::vector<race::Move> &moves);  // fija los canales nuevos (Aplicar)
     // las de moves que siguen entre las recomendaciones de ahora (mismo piloto y canal nuevo) con la carrera en marcha:
     // un menu abierto mientras llegan barridos no aplica una ya pasada
@@ -174,7 +197,6 @@ private:
     QVector<bool> noBetter_;  // por fila de la carrera: la ultima vez decia "sin canal mejor" (margen para quitarlo)
     void logRaceRow(int i, const QString &rec, const QString &tip, const QColor &col);  // al log y al Historial
     QString raceStateText() const;
-    QString healthText(const race::ChannelHealth &h, bool summary) const;  // SNR, calidad, cortes...
     bool canApplyAlone(const race::Move &m) const;  // compatible con los fijados de ahora (sin las demas)
     // lo que esta en el aire para el seguimiento (visto hace menos de kRaceHoldS), con su SNR
     std::vector<advisor::Signal> raceSignals() const;
@@ -196,62 +218,14 @@ private:
     QLabel *armLbl_ = nullptr;
     QCheckBox *autoStop_ = nullptr;
 
-    // ---- historial de la carrera: avisos, recomendaciones, cambios aplicados y el resumen final ----
-    // Problem: su canal tiene un problema y no hay otro libre mejor (sin canal mejor); Move: recomendado moverlo
-    enum class Ev { Info, Ok, Warn, Problem, Move, Applied, Summary };
-    // de un vistazo, por piloto: graves (su canal le da problemas: mover o sin canal mejor), avisos (video flojo que no
-    // es del canal, una senal que no se va), cambios de canal aplicados e informacion (OK, empezar, parar, resumen)
-    enum class Cat { Serious, Warning, Change, Info };
-    static Cat category(Ev k);
-    QString catName(Cat c) const;
-    struct RaceEvent {
-        QDateTime when;
-        double raceS = 0;  // s desde que empezo el seguimiento
-        int sweep = 0;
-        Ev kind = Ev::Info;
-        QString channel, what, detail;
-        int race = 0;    // numero de carrera (races_), 0 = fuera de ninguna
-        int pilot = -1;  // indice del piloto en esa carrera (= fijado, race_.health()); -1 = de toda la carrera
-    };
+    // ---- historial de la carrera (src/race_history.h): avisos, recomendaciones, cambios y el resumen final ----
+    using Ev = RaceHistory::Ev;
     void addEvent(Ev kind, const QString &channel, const QString &what, const QString &detail = QString(),
-                  int pilot = -1);
-    void addSummary();  // al parar: como ha ido cada canal
-    QString historyText(bool csv) const;
-    void saveHistory();
-    void updateHistoryTab();
-    QVector<RaceEvent> events_;   // de todas las carreras de esta ventana (Borrar las quita)
-    QElapsedTimer raceClock_;
-    // las carreras de esta ventana: un piloto por canal fijado al empezar (por orden), los canales por los que ha
-    // pasado (Aplicar) y como le ha ido (lo ultimo de race_.health(); tras moverlo, solo lo de su canal nuevo)
-    struct PilotRec {
-        QStringList channels;
-        race::ChannelHealth health;
-    };
-    struct RaceRec {
-        int no = 0;
-        QDateTime start;
-        QVector<PilotRec> pilots;
-    };
-    QVector<RaceRec> races_;
-    void beginRaceRec();     // empieza el seguimiento (o vuelve a empezar con otros fijados)
-    void syncRaceHealth();   // race_.health() -> races_.back()
-    const RaceRec *raceRec(int no) const;
-    QString pilotLabel(int race, int pilot, bool withRace) const;  // "Pilot 2 (R3 → R2)"
-    int histRace() const;    // la carrera elegida arriba; 0 = todas
-    bool histShows(const RaceEvent &e) const;
-    void addHistRow(const RaceEvent &e);  // a la vista cronologica
-    void rebuildHistory();   // las dos vistas (cambia la carrera elegida, Borrar, idioma)
-    void rebuildPilotView();
-    void showPilotEvents();  // eventos del piloto elegido, por categoria
-    QComboBox *histRace_ = nullptr, *histView_ = nullptr;
-    QLabel *histRaceLbl_ = nullptr, *histVerdict_ = nullptr, *pilotInfo_ = nullptr;
-    QStackedWidget *histStack_ = nullptr;
-    QTreeWidget *pilotTable_ = nullptr, *pilotEvents_ = nullptr;
-    bool pilotPicked_ = false;  // el usuario ha elegido un piloto (si no, se muestra el de mas problemas)
-    int shownRace_ = -1, shownPilot_ = -2;  // el piloto de pilotEvents_ (al rehacerlo, conservar lo abierto)
-    QTreeWidget *histTable_ = nullptr;
-    QLabel *histHint_ = nullptr;
-    QPushButton *histCopy_ = nullptr, *histSave_ = nullptr, *histClear_ = nullptr;
+                  int pilot = -1);  // con el barrido de race_
+    void addSummary();      // al parar: como ha ido cada canal
+    void beginRaceRec();    // empieza el seguimiento (o vuelve a empezar con otros fijados)
+    void updateHistoryTab(int events);  // el titulo de la pestana
+    RaceHistory *history_ = nullptr;
 
     QVector<Pin> pinned_;
     race::Monitor race_;
@@ -277,8 +251,8 @@ private:
     QComboBox *region_ = nullptr;  // reglas WiFi (UE / EE. UU.): hasta donde llega el bloque de cada canal
     QLabel *regionLbl_ = nullptr;
     advisor::WifiMemory wifiMem_;  // redes WiFi vistas en este analisis (un AP callado se ve a ratos)
-    QElapsedTimer clock_;          // desde que empezo el analisis
-    double surveyT_ = 0;           // s de clock_ en el ultimo barrido recibido
+    SurveySession session_;        // en marcha, adaptador, paradas pendientes y el reloj del analisis
+    double surveyT_ = 0;           // s de session_.now() en el ultimo barrido recibido
     QLabel *memoryLbl_ = nullptr;
     QListWidget *air_ = nullptr;  // pilotos en el aire; marcados = mios (su canal no cuenta como ocupado)
     QLabel *airTitle_ = nullptr;
@@ -291,7 +265,6 @@ private:
     SpectrumView *view_ = nullptr;
     QTreeWidget *table_ = nullptr;
     SurveyData last_;
-    bool running_ = false, open_ = false;
     // por barrido, no por actualizacion: el backend manda el espectro cada segundo y un barrido tarda ~3 s. El
     // seguimiento de carrera, la memoria WiFi y la recomendacion solo avanzan con un barrido nuevo (o, la
     // recomendacion, si cambian los pilotos en el aire); en medio solo se repinta la grafica
@@ -299,6 +272,4 @@ private:
     QByteArray airKey_;           // los pilotos en el aire (sin la edad) del ultimo recompute
     advisor::Advice advice_;      // la ultima recomendacion (para repintar la grafica entre barridos)
     int recomputes_ = 0;
-    int pendingStops_ = 0;        // requestStop emitidos cuyo surveyStopped aun no ha llegado
-    double testTimeS_ = -1;
 };

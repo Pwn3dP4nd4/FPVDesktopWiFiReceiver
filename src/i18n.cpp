@@ -1,4 +1,5 @@
 #include "i18n.h"
+#include "app_settings.h"
 
 #include <QCoreApplication>
 #include <QLibraryInfo>
@@ -6,7 +7,6 @@
 #include <QSettings>
 #include <QTranslator>
 
-#include "main_window.h"
 
 namespace i18n {
 
@@ -23,7 +23,7 @@ void drop(QTranslator *&t) {
 }  // namespace
 
 QString setting() {
-    const QString s = MainWindow::settings().value("language").toString();
+    const QString s = appSettings().value("language").toString();
     return s == QLatin1String("en") || s == QLatin1String("es") ? s : QString();
 }
 
@@ -33,7 +33,7 @@ QString resolve(const QString &s) {
 }
 
 void apply(const QString &s) {
-    MainWindow::settings().setValue("language", s);
+    appSettings().setValue("language", s);
     const QString lang = resolve(s);
     drop(g_app);
     drop(g_qt);

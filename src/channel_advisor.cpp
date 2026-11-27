@@ -415,65 +415,60 @@ Rating rate(const Candidate &c, const std::vector<Bin> &bins, const std::vector<
     return r;
 }
 
-Advice advise(const std::vector<Bin> &bins, const std::vector<Signal> &seen, const std::vector<Candidate> &analog,
-              const std::vector<Candidate> &hdzero, int n_analog, int n_hdzero, const std::vector<Wifi> *wifi,
-              const std::vector<Candidate> &pinned) {
-    Advice out;
-    out.wifi = wifi ? *wifi : find_wifi(bins, Region::Eu, seen);
-    for (const auto &c : analog) out.analog.push_back(rate(c, bins, seen, out.wifi));
-    for (const auto &c : hdzero) out.hdzero.push_back(rate(c, bins, seen, out.wifi));
-    std::vector<Rating> all = out.analog;
-    all.insert(all.end(), out.hdzero.begin(), out.hdzero.end());
-    // los fijados: el candidato del mismo nombre y sistema si lo hay (no sale dos veces); si no (fuera de las bandas
-    // elegidas), se puntua aparte y se anade al final de all, donde la busqueda no lo ve como libre porque ya esta
-    // en todas las elecciones
-    std::vector<int> fixed;
-    int fixed_a = 0, fixed_h = 0, extra_a = 0, extra_h = 0;  // extra: fijados que no estan entre los candidatos
+namespace {
+// Los fijados en all: el candidato del mismo nombre y sistema si lo hay (no sale dos veces); si no (fuera de las bandas
+// elegidas), se puntua aparte y se anade al final de all, donde la busqueda no lo ve como libre porque ya esta en
+// todas las elecciones
+struct Fixed {
+    std::vector<int> idx;  // en all, sin repetir
+    int analog = 0, hdzero = 0;
+    int extra_a = 0, extra_h = 0;  // fijados que no estan entre los candidatos
+};
+Fixed place_pinned(std::vector<Rating> &all, const std::vector<Candidate> &pinned, const std::vector<Bin> &bins,
+                   const std::vector<Signal> &seen, const std::vector<Wifi> &wifi) {
+    Fixed f;
     for (const auto &c : pinned) {
         int idx = -1;
         for (int i = 0; i < static_cast<int>(all.size()); i++)
             if (all[i].ch.name == c.name && all[i].ch.hdzero == c.hdzero) idx = i;
         if (idx < 0) {
-            all.push_back(rate(c, bins, seen, out.wifi));
+            all.push_back(rate(c, bins, seen, wifi));
             idx = static_cast<int>(all.size()) - 1;
-            (c.hdzero ? extra_h : extra_a)++;
+            (c.hdzero ? f.extra_h : f.extra_a)++;
         }
-        if (std::find(fixed.begin(), fixed.end(), idx) != fixed.end()) continue;  // fijado repetido
-        fixed.push_back(idx);
-        (c.hdzero ? fixed_h : fixed_a)++;
+        if (std::find(f.idx.begin(), f.idx.end(), idx) != f.idx.end()) continue;  // fijado repetido
+        f.idx.push_back(idx);
+        (c.hdzero ? f.hdzero : f.analog)++;
     }
-    // no mas de los que hay (candidatos y fijados de fuera de ellos); el total de cada sistema incluye sus fijados;
-    // con mas fijados que pilotos, solo los fijados
-    n_analog = std::clamp(n_analog, 0, static_cast<int>(analog.size()) + extra_a);
-    n_hdzero = std::clamp(n_hdzero, 0, static_cast<int>(hdzero.size()) + extra_h);
-    n_analog = std::max(n_analog, fixed_a);
-    n_hdzero = std::max(n_hdzero, fixed_h);
-    if (n_analog + n_hdzero == 0) {
-        out.complete = true;
-        return out;
-    }
+    return f;
+}
+
+// la mejor eleccion (indices en all, los fijados primero): una busqueda voraz desde cada candidato libre, la de menos
+// coste total, y luego mejorada cambiando de uno en uno
+std::vector<int> best_choice(const std::vector<Rating> &all, int n_analog, int n_hdzero, const std::vector<int> &fixed) {
+    if (static_cast<int>(fixed.size()) == n_analog + n_hdzero) return fixed;  // no falta ninguno
     // canales de bandas distintas en la misma frecuencia son candidatos distintos: la separacion minima impide
     // elegir dos a la vez
     Search s{all, n_analog, n_hdzero, fixed};
     std::vector<int> best;
-    if (static_cast<int>(fixed.size()) == n_analog + n_hdzero) {
-        best = fixed;  // no falta ninguno
-    } else {
-        float bt = std::numeric_limits<float>::max();
-        for (int st = 0; st < static_cast<int>(all.size()); st++) {
-            if (!s.fits(fixed, st)) continue;
-            auto p = s.greedy(st);
-            if (static_cast<int>(p.size()) < n_analog + n_hdzero) continue;
-            const float t = s.total(p);
-            if (t < bt) {
-                bt = t;
-                best = p;
-            }
+    float bt = std::numeric_limits<float>::max();
+    for (int st = 0; st < static_cast<int>(all.size()); st++) {
+        if (!s.fits(fixed, st)) continue;
+        auto p = s.greedy(st);
+        if (static_cast<int>(p.size()) < n_analog + n_hdzero) continue;
+        const float t = s.total(p);
+        if (t < bt) {
+            bt = t;
+            best = p;
         }
-        if (best.empty()) best = s.greedy(-1);  // no deberia pasar (los totales caben), pero los fijados salen
-        s.improve(best);
     }
+    if (best.empty()) best = s.greedy(-1);  // no deberia pasar (los totales caben), pero los fijados salen
+    s.improve(best);
+    return best;
+}
 
+// la recomendacion: cada elegido con sus notas; complete = false si dos estan por debajo de la separacion minima
+void fill_picks(Advice &out, const std::vector<Rating> &all, const std::vector<int> &best, size_t n_fixed) {
     std::vector<const Candidate *> set;
     for (int i : best) set.push_back(&all[i].ch);
     out.complete = true;
@@ -481,7 +476,7 @@ Advice advise(const std::vector<Bin> &bins, const std::vector<Signal> &seen, con
         const int i = best[k];
         Pick pk;
         pk.r = all[i];
-        pk.pinned = k < fixed.size();
+        pk.pinned = k < n_fixed;
         bool close = false;
         for (int j : best)
             if (j != i) {
@@ -495,6 +490,28 @@ Advice advise(const std::vector<Bin> &bins, const std::vector<Signal> &seen, con
         out.picks.push_back(pk);
     }
     std::sort(out.picks.begin(), out.picks.end(), [](const Pick &a, const Pick &b) { return a.r.ch.mhz < b.r.ch.mhz; });
+}
+}  // namespace
+
+Advice advise(const std::vector<Bin> &bins, const std::vector<Signal> &seen, const std::vector<Candidate> &analog,
+              const std::vector<Candidate> &hdzero, int n_analog, int n_hdzero, const std::vector<Wifi> *wifi,
+              const std::vector<Candidate> &pinned) {
+    Advice out;
+    out.wifi = wifi ? *wifi : find_wifi(bins, Region::Eu, seen);
+    for (const auto &c : analog) out.analog.push_back(rate(c, bins, seen, out.wifi));
+    for (const auto &c : hdzero) out.hdzero.push_back(rate(c, bins, seen, out.wifi));
+    std::vector<Rating> all = out.analog;
+    all.insert(all.end(), out.hdzero.begin(), out.hdzero.end());
+    const Fixed fixed = place_pinned(all, pinned, bins, seen, out.wifi);
+    // no mas de los que hay (candidatos y fijados de fuera de ellos); el total de cada sistema incluye sus fijados;
+    // con mas fijados que pilotos, solo los fijados
+    n_analog = std::max(std::clamp(n_analog, 0, static_cast<int>(analog.size()) + fixed.extra_a), fixed.analog);
+    n_hdzero = std::max(std::clamp(n_hdzero, 0, static_cast<int>(hdzero.size()) + fixed.extra_h), fixed.hdzero);
+    if (n_analog + n_hdzero == 0) {
+        out.complete = true;
+        return out;
+    }
+    fill_picks(out, all, best_choice(all, n_analog, n_hdzero, fixed.idx), fixed.idx.size());
     return out;
 }
 

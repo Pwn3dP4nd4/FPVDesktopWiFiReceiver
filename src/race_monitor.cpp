@@ -64,14 +64,11 @@ void Monitor::reset(size_t i) {
     cost_sum_[i] = 0;
 }
 
-void Monitor::update(const std::vector<advisor::Bin> &bins, const std::vector<advisor::Signal> &now,
-                     const std::vector<advisor::Wifi> &wifi) {
-    const size_t n = health_.size();
-    sweeps_++;
+std::vector<int> Monitor::match_pilots(const std::vector<advisor::Signal> &now) const {
     // De cada senal, el fijado con el que casa (el mas cercano, por si dos fijados estuvieran a menos de kMatchMhz)
     // y de cada fijado, la senal de su piloto (la mas cercana, si hubiera dos)
+    const size_t n = health_.size();
     std::vector<int> pilot(n, -1);
-    std::vector<bool> own(now.size(), false);
     for (size_t s = 0; s < now.size(); s++) {
         int best = -1;
         double bd = kMatchMhz;
@@ -87,9 +84,14 @@ void Monitor::update(const std::vector<advisor::Bin> &bins, const std::vector<ad
         const int p = pilot[best];
         if (p < 0 || bd < std::fabs(now[p].mhz - health_[best].ch.mhz)) pilot[best] = static_cast<int>(s);
     }
+    return pilot;
+}
+
+std::vector<bool> Monitor::own_signals(const std::vector<advisor::Signal> &now, const std::vector<int> &pilot) {
     // solo la de su piloto es propia: otra que tambien case con el mismo fijado es de alguien mas (un intruso)
-    for (size_t i = 0; i < n; i++)
-        if (pilot[i] >= 0) own[pilot[i]] = true;
+    std::vector<bool> own(now.size(), false);
+    for (int p : pilot)
+        if (p >= 0) own[p] = true;
     // un piloto movido que aun esta en su canal viejo: tambien es propio (ni intruso ni ajeno)
     for (auto &l : leaving_)
         for (size_t s = 0; s < now.size(); s++)
@@ -104,17 +106,10 @@ void Monitor::update(const std::vector<advisor::Bin> &bins, const std::vector<ad
                    leaving_.end());
     leaving_ch_.clear();
     for (const auto &l : leaving_) leaving_ch_.push_back(l.ch);
+    return own;
+}
 
-    // Las senales de los pilotos propios no son interferencia de nadie (ni del suyo ni de los vecinos, por las
-    // bandas laterales): se quitan todas del espectro. Lo que queda debajo de cada portadora no se ve, pero si lo
-    // que asoma fuera de su ancho, las redes recordadas y el canal entero en los barridos en que su piloto no esta.
-    last_bins_ = bins;
-    for (size_t s = 0; s < now.size(); s++)
-        if (own[s]) advisor::mask_signal(last_bins_, now[s], now);  // el nivel de alrededor, sin otras senales
-    foreign_.clear();
-    for (size_t s = 0; s < now.size(); s++)
-        if (!own[s]) foreign_.push_back(now[s]);
-    wifi_ = wifi;
+void Monitor::remember_foreign() {
     // las ajenas de los ultimos kForeignMemory barridos (una que sale a ratos tambien cuenta para suggest)
     for (const auto &f : foreign_) {
         bool found = false;
@@ -130,47 +125,67 @@ void Monitor::update(const std::vector<advisor::Bin> &bins, const std::vector<ad
     recent_.erase(std::remove_if(recent_.begin(), recent_.end(),
                                  [&](const Recent &r) { return sweeps_ - r.sweep >= kForeignMemory; }),
                   recent_.end());
+}
 
-    for (size_t i = 0; i < n; i++) {
-        ChannelHealth &h = health_[i];
-        const int sw = h.sweeps++;  // indice local: desde start() o desde que se movio
-        if (pilot[i] >= 0) {
-            h.seen++;
-            // la SNR, solo de una medida de este barrido: la de un piloto que sigue en el aire sin medirse de nuevo
-            // es la de antes (o 0, segun el backend) y contaria otra vez
-            if (now[pilot[i]].fresh) snr_[i].push_back(now[pilot[i]].snr_db);
-            if (first_[i] < 0) first_[i] = sw;
-            last_[i] = sw;
-        }
-        // las senales ajenas que pisan su canal cuentan en intruders; su energia se quita aqui para no contarlas
-        // otra vez en la interferencia del canal (lo que asoma de las que solo estan cerca si cuenta)
-        const std::vector<advisor::Bin> *cb = &last_bins_;
-        std::vector<advisor::Bin> masked;
-        for (const auto &f : foreign_)
-            if (overlaps(f, h.ch)) {
-                if (cb == &last_bins_) {
-                    h.intruders++;
-                    masked = last_bins_;
-                    cb = &masked;
-                }
-                advisor::mask_signal(masked, f, now);
-            }
-        // sin vecinos (seen vacio): lo que se mide es el canal, no si esta ocupado (los ajenos van en intruders)
-        cost_sum_[i] += advisor::rate(h.ch, *cb, {}, wifi).cost;
-
-        auto v = snr_[i];
-        std::sort(v.begin(), v.end());
-        h.snr_med = percentile(v, 0.5);
-        h.snr_low = percentile(v, 0.1);
-        // solo cuenta como corte lo que falta entre la primera y la ultima vez que se vio: antes aun no habia
-        // salido y despues ya ha aterrizado (o se ha quedado sin bateria: eso no lo arregla un canal)
-        const int span = first_[i] < 0 ? 0 : last_[i] - first_[i] + 1;
-        h.lost = span - h.seen;
-        h.channel_cost = static_cast<float>(cost_sum_[i] / h.sweeps);
-        h.penalty = h.channel_cost + kIntruderCost * static_cast<float>(h.intruders) / static_cast<float>(h.sweeps);
-        h.quality = h.snr_low - h.penalty;
-        if (span > 0) h.quality -= kLostCost * static_cast<float>(h.lost) / static_cast<float>(span);
+void Monitor::update_health(size_t i, int pilot, const std::vector<advisor::Signal> &now,
+                            const std::vector<advisor::Wifi> &wifi) {
+    ChannelHealth &h = health_[i];
+    const int sw = h.sweeps++;  // indice local: desde start() o desde que se movio
+    if (pilot >= 0) {
+        h.seen++;
+        // la SNR, solo de una medida de este barrido: la de un piloto que sigue en el aire sin medirse de nuevo
+        // es la de antes (o 0, segun el backend) y contaria otra vez
+        if (now[pilot].fresh) snr_[i].push_back(now[pilot].snr_db);
+        if (first_[i] < 0) first_[i] = sw;
+        last_[i] = sw;
     }
+    // las senales ajenas que pisan su canal cuentan en intruders; su energia se quita aqui para no contarlas
+    // otra vez en la interferencia del canal (lo que asoma de las que solo estan cerca si cuenta)
+    const std::vector<advisor::Bin> *cb = &last_bins_;
+    std::vector<advisor::Bin> masked;
+    for (const auto &f : foreign_)
+        if (overlaps(f, h.ch)) {
+            if (cb == &last_bins_) {
+                h.intruders++;
+                masked = last_bins_;
+                cb = &masked;
+            }
+            advisor::mask_signal(masked, f, now);
+        }
+    // sin vecinos (seen vacio): lo que se mide es el canal, no si esta ocupado (los ajenos van en intruders)
+    cost_sum_[i] += advisor::rate(h.ch, *cb, {}, wifi).cost;
+
+    auto v = snr_[i];
+    std::sort(v.begin(), v.end());
+    h.snr_med = percentile(v, 0.5);
+    h.snr_low = percentile(v, 0.1);
+    // solo cuenta como corte lo que falta entre la primera y la ultima vez que se vio: antes aun no habia
+    // salido y despues ya ha aterrizado (o se ha quedado sin bateria: eso no lo arregla un canal)
+    const int span = first_[i] < 0 ? 0 : last_[i] - first_[i] + 1;
+    h.lost = span - h.seen;
+    h.channel_cost = static_cast<float>(cost_sum_[i] / h.sweeps);
+    h.penalty = h.channel_cost + kIntruderCost * static_cast<float>(h.intruders) / static_cast<float>(h.sweeps);
+    h.quality = h.snr_low - h.penalty;
+    if (span > 0) h.quality -= kLostCost * static_cast<float>(h.lost) / static_cast<float>(span);
+}
+
+void Monitor::update(const std::vector<advisor::Bin> &bins, const std::vector<advisor::Signal> &now,
+                     const std::vector<advisor::Wifi> &wifi) {
+    sweeps_++;
+    const std::vector<int> pilot = match_pilots(now);
+    const std::vector<bool> own = own_signals(now, pilot);
+    // Las senales de los pilotos propios no son interferencia de nadie (ni del suyo ni de los vecinos, por las
+    // bandas laterales): se quitan todas del espectro. Lo que queda debajo de cada portadora no se ve, pero si lo
+    // que asoma fuera de su ancho, las redes recordadas y el canal entero en los barridos en que su piloto no esta.
+    last_bins_ = bins;
+    for (size_t s = 0; s < now.size(); s++)
+        if (own[s]) advisor::mask_signal(last_bins_, now[s], now);  // el nivel de alrededor, sin otras senales
+    foreign_.clear();
+    for (size_t s = 0; s < now.size(); s++)
+        if (!own[s]) foreign_.push_back(now[s]);
+    wifi_ = wifi;
+    remember_foreign();
+    for (size_t i = 0; i < health_.size(); i++) update_health(i, pilot[i], now, wifi);
 }
 
 void Monitor::moved(int i, const advisor::Candidate &c) {
@@ -196,6 +211,21 @@ int present(const std::vector<advisor::Candidate> &pinned, const std::vector<adv
     return static_cast<int>(std::count(got.begin(), got.end(), true));
 }
 
+std::vector<std::vector<int>> already_on(const std::vector<advisor::Pick> &picks,
+                                         const std::vector<advisor::Signal> &mine) {
+    std::vector<std::vector<int>> on(picks.size());
+    std::vector<bool> placed(mine.size(), false);
+    for (size_t p = 0; p < picks.size(); p++) {
+        if (picks[p].pinned) continue;
+        for (size_t k = 0; k < mine.size(); k++)
+            if (!placed[k] && matches(mine[k], picks[p].r.ch)) {
+                placed[k] = true;
+                on[p].push_back(static_cast<int>(k));
+            }
+    }
+    return on;
+}
+
 int Monitor::worst() const {
     int w = -1;
     for (size_t i = 0; i < health_.size(); i++) {
@@ -205,12 +235,9 @@ int Monitor::worst() const {
     return w;
 }
 
-std::vector<Move> Monitor::suggest_all(const std::vector<advisor::Candidate> &analog,
-                                       const std::vector<advisor::Candidate> &hdzero,
-                                       const std::vector<Move> &prev) const {
+std::vector<int> Monitor::move_order(const std::vector<Move> &prev) const {
     // De peor a mejor video: mover a un piloto en plena carrera tiene un coste (aterrizar, cambiar el VTX), asi que
-    // no se busca el reparto optimo sino arreglar a los que lo estan pasando peor, uno a uno: cada recomendacion
-    // cuenta con las anteriores ya aplicadas (sus canales nuevos), para que se puedan aplicar todas a la vez
+    // no se busca el reparto optimo sino arreglar a los que lo estan pasando peor, uno a uno
     std::vector<int> order;
     for (size_t i = 0; i < health_.size(); i++)
         if (health_[i].seen > 0) order.push_back(static_cast<int>(i));
@@ -224,89 +251,112 @@ std::vector<Move> Monitor::suggest_all(const std::vector<advisor::Candidate> &an
             first.push_back(pv.from);
     for (int i : order)
         if (std::find(first.begin(), first.end(), i) == first.end()) first.push_back(i);
-    order = first;
+    return first;
+}
 
-    std::vector<advisor::Candidate> chans;  // el reparto con las recomendaciones de este bucle aplicadas
-    for (const auto &h : health_) chans.push_back(h.ch);
-    std::vector<advisor::Signal> foreign;   // las ajenas recordadas: ocupadas y a guardar separacion con ellas
-    for (const auto &r : recent_) foreign.push_back(r.s);
-    std::vector<Move> out;
-    for (int i : order) {
-        const ChannelHealth &h = health_[i];
-        if (h.sweeps < kMinSweeps) continue;
-        std::vector<advisor::Candidate> others;
-        int n_a = 0, n_h = 0;
-        for (size_t j = 0; j < chans.size(); j++) {
-            if (static_cast<int>(j) == i) continue;
-            others.push_back(chans[j]);
-            (chans[j].hdzero ? n_h : n_a)++;
+std::vector<advisor::Candidate> Monitor::free_channels(const ChannelHealth &h,
+                                                       const std::vector<advisor::Candidate> &pool,
+                                                       const std::vector<advisor::Signal> &foreign) const {
+    // candidatos de su sistema, sin el canal en que ya esta (ni otro casi en la misma frecuencia: otra banda) ni
+    // los que esten a menos de la separacion minima de una senal ajena: lo que esta tiene pegado a su canal no se
+    // ve si cae bajo la portadora de un fijado (se quita con su senal), asi que se le pide lo mismo que a un fijado
+    std::vector<advisor::Candidate> cand;
+    for (const auto &c : pool) {
+        bool ok = c.hdzero == h.ch.hdzero && std::fabs(c.mhz - h.ch.mhz) >= kMatchMhz;
+        for (const auto &f : foreign) {
+            const advisor::Candidate fc{f.name, f.mhz, f.digital, f.digital ? f.bw_mhz : 0};
+            ok = ok && std::fabs(f.mhz - c.mhz) >= advisor::min_spacing(fc, c);
         }
-        (h.ch.hdzero ? n_h : n_a)++;  // el que se busca
-        // candidatos de su sistema, sin el canal en que ya esta (ni otro casi en la misma frecuencia: otra banda) ni
-        // los que esten a menos de la separacion minima de una senal ajena: lo que esta tiene pegado a su canal no se
-        // ve si cae bajo la portadora de un fijado (se quita con su senal), asi que se le pide lo mismo que a un fijado
-        std::vector<advisor::Candidate> cand;
-        for (const auto &c : h.ch.hdzero ? hdzero : analog) {
-            bool ok = c.hdzero == h.ch.hdzero && std::fabs(c.mhz - h.ch.mhz) >= kMatchMhz;
-            for (const auto &f : foreign) {
-                const advisor::Candidate fc{f.name, f.mhz, f.digital, f.digital ? f.bw_mhz : 0};
-                ok = ok && std::fabs(f.mhz - c.mhz) >= advisor::min_spacing(fc, c);
-            }
-            // ni los que acaba de dejar un piloto movido: hasta que aterrice y cambie sigue emitiendo ahi (su senal
-            // cuenta como suya y esta quitada del espectro: el canal se veria libre y limpio)
-            for (const auto &l : leaving_ch_) ok = ok && std::fabs(l.mhz - c.mhz) >= advisor::min_spacing(l, c);
-            if (ok) cand.push_back(c);
-        }
-        if (cand.empty()) continue;
-        const std::vector<advisor::Candidate> none;
-        const auto adv = advisor::advise(last_bins_, foreign, h.ch.hdzero ? none : cand, h.ch.hdzero ? cand : none,
-                                         n_a, n_h, &wifi_, others);
-        // el elegido por la busqueda (no fijado) de su sistema; se comprueba que no pisa a los demas por si no
-        // hubiera sitio (advise lo devuelve igual, con complete = false)
-        const auto fits = [&](const advisor::Candidate &c) {
-            bool ok = std::fabs(c.mhz - h.ch.mhz) >= kMatchMhz;
-            for (const auto &o : others) ok = ok && std::fabs(o.mhz - c.mhz) >= advisor::min_spacing(o, c);
-            return ok;
-        };
-        const advisor::Pick *best = nullptr;
-        for (const auto &pk : adv.picks) {
-            if (pk.pinned || pk.r.ch.hdzero != h.ch.hdzero || !fits(pk.r.ch)) continue;
-            if (!best || pk.r.cost < best->r.cost) best = &pk;
-        }
-        // lo que se gana: lo atribuible a su canal actual (interferencia e intrusos) contra el coste del nuevo. La
-        // SNR baja y los cortes no entran: con el canal limpio no se arreglan cambiando de canal
-        advisor::Candidate to;
-        float gain = -1;
-        if (best) {
-            to = best->r.ch;
-            gain = h.penalty - best->r.cost;
-        }
-        // la anterior se mantiene si sigue valiendo (con menos mejora que para salir: kMoveKeepGainDb) y la nueva no
-        // es claramente mejor
-        bool kept = false;
-        for (const auto &pv : prev) {
-            if (pv.from != i) continue;
-            const advisor::Candidate *pc = nullptr;
-            for (const auto &c : cand)
-                if (c.name == pv.to.name && c.hdzero == pv.to.hdzero) pc = &c;
-            if (!pc || !fits(*pc)) break;
+        // ni los que acaba de dejar un piloto movido: hasta que aterrice y cambie sigue emitiendo ahi (su senal
+        // cuenta como suya y esta quitada del espectro: el canal se veria libre y limpio)
+        for (const auto &l : leaving_ch_) ok = ok && std::fabs(l.mhz - c.mhz) >= advisor::min_spacing(l, c);
+        if (ok) cand.push_back(c);
+    }
+    return cand;
+}
+
+std::optional<Move> Monitor::suggest_for(int i, const std::vector<advisor::Candidate> &chans,
+                                         const std::vector<advisor::Candidate> &cand,
+                                         const std::vector<advisor::Signal> &foreign,
+                                         const std::vector<Move> &prev) const {
+    const ChannelHealth &h = health_[i];
+    std::vector<advisor::Candidate> others;
+    int n_a = 0, n_h = 0;
+    for (size_t j = 0; j < chans.size(); j++) {
+        if (static_cast<int>(j) == i) continue;
+        others.push_back(chans[j]);
+        (chans[j].hdzero ? n_h : n_a)++;
+    }
+    (h.ch.hdzero ? n_h : n_a)++;  // el que se busca
+    const std::vector<advisor::Candidate> none;
+    const auto adv = advisor::advise(last_bins_, foreign, h.ch.hdzero ? none : cand, h.ch.hdzero ? cand : none,
+                                     n_a, n_h, &wifi_, others);
+    // el elegido por la busqueda (no fijado) de su sistema; se comprueba que no pisa a los demas por si no
+    // hubiera sitio (advise lo devuelve igual, con complete = false)
+    const auto fits = [&](const advisor::Candidate &c) {
+        bool ok = std::fabs(c.mhz - h.ch.mhz) >= kMatchMhz;
+        for (const auto &o : others) ok = ok && std::fabs(o.mhz - c.mhz) >= advisor::min_spacing(o, c);
+        return ok;
+    };
+    const advisor::Pick *best = nullptr;
+    for (const auto &pk : adv.picks) {
+        if (pk.pinned || pk.r.ch.hdzero != h.ch.hdzero || !fits(pk.r.ch)) continue;
+        if (!best || pk.r.cost < best->r.cost) best = &pk;
+    }
+    // lo que se gana: lo atribuible a su canal actual (interferencia e intrusos) contra el coste del nuevo. La
+    // SNR baja y los cortes no entran: con el canal limpio no se arreglan cambiando de canal
+    advisor::Candidate to;
+    float gain = -1;
+    if (best) {
+        to = best->r.ch;
+        gain = h.penalty - best->r.cost;
+    }
+    // la anterior se mantiene si sigue valiendo (con menos mejora que para salir: kMoveKeepGainDb) y la nueva no
+    // es claramente mejor
+    bool kept = false;
+    const auto pv = std::find_if(prev.begin(), prev.end(), [&](const Move &m) { return m.from == i; });
+    if (pv != prev.end()) {
+        const advisor::Candidate *pc = nullptr;
+        for (const auto &c : cand)
+            if (c.name == pv->to.name && c.hdzero == pv->to.hdzero) pc = &c;
+        if (pc && fits(*pc)) {
             const float pg = h.penalty - advisor::rate(*pc, last_bins_, foreign, wifi_).cost;
             if (pg >= kMoveKeepGainDb && gain < pg + kMoveMinGainDb) {
                 to = *pc;
                 gain = pg;
                 kept = true;
             }
-            break;
         }
-        if (gain < (kept ? kMoveKeepGainDb : kMoveMinGainDb)) continue;
-        Move mv;
-        mv.from = i;
-        mv.to = to;
-        mv.gain_db = gain;
-        mv.cause = static_cast<float>(h.intruders) / static_cast<float>(h.sweeps) > 0.2f ? Cause::Intruder
-                                                                                           : Cause::Interference;
-        out.push_back(mv);
-        chans[i] = to;
+    }
+    if (gain < (kept ? kMoveKeepGainDb : kMoveMinGainDb)) return std::nullopt;
+    Move mv;
+    mv.from = i;
+    mv.to = to;
+    mv.gain_db = gain;
+    mv.cause = static_cast<float>(h.intruders) / static_cast<float>(h.sweeps) > 0.2f ? Cause::Intruder
+                                                                                       : Cause::Interference;
+    return mv;
+}
+
+std::vector<Move> Monitor::suggest_all(const std::vector<advisor::Candidate> &analog,
+                                       const std::vector<advisor::Candidate> &hdzero,
+                                       const std::vector<Move> &prev) const {
+    // cada recomendacion cuenta con las anteriores ya aplicadas (sus canales nuevos), para que se puedan aplicar
+    // todas a la vez
+    std::vector<advisor::Candidate> chans;  // el reparto con las recomendaciones de este bucle aplicadas
+    for (const auto &h : health_) chans.push_back(h.ch);
+    std::vector<advisor::Signal> foreign;   // las ajenas recordadas: ocupadas y a guardar separacion con ellas
+    for (const auto &r : recent_) foreign.push_back(r.s);
+    std::vector<Move> out;
+    for (int i : move_order(prev)) {
+        const ChannelHealth &h = health_[i];
+        if (h.sweeps < kMinSweeps) continue;
+        const auto cand = free_channels(h, h.ch.hdzero ? hdzero : analog, foreign);
+        if (cand.empty()) continue;
+        const auto mv = suggest_for(i, chans, cand, foreign, prev);
+        if (!mv) continue;
+        out.push_back(*mv);
+        chans[i] = mv->to;
     }
     return out;
 }

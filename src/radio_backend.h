@@ -6,7 +6,6 @@
 #include <vector>
 
 class QTimer;
-class QJsonArray;
 namespace kp {
 struct Frame;
 }
@@ -65,5 +64,8 @@ private:
     double surveyLoHz_ = 0, surveyHiHz_ = 0;
     bool surveyOnly_ = false;
     void radioSurvey();  // fpv::Radio::survey() con la banda del analizador en marcha
-    void emitSurvey(const QJsonArray &pilots);
+    void emitSurvey(const QVector<Pilot> &pilots);
+    void logFault(const QString &fault, quint64 restarts);  // al log un fallo del flujo nuevo (last_fault)
+    // adaptador perdido o flujo que no se recupera: reconectar / reabrir. true: ya no hay nada mas que hacer
+    bool handleFailure(const RadioStatus &s);
 };

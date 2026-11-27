@@ -14,7 +14,7 @@
 #include <QTranslator>
 #include <QTimer>
 
-#include "channel_analyzer.h"
+#include "analyzer_driver.h"
 #include "stub_backend.h"
 
 int main(int argc, char **argv) {
@@ -70,27 +70,27 @@ int main(int argc, char **argv) {
     th.start();
     ChannelAnalyzer w(&backend);
     w.setAdapterOpen(true);
-    w.setPinnedForTest(pins);  // tambien sin --pin: lo de una captura anterior no se queda
+    drive::setPinned(w, pins);  // tambien sin --pin: lo de una captura anterior no se queda
     w.show();
     const QString out = pos[0];
     const int na = pos.size() > 2 ? pos[1].toInt() : -1, nh = pos.size() > 2 ? pos[2].toInt() : -1;
     const int secs = pos.size() > 3 ? pos[3].toInt() : 4;
     QTimer::singleShot(200, &w, [&] {
-        w.setCounts(na, nh);
-        w.setExcludedForTest(excl);  // tambien sin --exclude: lo de una captura anterior no se queda
-        if (menuBand >= 0) w.openChannelMenuForTest(menuBand);
+        drive::setCounts(w, na, nh);
+        drive::setExcluded(w, excl);  // tambien sin --exclude: lo de una captura anterior no se queda
+        if (menuBand >= 0) drive::openChannelMenu(w, "ABEFRL"[menuBand]);
         if (idle) return;
-        if (autoN >= 0) w.armForTest(autoN);  // arranca el analisis y espera a los pilotos
+        if (autoN >= 0) drive::arm(w, autoN);  // arranca el analisis y espera a los pilotos
         else {
-            w.startForTest();
-            if (race) w.setRaceForTest(true);
+            drive::start(w);
+            if (race) drive::setRace(w, true);
         }
     });
     // cuando ya se ven los pilotos (empezar borra los marcados)
-    if (!mine.isEmpty()) QTimer::singleShot(2000, &w, [&] { w.setMineForTest(mine); });
-    if (apply) QTimer::singleShot(secs * 1000 - 1500, &w, [&] { w.applyForTest(); });
+    if (!mine.isEmpty()) QTimer::singleShot(2000, &w, [&] { drive::setMine(w, mine); });
+    if (apply) QTimer::singleShot(secs * 1000 - 1500, &w, [&] { drive::apply(w); });
     QTimer::singleShot(secs * 1000, &w, [&] {
-        if (history) w.showHistoryForTest();
+        if (history) drive::showHistory(w);
         // el desplegable de canales es otra ventana: su propia captura (SALIDA-menu.png)
         if (QWidget *pop = QApplication::activePopupWidget()) {
             QString m = out;

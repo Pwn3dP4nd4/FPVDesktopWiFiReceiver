@@ -1,6 +1,7 @@
 #include "channel_analyzer.h"
 #include "elrs_analyzer.h"
 #include "main_window.h"
+#include "app_settings.h"
 
 #include <QActionGroup>
 #include <QApplication>
@@ -58,12 +59,6 @@ constexpr int kDefaultRateIndex = 0;  // 40 MS/s
 #endif
 }  // namespace
 
-QSettings &MainWindow::settings() {
-    // INI en %APPDATA%\FPVDesktopWiFiReceiver (Windows) o ~/.config/FPVDesktopWiFiReceiver (Linux)
-    static QSettings s(QSettings::IniFormat, QSettings::UserScope, kAppName, kAppName);
-    return s;
-}
-
 MainWindow::MainWindow(Backend *backend, QWidget *parent) : QMainWindow(parent), backend_(backend) {
     setWindowTitle(backend->name() == QLatin1String("demo")
                        ? QStringLiteral("%1 %2 [demo]").arg(kAppName, KP_VERSION)
@@ -73,6 +68,31 @@ MainWindow::MainWindow(Backend *backend, QWidget *parent) : QMainWindow(parent),
     auto *h = new QHBoxLayout(central);
     h->setContentsMargins(6, 6, 6, 6);
 
+    h->addWidget(buildSide());
+
+    setupVideo();
+    h->addWidget(video_, 1);
+    setCentralWidget(central);
+    buildMenus();
+    setupShortcuts();
+
+    connectBackend(backend);
+    connectControls();
+    // seleccion guardada (sin clave = todos); llega al backend antes de cualquier escaneo (cola del hilo)
+    scanChannels_ = appSettings().value("scanChannels").toStringList();
+    if (ScanChannelsDialog::frequencies(scanChannels_).isEmpty()) scanChannels_.clear();
+    emit requestScanChannels(ScanChannelsDialog::frequencies(scanChannels_));
+    expMode_ = expModeAct_->isChecked();
+    emit requestDigitalScan(expMode_);
+
+    applyDeveloperMode(devModeAct_->isChecked());
+    retranslate();
+    onOpened(false, {});
+    if (!restoreGeometry(appSettings().value("geometry").toByteArray())) resize(1100, 660);
+}
+
+// panel de la izquierda: conectar, escanear, pilotos, canal manual, ajustes de desarrollador y la grabacion
+QWidget *MainWindow::buildSide() {
     side_ = new QWidget;
     side_->setFixedWidth(260);
     auto *left = new QVBoxLayout(side_);
@@ -111,11 +131,11 @@ MainWindow::MainWindow(Backend *backend, QWidget *parent) : QMainWindow(parent),
     rate_ = new QComboBox;
     rate_->addItem(QString(), 1);
     rate_->addItem(QStringLiteral("20 MS/s"), 2);
-    rate_->setCurrentIndex(qBound(0, settings().value("rateIndex", kDefaultRateIndex).toInt(), 1));
+    rate_->setCurrentIndex(qBound(0, appSettings().value("rateIndex", kDefaultRateIndex).toInt(), 1));
     gain_ = new QComboBox;
     gain_->addItem(QString(), -1.0);  // "AGC"
     for (int db : {10, 20, 30, 40, 50}) gain_->addItem(QStringLiteral("%1 dB").arg(db), double(db));
-    gain_->setCurrentIndex(qBound(0, settings().value("gainIndex", 0).toInt(), gain_->count() - 1));
+    gain_->setCurrentIndex(qBound(0, appSettings().value("gainIndex", 0).toInt(), gain_->count() - 1));
     rateLabel_ = new QLabel;
     gainLabel_ = new QLabel;
     form->addRow(rateLabel_, rate_);
@@ -135,7 +155,11 @@ MainWindow::MainWindow(Backend *backend, QWidget *parent) : QMainWindow(parent),
     info_->setTextInteractionFlags(Qt::TextSelectableByMouse);
     info_->setStyleSheet(QStringLiteral("QLabel{font-family:monospace;font-size:11px;}"));
     left->addWidget(info_);
+    return side_;
+}
 
+// el video y su grabacion (DVR)
+void MainWindow::setupVideo() {
     video_ = new VideoWidget;
     video_->setLogo(QPixmap(QStringLiteral(":/icons/app-128.png")));
     dvr_ = new VideoRecorder(this);
@@ -148,12 +172,10 @@ MainWindow::MainWindow(Backend *backend, QWidget *parent) : QMainWindow(parent),
     connect(dvr_, &VideoRecorder::finished, this, [this](const VideoRecorder::Result &r) {
         onVideoRecorded(r.path, r.ok, r.noPicture, r.error, r.frames, r.dropped, r.seconds);
     });
-    h->addWidget(side_);
-    h->addWidget(video_, 1);
-    setCentralWidget(central);
-    buildMenus();
-    setupShortcuts();
+}
 
+// ordenes al backend (otro hilo: conexiones en cola) y lo que llega de el
+void MainWindow::connectBackend(Backend *backend) {
     // GUI -> backend (otro hilo: conexiones en cola)
     connect(this, &MainWindow::requestOpen, backend, &Backend::openDevice);
     connect(this, &MainWindow::requestClose, backend, &Backend::closeDevice);
@@ -176,7 +198,10 @@ MainWindow::MainWindow(Backend *backend, QWidget *parent) : QMainWindow(parent),
     connect(backend, &Backend::pilotsChanged, this, &MainWindow::onPilots);
     connect(backend, &Backend::statusChanged, this, &MainWindow::onStatus);
     connect(backend, &Backend::message, this, [this](const QString &s) { statusBar()->showMessage(s, 8000); });
+}
 
+// los botones y la lista de pilotos
+void MainWindow::connectControls() {
     connect(connectBtn_, &QPushButton::clicked, this, [this] {
         if (opening_) return;
         if (open_) {
@@ -194,12 +219,6 @@ MainWindow::MainWindow(Backend *backend, QWidget *parent) : QMainWindow(parent),
         emit requestScan();
     });
     connect(scanCfgBtn_, &QToolButton::clicked, this, &MainWindow::chooseScanChannels);
-    // seleccion guardada (sin clave = todos); llega al backend antes de cualquier escaneo (cola del hilo)
-    scanChannels_ = settings().value("scanChannels").toStringList();
-    if (ScanChannelsDialog::frequencies(scanChannels_).isEmpty()) scanChannels_.clear();
-    emit requestScanChannels(ScanChannelsDialog::frequencies(scanChannels_));
-    expMode_ = expModeAct_->isChecked();
-    emit requestDigitalScan(expMode_);
     connect(stopBtn_, &QPushButton::clicked, this, [this] {
         emit requestStop();
         video_->clear();
@@ -215,12 +234,12 @@ MainWindow::MainWindow(Backend *backend, QWidget *parent) : QMainWindow(parent),
     });
     connect(channels_, &QComboBox::activated, this, [this] { watchChannelFromCombo(); });
     connect(rate_, &QComboBox::activated, this, [this] {
-        settings().setValue("rateIndex", rate_->currentIndex());
+        appSettings().setValue("rateIndex", rate_->currentIndex());
         emit requestWatchRate(rate_->currentData().toInt());
         if (watching_ > 0) emit requestWatch(watching_);  // la tasa se aplica en el siguiente watch()
     });
     connect(gain_, &QComboBox::activated, this, [this] {
-        settings().setValue("gainIndex", gain_->currentIndex());
+        appSettings().setValue("gainIndex", gain_->currentIndex());
         emit requestGain(gain_->currentData().toDouble());
         if (watching_ > 0) emit requestWatch(watching_);
     });
@@ -231,11 +250,6 @@ MainWindow::MainWindow(Backend *backend, QWidget *parent) : QMainWindow(parent),
     recCheck_->setInterval(500);
     connect(recCheck_, &QTimer::timeout, this, &MainWindow::checkRecording);
     connect(video_, &VideoWidget::doubleClicked, this, &MainWindow::toggleFullScreen);
-
-    applyDeveloperMode(devModeAct_->isChecked());
-    retranslate();
-    onOpened(false, {});
-    if (!restoreGeometry(settings().value("geometry").toByteArray())) resize(1100, 660);
 }
 
 // La grabacion de video se termina en closeEvent(): main.cpp destruye el backend antes que la ventana.
@@ -248,6 +262,22 @@ void MainWindow::buildMenus() {
     // plasma-integration Qt::AA_DontUseNativeMenuBar no basta; esto si. KP_GLOBAL_MENU=1 deja el menu global.
     if (qEnvironmentVariableIntValue("KP_GLOBAL_MENU") != 1) menuBar()->setNativeMenuBar(false);
 #endif
+    buildFileMenu();
+    buildViewMenu();
+    buildOptionsMenu();
+    buildLanguageMenu();
+    toolsMenu_ = menuBar()->addMenu(QString());
+    analyzerAct_ = toolsMenu_->addAction(QString(), this, &MainWindow::openAnalyzer);
+    elrsAct_ = toolsMenu_->addAction(QString(), this, &MainWindow::openElrsAnalyzer);
+
+    helpMenu_ = menuBar()->addMenu(QString());
+    manualAct_ = helpMenu_->addAction(QString(), this, [] { QDesktopServices::openUrl(QUrl(QString::fromLatin1(kRepoUrl))); });
+    aboutAct_ = helpMenu_->addAction(QString(), this, &MainWindow::showAbout);
+}
+
+// Archivo: captura y video, sus carpetas, la de las grabaciones de IQ, el registro, acceso directo y driver
+// (Windows) y salir
+void MainWindow::buildFileMenu() {
     fileMenu_ = menuBar()->addMenu(QString());
     // Los atajos S / R van en setupShortcuts() (funcionan tambien en pantalla completa); aqui solo se muestran
     snapAct_ = fileMenu_->addAction(QString(), this, &MainWindow::takeSnapshot);
@@ -286,8 +316,10 @@ void MainWindow::buildMenus() {
 #endif
     fileMenu_->addSeparator();
     quitAct_ = fileMenu_->addAction(QString(), QKeySequence::Quit, this, &QWidget::close);
+}
 
-    // Ver: forma de la imagen y recorte de bordes (se guardan)
+// Ver: forma de la imagen y recorte de bordes (se guardan)
+void MainWindow::buildViewMenu() {
     viewMenu_ = menuBar()->addMenu(QString());
     aspectSection_ = viewMenu_->addSection(QString());
     auto *aspGrp = new QActionGroup(this);
@@ -297,31 +329,34 @@ void MainWindow::buildMenus() {
         aspectActs_[i]->setData(i);
         aspGrp->addAction(aspectActs_[i]);
     }
-    const int asp = qBound(0, settings().value("aspect", 0).toInt(), 2);
+    const int asp = qBound(0, appSettings().value("aspect", 0).toInt(), 2);
     aspectActs_[asp]->setChecked(true);
     video_->setAspect(static_cast<VideoWidget::Aspect>(asp));
     connect(aspGrp, &QActionGroup::triggered, this, [this](QAction *a) {
-        settings().setValue("aspect", a->data().toInt());
+        appSettings().setValue("aspect", a->data().toInt());
         video_->setAspect(static_cast<VideoWidget::Aspect>(a->data().toInt()));
     });
     viewMenu_->addSeparator();
     cropAct_ = viewMenu_->addAction(QString());
     cropAct_->setCheckable(true);
-    cropAct_->setChecked(settings().value("cropOverscan", true).toBool());
+    cropAct_->setChecked(appSettings().value("cropOverscan", true).toBool());
     video_->setCropOverscan(cropAct_->isChecked());
     connect(cropAct_, &QAction::toggled, this, [this](bool on) {
-        settings().setValue("cropOverscan", on);
+        appSettings().setValue("cropOverscan", on);
         video_->setCropOverscan(on);
     });
     viewMenu_->addSeparator();
     fullScreenAct_ = viewMenu_->addAction(QString(), this, &MainWindow::toggleFullScreen);
     fullScreenAct_->setShortcutVisibleInContextMenu(true);
+}
 
+// Opciones: conectar al abrir, modo desarrollador, modo experimental...
+void MainWindow::buildOptionsMenu() {
     optMenu_ = menuBar()->addMenu(QString());
     autoConnectAct_ = optMenu_->addAction(QString());
     autoConnectAct_->setCheckable(true);
-    autoConnectAct_->setChecked(settings().value("autoConnect", true).toBool());
-    connect(autoConnectAct_, &QAction::toggled, this, [](bool on) { settings().setValue("autoConnect", on); });
+    autoConnectAct_->setChecked(appSettings().value("autoConnect", true).toBool());
+    connect(autoConnectAct_, &QAction::toggled, this, [](bool on) { appSettings().setValue("autoConnect", on); });
     onConnectSection_ = optMenu_->addSection(QString());
     auto *grp = new QActionGroup(this);
     resumeLastAct_ = optMenu_->addAction(QString());
@@ -330,31 +365,33 @@ void MainWindow::buildMenus() {
         a->setCheckable(true);
         grp->addAction(a);
     }
-    (settings().value("resumeLast", true).toBool() ? resumeLastAct_ : scanAct_)->setChecked(true);
-    connect(resumeLastAct_, &QAction::toggled, this, [](bool on) { settings().setValue("resumeLast", on); });
+    (appSettings().value("resumeLast", true).toBool() ? resumeLastAct_ : scanAct_)->setChecked(true);
+    connect(resumeLastAct_, &QAction::toggled, this, [](bool on) { appSettings().setValue("resumeLast", on); });
     optMenu_->addSeparator();
     devModeAct_ = optMenu_->addAction(QString());
     devModeAct_->setCheckable(true);
-    devModeAct_->setChecked(settings().value("developerMode", false).toBool());
+    devModeAct_->setChecked(appSettings().value("developerMode", false).toBool());
     connect(devModeAct_, &QAction::toggled, this, [this](bool on) {
-        settings().setValue("developerMode", on);
+        appSettings().setValue("developerMode", on);
         applyDeveloperMode(on);
     });
     // Modo experimental: lo que aun no esta probado con equipos reales (deteccion de HDZero y otras senales
     // digitales al escanear, src/kp_ext/digital_scan.h). Apagado, el escaneo es el de kepyur sin cambios.
     expModeAct_ = optMenu_->addAction(QString());
     expModeAct_->setCheckable(true);
-    expModeAct_->setChecked(settings().value("experimentalMode", false).toBool());
+    expModeAct_->setChecked(appSettings().value("experimentalMode", false).toBool());
     connect(expModeAct_, &QAction::toggled, this, [this](bool on) {
-        settings().setValue("experimentalMode", on);
+        appSettings().setValue("experimentalMode", on);
         expMode_ = on;
         emit requestDigitalScan(on);
         onPilots(pilots_);       // mostrar u ocultar las digitales ya encontradas
         onStatus(lastStatus_);   // y dejar de tratar como digital el canal que se esta viendo
         if (on) statusBar()->showMessage(tr("Experimental mode: digital signals will be listed from the next scan"), 8000);
     });
+}
 
-    // Idioma: los nombres de cada idioma van siempre en ese idioma
+// Idioma: los nombres de cada idioma van siempre en ese idioma
+void MainWindow::buildLanguageMenu() {
     langMenu_ = menuBar()->addMenu(QString());
     langGroup_ = new QActionGroup(this);
     langSystemAct_ = langMenu_->addAction(QString());
@@ -371,14 +408,6 @@ void MainWindow::buildMenus() {
         if (a->data().toString() == cur) a->setChecked(true);
     }
     connect(langGroup_, &QActionGroup::triggered, this, [](QAction *a) { i18n::apply(a->data().toString()); });
-
-    toolsMenu_ = menuBar()->addMenu(QString());
-    analyzerAct_ = toolsMenu_->addAction(QString(), this, &MainWindow::openAnalyzer);
-    elrsAct_ = toolsMenu_->addAction(QString(), this, &MainWindow::openElrsAnalyzer);
-
-    helpMenu_ = menuBar()->addMenu(QString());
-    manualAct_ = helpMenu_->addAction(QString(), this, [] { QDesktopServices::openUrl(QUrl(QString::fromLatin1(kRepoUrl))); });
-    aboutAct_ = helpMenu_->addAction(QString(), this, &MainWindow::showAbout);
 }
 
 void MainWindow::openAnalyzer() {
@@ -426,8 +455,8 @@ void MainWindow::chooseScanChannels() {
     ScanChannelsDialog dlg(scanChannels_, this);
     if (dlg.exec() != QDialog::Accepted) return;
     scanChannels_ = dlg.selected();
-    if (scanChannels_.isEmpty()) settings().remove("scanChannels");
-    else settings().setValue("scanChannels", scanChannels_);
+    if (scanChannels_.isEmpty()) appSettings().remove("scanChannels");
+    else appSettings().setValue("scanChannels", scanChannels_);
     emit requestScanChannels(ScanChannelsDialog::frequencies(scanChannels_));
     updateScanButton();
 }
@@ -626,12 +655,12 @@ QString MainWindow::recordingsDir() const {
 
 QString MainWindow::snapshotsDir() const {
     const QString def = QStandardPaths::writableLocation(QStandardPaths::PicturesLocation) + QLatin1Char('/') + kAppName;
-    return settings().value("snapshotDir", def).toString();
+    return appSettings().value("snapshotDir", def).toString();
 }
 
 QString MainWindow::videosDir() const {
     const QString def = QStandardPaths::writableLocation(QStandardPaths::MoviesLocation) + QLatin1Char('/') + kAppName;
-    return settings().value("videoDir", def).toString();
+    return appSettings().value("videoDir", def).toString();
 }
 
 void MainWindow::chooseMediaDir(const char *key, bool videos) {
@@ -640,7 +669,7 @@ void MainWindow::chooseMediaDir(const char *key, bool videos) {
     const QString d = QFileDialog::getExistingDirectory(
         this, videos ? tr("Folder for the videos") : tr("Folder for the snapshots"), cur);
     if (d.isEmpty()) return;
-    settings().setValue(key, d);
+    appSettings().setValue(key, d);
     statusBar()->showMessage((videos ? tr("Videos will be saved in %1") : tr("Snapshots will be saved in %1"))
                                  .arg(QDir::toNativeSeparators(d)), 8000);
     updateMediaButtons();  // carpeta en los tooltips
@@ -790,8 +819,8 @@ void MainWindow::applyDeveloperMode(bool on) {
         const bool changed = rate_->currentIndex() != kDefaultRateIndex || gain_->currentIndex() != 0;
         rate_->setCurrentIndex(kDefaultRateIndex);
         gain_->setCurrentIndex(0);  // AGC
-        settings().setValue("rateIndex", kDefaultRateIndex);
-        settings().setValue("gainIndex", 0);
+        appSettings().setValue("rateIndex", kDefaultRateIndex);
+        appSettings().setValue("gainIndex", 0);
         if (changed && open_) {
             emit requestWatchRate(rate_->currentData().toInt());
             emit requestGain(gain_->currentData().toDouble());
@@ -806,7 +835,7 @@ void MainWindow::startup(bool autoConnect, double watchMHz, bool forceScan) {
     pendingWatch_ = watchMHz;
     pendingScan_ = forceScan;
     if (pendingWatch_ <= 0 && !pendingScan_) {
-        const double last = settings().value("lastMHz", 0.0).toDouble();
+        const double last = appSettings().value("lastMHz", 0.0).toDouble();
         if (resumeLastAct_->isChecked() && last > 0) pendingWatch_ = last;
         else pendingScan_ = true;
     }
@@ -1047,7 +1076,11 @@ void MainWindow::onPilots(const QVector<Pilot> &pilots) {
     list_->clear();
     for (const Pilot &p : pilots_) {
         if (p.isDigital() && !expMode_) continue;  // de un escaneo con el modo experimental activo
-        QString text = p.label();
+        const chnames::Resolved ch = chnames::resolved(p);
+        const QString n = ch.label();
+        QString text = n.isEmpty() ? QStringLiteral("%1 MHz").arg(p.freqMHz, 0, 'f', 0)
+                                   : QStringLiteral("%1  %2 MHz").arg(n).arg(p.freqMHz, 0, 'f', 0);
+        if (!p.stdName.isEmpty()) text += QStringLiteral("  ") + p.stdName;
         if (p.isDigital()) {
             text = p.name.isEmpty() ? QStringLiteral("%1 MHz").arg(p.freqMHz, 0, 'f', 0)
                                     : QStringLiteral("%1  %2 MHz").arg(p.name).arg(p.freqMHz, 0, 'f', 0);
@@ -1055,7 +1088,7 @@ void MainWindow::onPilots(const QVector<Pilot> &pilots) {
         }
         auto *it = new QListWidgetItem(QStringLiteral("%1   %2 dB").arg(text).arg(p.snrDb, 0, 'f', 1));
         it->setData(Qt::UserRole, p.freqMHz);
-        if (p.ambiguous())
+        if (ch.ambiguous())
             it->setToolTip(tr("%1 MHz is between several standard channels (%2): from the frequency alone it is not "
                               "possible to tell which one. Right-click to say which one is yours.")
                                .arg(p.freqMHz, 0, 'f', 1)
@@ -1117,7 +1150,7 @@ void MainWindow::onStatus(const RadioStatus &s) {
     // una senal digital no se retoma al abrir el programa (no habria imagen)
     if (watching_ > 0 && !digitalWatch_ && qAbs(watching_ - lastSaved_) > 0.5 && s.chip != QLatin1String("demo")) {
         lastSaved_ = watching_;
-        settings().setValue("lastMHz", watching_);
+        appSettings().setValue("lastMHz", watching_);
     }
     QString osd;
     if (s.mode == QLatin1String("scan")) {
@@ -1179,8 +1212,8 @@ void MainWindow::closeEvent(QCloseEvent *e) {
         dvr_->waitFinished();
     }
     snapPool_.waitForDone();  // capturas PNG a medio guardar: terminarlas antes de destruir la ventana
-    settings().setValue("geometry", saveGeometry());
-    settings().sync();
+    appSettings().setValue("geometry", saveGeometry());
+    appSettings().sync();
     e->accept();
 }
 

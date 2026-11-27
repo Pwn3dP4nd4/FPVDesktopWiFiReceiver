@@ -10,6 +10,7 @@
 
 #include <cstdio>
 
+#include "analyzer_driver.h"
 #include "elrs_analyzer.h"
 #include "stub_backend.h"
 
@@ -49,10 +50,10 @@ int main(int argc, char **argv) {
     w.show();
     const QString out = pos[0];
     const int secs = pos.size() > 1 ? pos[1].toInt() : 5;
-    QTimer::singleShot(200, &w, [&] { w.startForTest(); });
+    QTimer::singleShot(200, &w, [&] { drive::start(w); });
     QTimer::singleShot(secs * 1000, &w, [&] {
         w.grab().save(out);
-        std::printf("%s\n", qPrintable(w.tipsTextForTest()));
+        std::printf("%s\n", qPrintable(drive::tips(w)));
         app.quit();
     });
     const int rc = app.exec();

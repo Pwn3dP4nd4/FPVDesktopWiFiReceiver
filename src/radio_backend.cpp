@@ -1,8 +1,8 @@
 #include "radio_backend.h"
+#include "radio_status.h"
 
 #include <QCoreApplication>
 #include <QDateTime>
-#include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QThread>
@@ -33,19 +33,6 @@ const char *const kHintLinux = QT_TRANSLATE_NOOP(
     "Linux: the rtw88_8822bu driver must not hold the adapter and your user needs permission: sudo cp "
     "packaging/linux/60-kepyur.rules /etc/udev/rules.d/ && sudo udevadm control --reload && sudo udevadm "
     "trigger, then replug it. Use a USB 3 port.");
-
-// un piloto de fpv::Radio::status_json() ("pilots")
-Pilot pilotFromJson(const QJsonObject &p) {
-    Pilot x;
-    x.freqMHz = p.value("mhz").toDouble();
-    x.snrDb = p.value("snr").toDouble();
-    x.name = p.value("name").toString();
-    x.stdName = p.value("std").toString();
-    x.ageS = p.value("age_s").toInt();
-    x.digital = p.value("digital").toString();  // cmake/kepyur_patches.cmake, conjunto "digital"
-    x.bwMHz = p.value("bw").toDouble();
-    return x;
-}
 
 QString hint(bool switchedToUsb3) {
 #ifdef _WIN32
@@ -268,12 +255,12 @@ void RadioBackend::stopSurvey() {
     emit surveyStopped();
 }
 
-void RadioBackend::emitSurvey(const QJsonArray &pilots) {
+void RadioBackend::emitSurvey(const QVector<Pilot> &pilots) {
     SurveyData d;
     std::vector<fpv::SurveyBin> bins = radio_->survey_spectrum(&d.sweeps);
     d.bins.reserve(int(bins.size()));
     for (const auto &b : bins) d.bins.push_back(SpectrumPoint{b.mhz, b.mean_db, b.peak_db, b.duty, b.seq});
-    for (const auto &e : pilots) d.pilots.push_back(pilotFromJson(e.toObject()));
+    d.pilots = pilots;
     emit surveyUpdated(d);
 }
 
@@ -293,74 +280,51 @@ void RadioBackend::poll() {
     const QByteArray js = QByteArray::fromStdString(radio_->status_json());
     if (++polls_ % 20 == 0) KP_LOGD("status %s", js.constData());  // cada 5 s con --verbose
     const QJsonObject o = QJsonDocument::fromJson(js).object();
-    RadioStatus s;
-    s.open = o.value("open").toBool();
-    s.usb3 = o.value("usb3").toBool();
-    s.chip = o.value("chip").toString();
-    s.mode = o.value("mode").toString();
-    s.rxState = o.value("rx_state").toString();
-    s.rxError = o.value("rx_error").toString();
-    s.watchMHz = o.value("watch_hz").toDouble() / 1e6;
-    s.msps = o.value("watch_msps").toDouble();
-    s.fallback = o.value("fallback").toBool();
-    s.snrDb = o.contains("snr_db") ? o.value("snr_db").toDouble() : -1;
-    s.scanStep = o.value("scan_step").toInt();
-    s.scanSteps = o.value("scan_steps").toInt();
-    const QJsonObject v = o.value("video").toObject();
-    s.locked = v.value("locked").toBool();
-    s.lock = v.value("lock").toDouble();
-    s.videoStd = v.value("std").toString();
-    s.fps = v.value("fps").toDouble();
-    s.colour = v.value("colour").toBool();
-    s.dropped = static_cast<quint64>(o.value("dropped").toDouble());
-    s.restarts = static_cast<quint64>(o.value("restarts").toDouble());
+    const RadioStatus s = radio::parseStatus(o);
     emit statusChanged(s);
-
-    // Cada reinicio del flujo deja su motivo en last_fault (p.ej. "... [rx dma reset]" cuando wifi-sdr desatasca
-    // el RX DMA, cmake/kepyur_patches.cmake): al log una vez, si no el primer fallo de una racha se pierde.
-    const QString fault = o.value("last_fault").toString();
-    if (!fault.isEmpty() && fault != lastFault_)
-        KP_LOGW("radio: fallo del flujo (reinicios %llu): %s", static_cast<unsigned long long>(s.restarts), qPrintable(fault));
-    lastFault_ = fault;
-
-    // Desenchufado (o caido del bus): wifi-sdr lo marca como "lost" y ya no vuelve solo
-    if (s.open && s.rxState == QLatin1String("lost")) {
-        adapterLost(s.mode, s.mode == QLatin1String("watch") ? s.watchMHz : lastWatchMHz_);
-        return;
-    }
-    if (s.mode == QLatin1String("watch") && s.watchMHz > 0) lastWatchMHz_ = s.watchMHz;
-
-    // wifi-sdr se rinde tras 5 fallos seguidos del stream (rx_state "error"). Era sobre todo el atasco del RX DMA
-    // del 8822B en algunos controladores USB 3, que ahora wifi-sdr desatasca solo al reiniciar el flujo (parche
-    // rxdma); esto queda de ultimo recurso: cerrar y reabrir el adaptador (~10 s). Como mucho una vez cada 15 s.
-    if (s.open && s.rxState == QLatin1String("error") && (s.mode == QLatin1String("watch") || s.mode == QLatin1String("scan"))) {
-        const qint64 now = QDateTime::currentMSecsSinceEpoch();
-        if (now - lastRecoverMs_ > 15000) {
-            lastRecoverMs_ = now;
-            recover(s.mode, s.watchMHz);
-            return;
-        }
-    }
-
-    // Solo se avisa a la GUI si cambia lo que se muestra. "age_s" sube cada segundo: si entrara en la
-    // comparacion, la lista se reconstruiria sin parar (parpadeo, scroll perdido, clics perdidos).
-    const QJsonArray pa = o.value("pilots").toArray();
+    logFault(o.value("last_fault").toString(), s.restarts);
+    if (handleFailure(s)) return;
+    const QVector<Pilot> ps = radio::parsePilots(o);
     // Analizador: su propia vista (cada segundo); la lista de pilotos de la ventana principal no se toca
     if (!surveyPlan_.empty() && o.value("survey").toBool()) {
         // a 2,4 GHz un barrido son 3 pasos (~0.5 s): en cada consulta, para que la barra de barrido se vea avanzar
-        if (surveyOnly_ || polls_ % 4 == 0) emitSurvey(pa);
+        if (surveyOnly_ || polls_ % 4 == 0) emitSurvey(ps);
         return;
     }
-    QVector<Pilot> ps;
-    QByteArray key;
-    for (const auto &e : pa) {
-        const Pilot x = pilotFromJson(e.toObject());
-        key += QStringLiteral("%1|%2|%3|%4|%5;").arg(x.freqMHz, 0, 'f', 1).arg(x.snrDb, 0, 'f', 1).arg(x.name, x.stdName, x.digital).toUtf8();
-        ps.push_back(x);
-    }
+    // Solo se avisa a la GUI si cambia lo que se muestra. "age_s" sube cada segundo: si entrara en la
+    // comparacion, la lista se reconstruiria sin parar (parpadeo, scroll perdido, clics perdidos).
+    const QByteArray key = radio::pilotsKey(ps);
     if (key != lastPilotsKey_ || forcePilots_) {
         lastPilotsKey_ = key;
         forcePilots_ = false;
         emit pilotsChanged(ps);
     }
+}
+
+void RadioBackend::logFault(const QString &fault, quint64 restarts) {
+    // Cada reinicio del flujo deja su motivo en last_fault (p.ej. "... [rx dma reset]" cuando wifi-sdr desatasca
+    // el RX DMA, cmake/kepyur_patches.cmake): al log una vez, si no el primer fallo de una racha se pierde.
+    if (!fault.isEmpty() && fault != lastFault_)
+        KP_LOGW("radio: fallo del flujo (reinicios %llu): %s", static_cast<unsigned long long>(restarts),
+                qPrintable(fault));
+    lastFault_ = fault;
+}
+
+bool RadioBackend::handleFailure(const RadioStatus &s) {
+    // Desenchufado (o caido del bus): wifi-sdr lo marca como "lost" y ya no vuelve solo
+    if (s.open && s.rxState == QLatin1String("lost")) {
+        adapterLost(s.mode, s.mode == QLatin1String("watch") ? s.watchMHz : lastWatchMHz_);
+        return true;
+    }
+    if (s.mode == QLatin1String("watch") && s.watchMHz > 0) lastWatchMHz_ = s.watchMHz;
+    // wifi-sdr se rinde tras 5 fallos seguidos del stream (rx_state "error"). Era sobre todo el atasco del RX DMA
+    // del 8822B en algunos controladores USB 3, que ahora wifi-sdr desatasca solo al reiniciar el flujo (parche
+    // rxdma); esto queda de ultimo recurso: cerrar y reabrir el adaptador (~10 s). Como mucho una vez cada 15 s.
+    const bool streaming = s.mode == QLatin1String("watch") || s.mode == QLatin1String("scan");
+    if (!s.open || s.rxState != QLatin1String("error") || !streaming) return false;
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+    if (now - lastRecoverMs_ <= 15000) return false;
+    lastRecoverMs_ = now;
+    recover(s.mode, s.watchMHz);
+    return true;
 }

@@ -77,6 +77,12 @@ struct Move {
 // su fin automatico (ya no queda ninguno)
 int present(const std::vector<advisor::Candidate> &pinned, const std::vector<advisor::Signal> &now);
 
+// Mis pilotos (marcados en el analizador, sin canal fijado) que ya estan en un canal recomendado: por cada pick (en su
+// orden), los indices de mine que estan en el (mismo sistema, a menos de kMatchMhz). Los fijados no cuentan: su
+// piloto ya es suyo. Los que no salen en ninguno tienen que cambiar de canal
+std::vector<std::vector<int>> already_on(const std::vector<advisor::Pick> &picks,
+                                         const std::vector<advisor::Signal> &mine);
+
 class Monitor {
    public:
     // Empieza (o vuelve a empezar) con estos canales fijados; borra lo apuntado
@@ -136,6 +142,23 @@ class Monitor {
     int sweeps_ = 0;
 
     void reset(size_t i);  // borra lo apuntado del fijado i (conserva su canal)
+    // ---- update(), por pasos ----
+    // por fijado, el indice en now de la senal de su piloto (-1: no esta)
+    std::vector<int> match_pilots(const std::vector<advisor::Signal> &now) const;
+    // por senal de now, si es de un piloto propio (de un fijado o de uno movido que aun esta en su canal viejo)
+    std::vector<bool> own_signals(const std::vector<advisor::Signal> &now, const std::vector<int> &pilot);
+    void remember_foreign();  // foreign_ -> recent_
+    void update_health(size_t i, int pilot, const std::vector<advisor::Signal> &now,
+                       const std::vector<advisor::Wifi> &wifi);
+    // ---- suggest_all(), por pasos ----
+    std::vector<int> move_order(const std::vector<Move> &prev) const;  // a quien se busca canal, por orden
+    // los canales de pool a los que se puede mover el piloto de h
+    std::vector<advisor::Candidate> free_channels(const ChannelHealth &h, const std::vector<advisor::Candidate> &pool,
+                                                  const std::vector<advisor::Signal> &foreign) const;
+    // la recomendacion para el fijado i con el reparto chans (las anteriores aplicadas); nada si no compensa
+    std::optional<Move> suggest_for(int i, const std::vector<advisor::Candidate> &chans,
+                                    const std::vector<advisor::Candidate> &cand,
+                                    const std::vector<advisor::Signal> &foreign, const std::vector<Move> &prev) const;
 };
 
 }  // namespace race

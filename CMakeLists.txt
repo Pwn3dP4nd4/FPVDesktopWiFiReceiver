@@ -121,8 +121,8 @@ if(WIN32)
 endif()
 
 # ---- GUI ----------------------------------------------------------------------------------------------------
-add_executable(FPVDesktopWiFiReceiver
-  src/main.cpp
+# (KP_GUI_SRC: la ventana sin main(); tambien la usa test/main_window_shot.cpp)
+set(KP_GUI_SRC
   src/main_window.cpp src/main_window.h
   src/video_widget.cpp src/video_widget.h
   src/backend.h
@@ -131,34 +131,40 @@ add_executable(FPVDesktopWiFiReceiver
   src/scan_channels_dialog.cpp src/scan_channels_dialog.h
   src/channel_analyzer.cpp src/channel_analyzer.h src/channel_advisor.cpp src/channel_advisor.h
   src/elrs_analyzer.cpp src/elrs_analyzer.h src/elrs_advisor.cpp src/elrs_advisor.h
-  src/race_monitor.cpp src/race_monitor.h
+  src/race_monitor.cpp src/race_monitor.h src/race_history.cpp src/race_history.h src/analyzer_style.h
   src/channel_names.cpp src/channel_names.h
   src/i18n.cpp src/i18n.h
-  src/video_recorder.cpp src/video_recorder.h src/video_encoder.h
+  src/app_settings.h src/survey_session.h
+  src/video_recorder.cpp src/video_recorder.h src/video_encoder.h src/video_params.cpp
   assets/icons.qrc
 )
+add_executable(FPVDesktopWiFiReceiver src/main.cpp ${KP_GUI_SRC})
 target_link_libraries(FPVDesktopWiFiReceiver PRIVATE Qt6::Widgets kepyur_dsp)
 
 # ---- Grabacion de video (MP4 H.264): el codificador del sistema -----------------------------------------------
 # Windows: Media Foundation (viene con Windows, ninguna DLL que copiar). Linux: FFmpeg (libavcodec/libavformat de
 # la distro, opcional: sin el, el boton de grabar video sale desactivado). Las capturas PNG van siempre.
+# (KP_VIDEO_SRC / KP_VIDEO_LIBS: los usan la app y test/video_recorder_test.cpp)
 if(WIN32)
-  target_sources(FPVDesktopWiFiReceiver PRIVATE src/video_encoder_mf.cpp)
-  target_link_libraries(FPVDesktopWiFiReceiver PRIVATE mfplat mfreadwrite mfuuid ole32)
+  set(KP_VIDEO_SRC src/video_encoder_mf.cpp)
+  set(KP_VIDEO_LIBS mfplat mfreadwrite mfuuid ole32)
 else()
   find_package(PkgConfig QUIET)
   if(PkgConfig_FOUND)
     pkg_check_modules(LIBAV IMPORTED_TARGET libavformat libavcodec libavutil)
   endif()
   if(LIBAV_FOUND)
-    target_sources(FPVDesktopWiFiReceiver PRIVATE src/video_encoder_av.cpp)
-    target_link_libraries(FPVDesktopWiFiReceiver PRIVATE PkgConfig::LIBAV)
+    set(KP_VIDEO_SRC src/video_encoder_av.cpp)
+    set(KP_VIDEO_LIBS PkgConfig::LIBAV)
   else()
-    target_sources(FPVDesktopWiFiReceiver PRIVATE src/video_encoder_none.cpp)
+    set(KP_VIDEO_SRC src/video_encoder_none.cpp)
+    set(KP_VIDEO_LIBS "")
     message(WARNING "FFmpeg (libavformat/libavcodec) no encontrado: sin grabacion de video "
                     "(Debian/Ubuntu: apt install libavformat-dev libavcodec-dev; Fedora: ffmpeg-free-devel)")
   endif()
 endif()
+target_sources(FPVDesktopWiFiReceiver PRIVATE ${KP_VIDEO_SRC})
+target_link_libraries(FPVDesktopWiFiReceiver PRIVATE ${KP_VIDEO_LIBS})
 target_compile_definitions(FPVDesktopWiFiReceiver PRIVATE KP_VERSION="${PROJECT_VERSION}")
 if(WIN32)
   # Archivo > Instalar driver lanza windows-driver.ps1 como administrador desde la carpeta de la app (que el usuario
@@ -183,7 +189,8 @@ else()
                   "(MSYS2: pacman -S mingw-w64-ucrt-x86_64-qt6-tools; Debian/Ubuntu: apt install qt6-tools-dev qt6-l10n-tools)")
 endif()
 if(KP_WITH_RADIO)
-  target_sources(FPVDesktopWiFiReceiver PRIVATE src/radio_backend.cpp src/radio_backend.h src/usb3_switch.cpp src/usb3_switch.h)
+  target_sources(FPVDesktopWiFiReceiver PRIVATE src/radio_backend.cpp src/radio_backend.h src/radio_status.cpp
+                 src/radio_status.h src/usb3_switch.cpp src/usb3_switch.h)
   target_link_libraries(FPVDesktopWiFiReceiver PRIVATE fpv_radio)
   target_compile_definitions(FPVDesktopWiFiReceiver PRIVATE KP_WITH_RADIO=1)
   if(WIN32)
@@ -218,8 +225,8 @@ endif()
 
 # Captura del analizador con el backend de demo: QT_QPA_PLATFORM=offscreen analyzer_shot salida.png [N M [s]]
 add_executable(analyzer_shot test/analyzer_shot.cpp src/channel_analyzer.cpp src/channel_analyzer.h
-               src/channel_advisor.cpp src/race_monitor.cpp src/channel_names.cpp src/stub_backend.cpp src/stub_backend.h src/backend.h
-               src/video_widget.cpp)
+               src/channel_advisor.cpp src/race_monitor.cpp src/race_history.cpp src/channel_names.cpp src/stub_backend.cpp
+               src/stub_backend.h src/backend.h src/video_widget.cpp)
 target_include_directories(analyzer_shot PRIVATE src)
 target_link_libraries(analyzer_shot PRIVATE Qt6::Widgets kepyur_dsp)
 
@@ -238,8 +245,8 @@ target_link_libraries(elrs_shot PRIVATE Qt6::Widgets kepyur_dsp)
 # Logica de la ventana del analizador (ritmo de barridos, parar/empezar, auto-inicio y fin de la carrera) con un
 # backend falso y sin pantalla: cmake --build <dir> --target analyzer_logic_test
 add_executable(analyzer_logic_test EXCLUDE_FROM_ALL test/analyzer_logic_test.cpp src/channel_analyzer.cpp
-               src/channel_analyzer.h src/channel_advisor.cpp src/race_monitor.cpp src/channel_names.cpp src/backend.h
-               src/video_widget.cpp)
+               src/channel_analyzer.h src/channel_advisor.cpp src/race_monitor.cpp src/race_history.cpp src/channel_names.cpp
+               src/backend.h src/video_widget.cpp)
 target_include_directories(analyzer_logic_test PRIVATE src)
 target_link_libraries(analyzer_logic_test PRIVATE Qt6::Widgets kepyur_dsp)
 
@@ -268,6 +275,34 @@ target_compile_definitions(elrs_advisor_test PRIVATE KP_TEST_DATA="${CMAKE_CURRE
 target_compile_options(elrs_advisor_test PRIVATE -Wall -Wextra)
 if(WIN32)
   target_link_options(elrs_advisor_test PRIVATE -static-libgcc -static-libstdc++)
+endif()
+
+# Parametros del video grabado (tamano, ritmo, forma del pixel): cmake --build <dir> --target video_params_test
+add_executable(video_params_test EXCLUDE_FROM_ALL test/video_params_test.cpp src/video_params.cpp)
+target_include_directories(video_params_test PRIVATE src)
+target_link_libraries(video_params_test PRIVATE Qt6::Core)
+target_compile_options(video_params_test PRIVATE -Wall -Wextra)
+
+# Grabacion de video con el codificador del sistema y fotogramas sinteticos: --target video_recorder_test
+add_executable(video_recorder_test EXCLUDE_FROM_ALL test/video_recorder_test.cpp src/video_recorder.cpp
+               src/video_recorder.h src/video_params.cpp ${KP_VIDEO_SRC})
+target_include_directories(video_recorder_test PRIVATE src)
+target_link_libraries(video_recorder_test PRIVATE Qt6::Gui kepyur_dsp ${KP_VIDEO_LIBS})
+
+# Lectura del estado de la radio (status_json) para la GUI: cmake --build <dir> --target radio_status_test
+add_executable(radio_status_test EXCLUDE_FROM_ALL test/radio_status_test.cpp src/radio_status.cpp src/radio_status.h
+               src/backend.h)
+target_include_directories(radio_status_test PRIVATE src)
+target_link_libraries(radio_status_test PRIVATE Qt6::Gui)
+
+# Captura de la ventana principal con el backend de demo: QT_QPA_PLATFORM=offscreen main_window_shot salida.png [s]
+add_executable(main_window_shot EXCLUDE_FROM_ALL test/main_window_shot.cpp ${KP_GUI_SRC} ${KP_VIDEO_SRC})
+target_include_directories(main_window_shot PRIVATE src)
+target_compile_definitions(main_window_shot PRIVATE KP_VERSION="${PROJECT_VERSION}")
+target_link_libraries(main_window_shot PRIVATE Qt6::Widgets kepyur_dsp ${KP_VIDEO_LIBS})
+if(WIN32)
+  target_compile_definitions(main_window_shot PRIVATE KP_DRIVER_PS1_SHA256="${KP_DRIVER_PS1_SHA256}"
+                             KP_DRIVER_INF_SHA256="${KP_DRIVER_INF_SHA256}")
 endif()
 
 # Seguimiento de carrera (canales fijados) con espectros sinteticos: cmake --build <dir> --target race_monitor_test

@@ -9,6 +9,8 @@
 #include <mutex>
 #include <thread>
 
+#include "video_encoder.h"
+
 // DVR: graba en MP4 los fotogramas decodificados. push() se llama desde el hilo del decodificador (derivacion
 // Backend::setFrameTap, antes del control de flujo de la GUI) y solo encola; la conversion a YUV y la
 // codificacion van en un hilo propio, asi el decodificador nunca espera. Un fotograma cada 1/59,94 s (NTSC) o
@@ -47,6 +49,16 @@ private:
         qint64 ns;
     };
     void run();
+    // ---- run(), por partes (hilo del grabador) ----
+    struct Stats {  // para el log al acabar
+        int64_t lastPts = -1, gaps = 0;
+        double encSum = 0, encMax = 0;  // ms de convertir y codificar un fotograma
+    };
+    bool nextItem(Item &it);  // espera el siguiente fotograma; false: parando y la cola vacia
+    void abortRecording();    // un error: la grabacion termina en el acto
+    // al tamano del video (cambio de norma a mitad) y en RGBX
+    static QImage fitFrame(QImage img, const VideoEncoder::Params &p);
+    void finish(Result res, const Stats &st, const VideoEncoder::Params &p);  // resultado, log y finished()
     void join();
 
     QString path_;

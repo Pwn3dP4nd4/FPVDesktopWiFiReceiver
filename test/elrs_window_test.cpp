@@ -9,6 +9,7 @@
 #include <cstdio>
 #include <string>
 
+#include "analyzer_driver.h"
 #include "elrs_analyzer.h"
 
 namespace {
@@ -19,7 +20,7 @@ void check(bool ok, const std::string &what) {
     if (!ok) failures++;
 }
 
-// backend que no hace nada: los barridos los pone el test (feedForTest)
+// backend que no hace nada: los barridos los pone el test (emit surveyUpdated), uno por ventana
 class NullBackend : public Backend {
 public:
     QString name() const override { return QStringLiteral("null"); }
@@ -63,110 +64,114 @@ int main(int argc, char **argv) {
         st.setValue("elrs/autoStop", false);
     }
     qRegisterMetaType<SurveyData>();
-    NullBackend backend;
-    ElrsAnalyzer w(&backend);
+    NullBackend backend_w;
+    ElrsAnalyzer w(&backend_w);
     w.setAdapterOpen(true);
     w.setTimeForTest(0);
-    w.startForTest();
+    drive::start(w);
     int sw = 0;
     const auto at = [&](double t, const SurveyData &d) {
         w.setTimeForTest(t);
-        w.feedForTest(d);
+        emit backend_w.surveyUpdated(d);
     };
 
     at(0.5, band(sw++, false));
-    check(w.shownVerdictForTest() == elrs::Verdict::Clean, "banda limpia: se muestra limpia en seguida");
+    check(drive::shows(w, QStringLiteral("Clean band")), "banda limpia: se muestra limpia en seguida");
     at(1, band(sw++, true));
-    check(w.shownVerdictForTest() == elrs::Verdict::Clean, "un barrido con mucha interferencia: sigue limpia");
+    check(drive::shows(w, QStringLiteral("Clean band")), "un barrido con mucha interferencia: sigue limpia");
     at(1.5, band(sw++, false));
     at(5, band(sw++, true));
-    check(w.shownVerdictForTest() == elrs::Verdict::Clean, "otra vez, 3.5 s despues: aun limpia");
+    check(drive::shows(w, QStringLiteral("Clean band")), "otra vez, 3.5 s despues: aun limpia");
     for (double t = 5.5; t < 13; t += 0.5) at(t, band(sw++, true));
-    check(w.shownVerdictForTest() == elrs::Verdict::Clean, "mucha interferencia 7.5 s: aun no (espera 8 s)");
+    check(drive::shows(w, QStringLiteral("Clean band")), "mucha interferencia 7.5 s: aun no (espera 8 s)");
     at(13.5, band(sw++, true));
-    check(w.shownVerdictForTest() == elrs::Verdict::Heavy, "mucha interferencia 8.5 s: ya se muestra");
+    check(drive::shows(w, QStringLiteral("Heavy interference")), "mucha interferencia 8.5 s: ya se muestra");
 
     // las cifras cambian a cada barrido, las sugerencias no: el texto no se rehace en 5 s
     for (double t = 14; t < 30; t += 0.5) at(t, band(sw++, true));
-    const QString before = w.tipsTextForTest();
+    const QString before = drive::tips(w);
     at(30.5, band(sw++, true, 0, 0.4f));
     at(31, band(sw++, true, 0, 0.8f));
-    check(w.tipsTextForTest() == before, "mismas sugerencias, cifras distintas: el texto no se rehace en seguida");
+    check(drive::tips(w) == before, "mismas sugerencias, cifras distintas: el texto no se rehace en seguida");
 
     // un AP fuerte que se ve y deja de verse: su consejo sigue un rato
     for (double t = 40; t < 50; t += 0.5) at(t, band(sw++, false, 3));
-    check(w.tipsTextForTest().contains(QStringLiteral("strong network")), "AP fuerte en el 3: consejo de la WiFi");
+    check(drive::tips(w).contains(QStringLiteral("strong network")), "AP fuerte en el 3: consejo de la WiFi");
     for (double t = 50; t < 58; t += 0.5) at(t, band(sw++, false));
-    check(w.tipsTextForTest().contains(QStringLiteral("strong network")), "el AP calla 8 s: el consejo sigue");
+    check(drive::tips(w).contains(QStringLiteral("strong network")), "el AP calla 8 s: el consejo sigue");
     for (double t = 58; t < 66; t += 0.5) at(t, band(sw++, false));
-    check(!w.tipsTextForTest().contains(QStringLiteral("strong network")), "el AP calla 16 s: el consejo ya no esta");
+    check(!drive::tips(w).contains(QStringLiteral("strong network")), "el AP calla 16 s: el consejo ya no esta");
 
     // parar solo: banda estable, 20 barridos en la media, al menos 30 s y 15 s sin cambios
     {
-        ElrsAnalyzer a(&backend);
+        NullBackend backend_a;
+        ElrsAnalyzer a(&backend_a);
         a.setAdapterOpen(true);
-        a.setAutoStopForTest(true);
+        drive::setChecked(drive::find<QCheckBox>(&a, "autoStop"), true);
         a.setTimeForTest(0);
-        a.startForTest();
+        drive::start(a);
         int k = 0;
         double t = 0.5;
-        for (; t < 29.9 && a.runningForTest(); t += 0.5) {
+        for (; t < 29.9 && a.isRunning(); t += 0.5) {
             a.setTimeForTest(t);
-            a.feedForTest(band(k++, false));
+            emit backend_a.surveyUpdated(band(k++, false));
         }
-        check(a.runningForTest(), "parar solo: no antes de 30 s");
-        for (; t < 40 && a.runningForTest(); t += 0.5) {
+        check(a.isRunning(), "parar solo: no antes de 30 s");
+        for (; t < 40 && a.isRunning(); t += 0.5) {
             a.setTimeForTest(t);
-            a.feedForTest(band(k++, false));
+            emit backend_a.surveyUpdated(band(k++, false));
         }
-        check(!a.runningForTest() && t <= 31, "parar solo: banda estable, para a los 30 s");
+        check(!a.isRunning() && t <= 31, "parar solo: banda estable, para a los 30 s");
 
-        ElrsAnalyzer b(&backend);
+        NullBackend backend_b;
+        ElrsAnalyzer b(&backend_b);
         b.setAdapterOpen(true);
-        b.setAutoStopForTest(true);
+        drive::setChecked(drive::find<QCheckBox>(&b, "autoStop"), true);
         b.setTimeForTest(0);
-        b.startForTest();
+        drive::start(b);
         k = 0;
         // la banda pasa de limpia a muy ocupada cada 10 s: el veredicto cambia (con su espera de 8 s), no para
-        for (t = 0.5; t < 60 && b.runningForTest(); t += 0.5) {
+        for (t = 0.5; t < 60 && b.isRunning(); t += 0.5) {
             b.setTimeForTest(t);
-            b.feedForTest(band(k++, (int(t) / 10) % 2 == 1));
+            emit backend_b.surveyUpdated(band(k++, (int(t) / 10) % 2 == 1));
         }
-        check(b.runningForTest(), "parar solo: con algo que cambia, sigue midiendo");
-        for (; t < 125 && b.runningForTest(); t += 0.5) {
+        check(b.isRunning(), "parar solo: con algo que cambia, sigue midiendo");
+        for (; t < 125 && b.isRunning(); t += 0.5) {
             b.setTimeForTest(t);
-            b.feedForTest(band(k++, (int(t) / 10) % 2 == 1));
+            emit backend_b.surveyUpdated(band(k++, (int(t) / 10) % 2 == 1));
         }
-        check(!b.runningForTest() && t <= 121, "parar solo: cambiando sin parar, para a los 120 s");
+        check(!b.isRunning() && t <= 121, "parar solo: cambiando sin parar, para a los 120 s");
 
         // una WiFi debil que se ve 5 s de cada 30 (fila de "En el aire" que va y viene): para igual a los 30 s
-        ElrsAnalyzer e(&backend);
+        NullBackend backend_e;
+        ElrsAnalyzer e(&backend_e);
         e.setAdapterOpen(true);
-        e.setAutoStopForTest(true);
+        drive::setChecked(drive::find<QCheckBox>(&e, "autoStop"), true);
         e.setTimeForTest(0);
-        e.startForTest();
+        drive::start(e);
         k = 0;
-        for (t = 0.5; t < 60 && e.runningForTest(); t += 0.5) {
+        for (t = 0.5; t < 60 && e.isRunning(); t += 0.5) {
             e.setTimeForTest(t);
             SurveyData d = band(k++, false);
             if (int(t) % 30 < 5)
                 for (auto &p : d.bins)
                     if (std::fabs(p.mhz - 2442) < 8.3) p.peakDb = 14, p.duty = 0.03f;  // beacons, sin trafico
-            e.feedForTest(d);
+            emit backend_e.surveyUpdated(d);
         }
-        check(!e.runningForTest() && t <= 31, "parar solo: una fila que va y viene no lo impide");
+        check(!e.isRunning() && t <= 31, "parar solo: una fila que va y viene no lo impide");
 
-        ElrsAnalyzer c(&backend);
+        NullBackend backend_c;
+        ElrsAnalyzer c(&backend_c);
         c.setAdapterOpen(true);
-        c.setAutoStopForTest(false);
+        drive::setChecked(drive::find<QCheckBox>(&c, "autoStop"), false);
         c.setTimeForTest(0);
-        c.startForTest();
+        drive::start(c);
         k = 0;
         for (t = 0.5; t < 60; t += 0.5) {
             c.setTimeForTest(t);
-            c.feedForTest(band(k++, false));
+            emit backend_c.surveyUpdated(band(k++, false));
         }
-        check(c.runningForTest(), "parar solo desactivado: sigue midiendo");
+        check(c.isRunning(), "parar solo desactivado: sigue midiendo");
     }
     std::printf("\n%s\n", failures ? "FALLAN algunos casos" : "OK");
     return failures ? 1 : 0;

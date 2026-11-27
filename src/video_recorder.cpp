@@ -102,97 +102,97 @@ void VideoRecorder::join() {
     if (thread_.joinable()) thread_.join();
 }
 
+bool VideoRecorder::nextItem(Item &it) {
+    std::unique_lock<std::mutex> l(mu_);
+    cv_.wait(l, [this] { return stopping_ || !queue_.empty(); });
+    if (queue_.empty()) return false;  // parando y ya vacia
+    it = std::move(queue_.front());
+    queue_.pop_front();
+    return true;
+}
+
+void VideoRecorder::abortRecording() {
+    // Un error (no arranca el codificador, disco lleno...) termina la grabacion en el acto: la GUI se entera por
+    // finished() y deja de mostrar REC, en vez de seguir "grabando" sin guardar nada hasta que se pulse parar.
+    std::lock_guard<std::mutex> l(mu_);
+    stopping_ = true;
+    queue_.clear();
+}
+
+QImage VideoRecorder::fitFrame(QImage img, const VideoEncoder::Params &p) {
+    if (img.width() < p.width || img.height() < p.height || img.width() > p.width + 1 ||
+        img.height() > p.height + 1)  // cambio de norma a mitad (NTSC <-> PAL): al tamano inicial
+        img = img.scaled(p.width, p.height, Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
+    if (img.format() != QImage::Format_RGBX8888 && img.format() != QImage::Format_RGBA8888)
+        img = img.convertToFormat(QImage::Format_RGBX8888);
+    return img;
+}
+
+void VideoRecorder::finish(Result res, const Stats &st, const VideoEncoder::Params &p) {
+    {
+        std::lock_guard<std::mutex> l(mu_);
+        res.dropped = dropped_;
+    }
+    res.seconds = st.lastPts >= 0 ? double(st.lastPts + 1) * p.fpsDen / p.fpsNum : 0;
+    res.noPicture = res.frames == 0 && res.error.isEmpty();
+    res.ok = res.error.isEmpty() && !res.noPicture;
+    if (!res.ok && res.frames == 0) QFile::remove(path_);
+    KP_LOGI("video: %s %d fotogramas, %.1f s, %d perdidos por cola llena, %lld huecos sin senal saltados, "
+            "convertir+codificar media %.2f ms max %.1f ms%s%s",
+            path_.toUtf8().constData(), res.frames, res.seconds, res.dropped, static_cast<long long>(st.gaps),
+            res.frames ? st.encSum / res.frames : 0.0, st.encMax, res.ok ? "" : ", error: ",
+            res.error.toUtf8().constData());
+    QMetaObject::invokeMethod(this, [this, res] {
+        join();
+        running_ = false;
+        emit finished(res);
+    }, Qt::QueuedConnection);
+}
+
 void VideoRecorder::run() {
     Result res;
     res.path = path_;
     std::unique_ptr<VideoEncoder> enc;
     VideoEncoder::Params p;
     std::vector<uint8_t> nv12;
+    Stats st;
     qint64 prevNs = 0;
-    int64_t lastPts = -1, gaps = 0;
-    double encSum = 0, encMax = 0;
-    // Un error (no arranca el codificador, disco lleno...) termina la grabacion en el acto: la GUI se entera por
-    // finished() y deja de mostrar REC, en vez de seguir "grabando" sin guardar nada hasta que se pulse parar.
-    auto abort = [this] {
-        std::lock_guard<std::mutex> l(mu_);
-        stopping_ = true;
-        queue_.clear();
-    };
-    for (;;) {
-        Item it;
-        {
-            std::unique_lock<std::mutex> l(mu_);
-            cv_.wait(l, [this] { return stopping_ || !queue_.empty(); });
-            if (queue_.empty()) break;  // parando y ya vacia
-            it = std::move(queue_.front());
-            queue_.pop_front();
-        }
+    Item it;
+    while (nextItem(it)) {
         const auto c0 = std::chrono::steady_clock::now();
         if (!enc) {  // primer fotograma: tamano y ritmo
-            p.width = it.img.width() & ~1;
-            p.height = it.img.height() & ~1;
-            if (p.width < 2 || p.height < 2) continue;
-            if (p.height > 500) p.fpsNum = 50, p.fpsDen = 1;  // PAL (576 lineas)
-            else p.fpsNum = 60000, p.fpsDen = 1001;          // NTSC
-            if (aspect_ > 0) {  // forma del pixel = forma de la imagen / forma en pixeles
-                const int an = aspect_ > 1.5 ? 16 : 4, ad = aspect_ > 1.5 ? 9 : 3;
-                long long n = 1LL * an * p.height, d = 1LL * ad * p.width;
-                const long long g = std::gcd(n, d);
-                p.sarNum = int(n / g);
-                p.sarDen = int(d / g);
-            }
+            p = VideoEncoder::paramsFor(it.img.width(), it.img.height(), aspect_);
+            if (!VideoEncoder::valid(p)) continue;
             enc = VideoEncoder::create();
             if (!enc || !enc->open(path_, p, &res.error)) {
                 if (res.error.isEmpty()) res.error = QStringLiteral("no video encoder");
                 enc.reset();
-                abort();
+                abortRecording();
                 break;
             }
             nv12.resize(size_t(p.width) * p.height * 3 / 2);
         }
-        QImage img = it.img;
-        if (img.width() < p.width || img.height() < p.height || img.width() > p.width + 1 ||
-            img.height() > p.height + 1)  // cambio de norma a mitad (NTSC <-> PAL): al tamano inicial
-            img = img.scaled(p.width, p.height, Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
-        if (img.format() != QImage::Format_RGBX8888 && img.format() != QImage::Format_RGBA8888)
-            img = img.convertToFormat(QImage::Format_RGBX8888);
-        rgbxToNv12(img, p.width, p.height, nv12.data());
+        rgbxToNv12(fitFrame(it.img, p), p.width, p.height, nv12.data());
         // pts consecutivos: un rato sin senal (el decodificador no entrega fotogramas) se salta en vez de quedar
         // congelado. Asi el tiempo del MP4 es siempre el numero de fotograma, que es lo que alinea los fotogramas
         // clave con los trozos del MP4 fragmentado (video_encoder_mf.cpp). Los huecos solo se cuentan para el log.
-        if (lastPts >= 0 && double(it.ns - prevNs) * p.fpsNum / (double(p.fpsDen) * 1e9) > 1.5) ++gaps;
+        if (st.lastPts >= 0 && double(it.ns - prevNs) * p.fpsNum / (double(p.fpsDen) * 1e9) > 1.5) ++st.gaps;
         prevNs = it.ns;
-        const int64_t pts = lastPts + 1;
+        const int64_t pts = st.lastPts + 1;
         if (!enc->write(nv12.data(), pts, &res.error)) {
-            abort();
+            abortRecording();
             break;
         }
-        lastPts = pts;
+        st.lastPts = pts;
         res.frames++;
         const double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - c0).count();
-        encSum += ms;
-        encMax = std::max(encMax, ms);
+        st.encSum += ms;
+        st.encMax = std::max(st.encMax, ms);
     }
     if (enc) {
         QString err;
         if (!enc->close(&err) && res.error.isEmpty()) res.error = err;
         enc.reset();
     }
-    {
-        std::lock_guard<std::mutex> l(mu_);
-        res.dropped = dropped_;
-    }
-    res.seconds = lastPts >= 0 ? double(lastPts + 1) * p.fpsDen / p.fpsNum : 0;
-    res.noPicture = res.frames == 0 && res.error.isEmpty();
-    res.ok = res.error.isEmpty() && !res.noPicture;
-    if (!res.ok && res.frames == 0) QFile::remove(path_);
-    KP_LOGI("video: %s %d fotogramas, %.1f s, %d perdidos por cola llena, %lld huecos sin senal saltados, "
-            "convertir+codificar media %.2f ms max %.1f ms%s%s",
-            path_.toUtf8().constData(), res.frames, res.seconds, res.dropped, static_cast<long long>(gaps),
-            res.frames ? encSum / res.frames : 0.0, encMax, res.ok ? "" : ", error: ", res.error.toUtf8().constData());
-    QMetaObject::invokeMethod(this, [this, res] {
-        join();
-        running_ = false;
-        emit finished(res);
-    }, Qt::QueuedConnection);
+    finish(res, st, p);
 }
