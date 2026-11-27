@@ -24,4 +24,9 @@ public:
     static std::unique_ptr<VideoEncoder> create();  // nullptr si esta compilacion no puede grabar
     static bool available() { return create() != nullptr; }
     static QString backendName();  // para el log
+
+    // Para un video de fotogramas frameW x frameH que se ve a displayAspect (ancho / alto; <= 0: pixel cuadrado):
+    // tamano par, NTSC (59.94/s) o PAL (50/s, mas de 500 lineas) y la forma del pixel (src/video_params.cpp)
+    static Params paramsFor(int frameW, int frameH, double displayAspect);
+    static bool valid(const Params &p) { return p.width >= 2 && p.height >= 2; }
 };
