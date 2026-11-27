@@ -33,10 +33,8 @@ void file_sink(kp::LogLevel l, const char *line) {
     std::fprintf(g_log, "%s %c %s\n", ts.constData(), tag[static_cast<int>(l)], line);
     std::fflush(g_log);
 }
-}  // namespace
 
-int main(int argc, char **argv) {
-    QApplication app(argc, argv);
+void setupApplication() {
     QApplication::setApplicationName(QStringLiteral("FPVDesktopWiFiReceiver"));
     QApplication::setApplicationVersion(QStringLiteral(KP_VERSION));
     QApplication::setDesktopFileName(QStringLiteral("FPVDesktopWiFiReceiver"));  // Wayland: icono del .desktop
@@ -48,10 +46,16 @@ int main(int argc, char **argv) {
     qRegisterMetaType<RadioStatus>();
     qRegisterMetaType<SurveyData>();
     qRegisterMetaType<QVector<double>>();
+}
 
-    // Idioma guardado (o el del sistema) antes de crear ningun texto
-    i18n::apply(i18n::setting());
+// la linea de comandos
+struct Options {
+    bool demo = false, autoConnect = false, noConnect = false, verbose = false, fullscreen = false;
+    QString rate;     // "40" o "20"; vacio = el guardado
+    double watchMHz = 0;
+};
 
+Options parseOptions(const QApplication &app) {
     QCommandLineParser cli;
     cli.setApplicationDescription(QCoreApplication::translate(
         "main", "FPVDesktopWiFiReceiver: analog 5.8 GHz FPV receiver with an RTL8812BU adapter. "
@@ -76,54 +80,89 @@ int main(int argc, char **argv) {
         const QString l = cli.value(langOpt).toLower();
         i18n::apply(l == QLatin1String("en") || l == QLatin1String("es") ? l : QString());
     }
+    Options o;
+    o.demo = cli.isSet(demo);
+    o.autoConnect = cli.isSet(autoOpt);
+    o.noConnect = cli.isSet(noAuto);
+    o.verbose = cli.isSet(verbose);
+    o.fullscreen = cli.isSet(fullOpt);
+    if (cli.isSet(rateOpt)) o.rate = cli.value(rateOpt);
+    o.watchMHz = cli.value(watchOpt).toDouble();
+    return o;
+}
 
-    // Log de kepyur/wifi-sdr: stderr + fichero (como kepyur.log en Android)
+// Log de kepyur/wifi-sdr: stderr + fichero (como kepyur.log en Android)
+void openLog(bool verbose) {
     const QString logDir = QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation);
     QDir().mkpath(logDir);
     const QString logPath = logDir + "/FPVDesktopWiFiReceiver.log";
     g_log = std::fopen(QFile::encodeName(logPath).constData(), "a");
     kp::set_log_sink(file_sink);
-    kp::set_log_debug(cli.isSet(verbose));
+    kp::set_log_debug(verbose);
     KP_LOGI("FPVDesktopWiFiReceiver %s start, log %s", KP_VERSION, qPrintable(logPath));
+}
+
+void closeLog() {
+    std::lock_guard<std::mutex> lk(g_log_m);
+    if (g_log) std::fclose(g_log);
+    g_log = nullptr;
+}
+
 #ifdef _WIN32
+void tuneWindows() {
     // 65001 = UTF-8 (manifiesto): las rutas con tildes/enes funcionan tambien en el fopen() de kepyur/wifi-sdr
     KP_LOGI("windows code page %u%s", GetACP(), GetACP() == CP_UTF8 ? "" : " (no UTF-8: rutas no ASCII pueden fallar)");
-    {
-        // devourer escribe ~45.000 registros al arrancar el chip con un sleep_for(1 us) tras cada uno. En
-        // Windows cada sleep dura lo que diga el temporizador del proceso: con EcoQoS (ahorro de energia de
-        // Windows 11) o la resolucion por defecto (15,6 ms) la apertura pasa de ~8 s a minutos. Se pide no
-        // aplicar el ahorro a este proceso y temporizador de 1 ms mientras la app este abierta.
-        PROCESS_POWER_THROTTLING_STATE pt{};
-        pt.Version = PROCESS_POWER_THROTTLING_CURRENT_VERSION;
-        pt.ControlMask = PROCESS_POWER_THROTTLING_EXECUTION_SPEED | PROCESS_POWER_THROTTLING_IGNORE_TIMER_RESOLUTION;
-        pt.StateMask = 0;  // ninguno de los dos ahorros
-        const bool ptOk = SetProcessInformation(GetCurrentProcess(), ProcessPowerThrottling, &pt, sizeof pt);
-        const MMRESULT tr = timeBeginPeriod(1);
-        KP_LOGI("windows: power throttling off %s, timer 1 ms %s", ptOk ? "ok" : "fallo",
-                tr == TIMERR_NOERROR ? "ok" : "fallo");
-    }
+    // devourer escribe ~45.000 registros al arrancar el chip con un sleep_for(1 us) tras cada uno. En
+    // Windows cada sleep dura lo que diga el temporizador del proceso: con EcoQoS (ahorro de energia de
+    // Windows 11) o la resolucion por defecto (15,6 ms) la apertura pasa de ~8 s a minutos. Se pide no
+    // aplicar el ahorro a este proceso y temporizador de 1 ms mientras la app este abierta.
+    PROCESS_POWER_THROTTLING_STATE pt{};
+    pt.Version = PROCESS_POWER_THROTTLING_CURRENT_VERSION;
+    pt.ControlMask = PROCESS_POWER_THROTTLING_EXECUTION_SPEED | PROCESS_POWER_THROTTLING_IGNORE_TIMER_RESOLUTION;
+    pt.StateMask = 0;  // ninguno de los dos ahorros
+    const bool ptOk = SetProcessInformation(GetCurrentProcess(), ProcessPowerThrottling, &pt, sizeof pt);
+    const MMRESULT tr = timeBeginPeriod(1);
+    KP_LOGI("windows: power throttling off %s, timer 1 ms %s", ptOk ? "ok" : "fallo",
+            tr == TIMERR_NOERROR ? "ok" : "fallo");
+}
 #endif
 
-    Backend *backend = nullptr;
+Backend *createBackend(bool demo) {
 #ifdef KP_WITH_RADIO
-    if (!cli.isSet(demo)) backend = new RadioBackend;
+    if (!demo) return new RadioBackend;
+#else
+    Q_UNUSED(demo);
 #endif
-    if (!backend) backend = new StubBackend;
+    return new StubBackend;
+}
+}  // namespace
 
+int main(int argc, char **argv) {
+    QApplication app(argc, argv);
+    setupApplication();
+    // Idioma guardado (o el del sistema) antes de crear ningun texto
+    i18n::apply(i18n::setting());
+    const Options opt = parseOptions(app);
+    openLog(opt.verbose);
+#ifdef _WIN32
+    tuneWindows();
+#endif
+
+    Backend *backend = createBackend(opt.demo);
     QThread thread;
     thread.setObjectName(QStringLiteral("backend"));
     backend->moveToThread(&thread);
     thread.start();
 
     MainWindow w(backend);
-    if (cli.isSet(rateOpt)) w.setRate(cli.value(rateOpt) == QLatin1String("40") ? 1 : 2);
+    if (!opt.rate.isEmpty()) w.setRate(opt.rate == QLatin1String("40") ? 1 : 2);
     w.show();
-    if (cli.isSet(fullOpt)) w.toggleFullScreen();
+    if (opt.fullscreen) w.toggleFullScreen();
     // Doble clic en el .exe: conecta solo (ajuste "Conectar el adaptador al abrir", activo por defecto) y
     // vuelve al ultimo canal visto o escanea. La linea de comandos solo hace falta para forzar otra cosa.
-    const double watchMHz = cli.value(watchOpt).toDouble();
-    if (!cli.isSet(noAuto)) {
-        const bool forceScan = cli.isSet(autoOpt) || cli.isSet(demo);
+    if (!opt.noConnect) {
+        const bool forceScan = opt.autoConnect || opt.demo;
+        const double watchMHz = opt.watchMHz;
         QTimer::singleShot(0, &w, [&w, watchMHz, forceScan] { w.startup(forceScan, watchMHz, forceScan); });
     }
 
@@ -136,10 +175,6 @@ int main(int argc, char **argv) {
     }, Qt::BlockingQueuedConnection);
     thread.quit();
     thread.wait();
-    {
-        std::lock_guard<std::mutex> lk(g_log_m);
-        if (g_log) std::fclose(g_log);
-        g_log = nullptr;
-    }
+    closeLog();
     return rc;
 }
