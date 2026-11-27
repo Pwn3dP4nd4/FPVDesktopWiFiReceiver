@@ -548,6 +548,55 @@ ChannelAnalyzer::ChannelAnalyzer(Backend *backend, QWidget *parent) : QDialog(pa
     setWindowFlag(Qt::WindowMaximizeButtonHint, true);
     auto *h = new QHBoxLayout(this);
 
+    h->addWidget(buildSide());
+
+    auto *main = new QVBoxLayout;
+    view_ = new SpectrumView;
+    main->addWidget(view_, 3);
+    main->addWidget(buildLegend());
+    summary_ = new QLabel;
+    summary_->setObjectName(QStringLiteral("summary"));
+    summary_->setWordWrap(true);
+    summary_->setTextFormat(Qt::RichText);
+    main->addWidget(summary_);
+    // pestanas bajo la grafica: la recomendacion (con los fijados) y el seguimiento de carrera
+    tabs_ = new QTabWidget;
+    tabs_->setObjectName(QStringLiteral("tabs"));
+    tabs_->addTab(buildAdvicePage(), QString());
+    tabs_->addTab(buildRacePage(), QString());
+    // historial: lo que ha ido avisando y recomendando la carrera, para verlo al final (src/race_history.h)
+    history_ = new RaceHistory;
+    connect(history_, &RaceHistory::eventsChanged, this, &ChannelAnalyzer::updateHistoryTab);
+    connect(history_, &RaceHistory::clearRequested, this, [this] { history_->clear(raceOn_); });
+    tabs_->addTab(history_, QString());
+    main->addWidget(tabs_, 2);
+    // con la pestana oculta el video de cada piloto no se refresca (updateRace): al abrirla, lo de ahora
+    connect(tabs_, &QTabWidget::currentChanged, this, [this](int i) {
+        if (i == 2) history_->refreshPilots();
+    });
+    h->addLayout(main, 1);
+
+    pinned_ = parsePins(appSettings().value("analyzer/pinned").toStringList());
+    connect(view_, &SpectrumView::pinToggled, this, &ChannelAnalyzer::togglePin);
+    connect(view_, &SpectrumView::unpinAllRequested, this, [this] { setPins({}); });
+    connect(this, &ChannelAnalyzer::runningChanged, view_, &SpectrumView::setScanning);
+
+    connect(this, &ChannelAnalyzer::requestStart, backend, &Backend::startSurvey);
+    connect(this, &ChannelAnalyzer::requestStop, backend, &Backend::stopSurvey);
+    connect(this, &ChannelAnalyzer::requestMemory, backend, &Backend::setSurveyMemory);
+    emit requestMemory(memory_->currentData().toInt());
+    connect(backend, &Backend::surveyUpdated, this, &ChannelAnalyzer::onSurvey);
+    connect(backend, &Backend::surveyStopped, this, &ChannelAnalyzer::onStopped);
+    connect(backend, &Backend::statusChanged, this, [this](const RadioStatus &s) { setAdapterOpen(s.open); });
+
+    retranslate();
+    state_->setText(tr("Connect the adapter first."));  // hasta el primer estado del backend
+    resize(1000, 640);
+    recompute();
+}
+
+// panel de la izquierda: bandas, pilotos, en el aire, Empezar y el estado
+QWidget *ChannelAnalyzer::buildSide() {
     auto *side = new QVBoxLayout;
     bandsTitle_ = new QLabel;
     bandsTitle_->setStyleSheet(QStringLiteral("font-weight:bold;"));
@@ -675,260 +724,225 @@ ChannelAnalyzer::ChannelAnalyzer(Backend *backend, QWidget *parent) : QDialog(pa
     auto *sideW = new QWidget;
     sideW->setLayout(side);
     sideW->setFixedWidth(220);
-    h->addWidget(sideW);
+    return sideW;
+}
 
-    auto *main = new QVBoxLayout;
-    view_ = new SpectrumView;
-    main->addWidget(view_, 3);
-    {
-        // leyenda: muestra dibujada + texto, en dos columnas (espectro | marcas de canal)
-        auto *box = new QWidget;
-        auto *lg = new QGridLayout(box);
-        lg->setContentsMargins(0, 2, 0, 2);
-        lg->setHorizontalSpacing(6);
-        lg->setVerticalSpacing(1);
-        const QColor hl = palette().color(QPalette::Highlight);
-        const auto swatch = [](int kind, QColor c) {
-            QPixmap px(22, 12);
-            px.fill(Qt::transparent);
-            QPainter p(&px);
-            if (kind == 0) {  // area: relleno y borde arriba
-                QColor f = c;
-                f.setAlpha(90);
-                p.fillRect(0, 3, 22, 9, f);
-                p.setPen(QPen(c, 1.5));
-                p.drawLine(0, 3, 22, 3);
-            } else if (kind == 1) {  // linea
-                p.setPen(QPen(c, 1.5));
-                p.drawLine(0, 6, 22, 6);
-            } else if (kind == 2) {  // discontinua vertical
-                p.setPen(QPen(c, 1.5, Qt::DashLine));
-                p.drawLine(11, 0, 11, 12);
-            } else if (kind == 3) {  // fondo/franja
-                p.fillRect(0, 0, 22, 12, c);
-            } else if (kind == 6) {  // canal fijado: franja con bordes y chincheta
-                QColor f = c;
-                f.setAlpha(80);
-                p.fillRect(3, 0, 16, 12, f);
-                p.setPen(QPen(c, 1.5));
-                p.drawLine(QPointF(3, 0), QPointF(3, 12));
-                p.drawLine(QPointF(19, 0), QPointF(19, 12));
-                drawPin(p, QPointF(11, 11.5), c);
-            } else if (kind == 5) {  // red WiFi: su canal (barra) y el resto de su bloque (discontinua)
-                p.setPen(QPen(c, 1, Qt::DashLine));
-                p.drawLine(0, 6, 22, 6);
-                p.fillRect(7, 4, 8, 4, c);
-            } else if (kind == 7) {  // barra de barrido: recien medido a la derecha, apagandose hacia atras
-                QLinearGradient g(0, 0, 20, 0);
-                QColor a = c;
-                a.setAlpha(50);
-                g.setColorAt(0, a);
-                g.setColorAt(1, c);
-                p.fillRect(0, 4, 20, 5, g);
-                p.setPen(QPen(c, 2));
-                p.drawLine(QPointF(20.5, 2), QPointF(20.5, 11));
-            } else {  // marca de canal
-                p.fillRect(9, 1, 5, 10, c);
-            }
-            return px;
-        };
-        const auto add = [&](int row, int col, const QPixmap &px) {
-            auto *ic = new QLabel;
-            ic->setPixmap(px);
-            auto *t = new QLabel;
-            legendText_.push_back(t);
-            lg->addWidget(ic, row, col);
-            lg->addWidget(t, row, col + 1);
-        };
-        for (int c : {0, 3}) {
-            auto *h = new QLabel;
-            QFont f = h->font();
-            f.setBold(true);
-            h->setFont(f);
-            legendText_.push_back(h);
-            lg->addWidget(h, 0, c, 1, 2);
+// leyenda: muestra dibujada + texto, en dos columnas (espectro | marcas de canal)
+QWidget *ChannelAnalyzer::buildLegend() {
+    // leyenda: muestra dibujada + texto, en dos columnas (espectro | marcas de canal)
+    auto *box = new QWidget;
+    auto *lg = new QGridLayout(box);
+    lg->setContentsMargins(0, 2, 0, 2);
+    lg->setHorizontalSpacing(6);
+    lg->setVerticalSpacing(1);
+    const QColor hl = palette().color(QPalette::Highlight);
+    const auto swatch = [](int kind, QColor c) {
+        QPixmap px(22, 12);
+        px.fill(Qt::transparent);
+        QPainter p(&px);
+        if (kind == 0) {  // area: relleno y borde arriba
+            QColor f = c;
+            f.setAlpha(90);
+            p.fillRect(0, 3, 22, 9, f);
+            p.setPen(QPen(c, 1.5));
+            p.drawLine(0, 3, 22, 3);
+        } else if (kind == 1) {  // linea
+            p.setPen(QPen(c, 1.5));
+            p.drawLine(0, 6, 22, 6);
+        } else if (kind == 2) {  // discontinua vertical
+            p.setPen(QPen(c, 1.5, Qt::DashLine));
+            p.drawLine(11, 0, 11, 12);
+        } else if (kind == 3) {  // fondo/franja
+            p.fillRect(0, 0, 22, 12, c);
+        } else if (kind == 6) {  // canal fijado: franja con bordes y chincheta
+            QColor f = c;
+            f.setAlpha(80);
+            p.fillRect(3, 0, 16, 12, f);
+            p.setPen(QPen(c, 1.5));
+            p.drawLine(QPointF(3, 0), QPointF(3, 12));
+            p.drawLine(QPointF(19, 0), QPointF(19, 12));
+            drawPin(p, QPointF(11, 11.5), c);
+        } else if (kind == 5) {  // red WiFi: su canal (barra) y el resto de su bloque (discontinua)
+            p.setPen(QPen(c, 1, Qt::DashLine));
+            p.drawLine(0, 6, 22, 6);
+            p.fillRect(7, 4, 8, 4, c);
+        } else if (kind == 7) {  // barra de barrido: recien medido a la derecha, apagandose hacia atras
+            QLinearGradient g(0, 0, 20, 0);
+            QColor a = c;
+            a.setAlpha(50);
+            g.setColorAt(0, a);
+            g.setColorAt(1, c);
+            p.fillRect(0, 4, 20, 5, g);
+            p.setPen(QPen(c, 2));
+            p.drawLine(QPointF(20.5, 2), QPointF(20.5, 11));
+        } else {  // marca de canal
+            p.fillRect(9, 1, 5, 10, c);
         }
-        QColor wifi(255, 140, 0, 70), recA = kAnalogColour, recH = kHdzColour;
-        recA.setAlpha(60);
-        recH.setAlpha(60);
-        add(1, 0, swatch(0, hl));
-        add(2, 0, swatch(1, QColor(0xe0, 0x70, 0x30)));
-        add(3, 0, swatch(3, wifi));
-        add(4, 0, swatch(2, QColor(0xd9, 0x48, 0x3b)));
-        add(1, 3, swatch(4, QColor(0x3a, 0xa8, 0x5a)));
-        add(2, 3, swatch(4, QColor(0xe0, 0xa0, 0x20)));
-        add(3, 3, swatch(4, QColor(0xd9, 0x48, 0x3b)));
-        add(4, 3, swatch(3, recA));
-        add(5, 3, swatch(3, recH));
-        add(5, 0, swatch(5, QColor(0xc0, 0x60, 0x00)));
-        add(6, 3, swatch(6, kAnalogColour));
-        add(6, 0, swatch(7, kSweepColour));
-        lg->setColumnMinimumWidth(2, 24);
-        lg->setColumnStretch(5, 1);
-        main->addWidget(box);
+        return px;
+    };
+    const auto add = [&](int row, int col, const QPixmap &px) {
+        auto *ic = new QLabel;
+        ic->setPixmap(px);
+        auto *t = new QLabel;
+        legendText_.push_back(t);
+        lg->addWidget(ic, row, col);
+        lg->addWidget(t, row, col + 1);
+    };
+    for (int c : {0, 3}) {
+        auto *h = new QLabel;
+        QFont f = h->font();
+        f.setBold(true);
+        h->setFont(f);
+        legendText_.push_back(h);
+        lg->addWidget(h, 0, c, 1, 2);
     }
-    summary_ = new QLabel;
-    summary_->setObjectName(QStringLiteral("summary"));
-    summary_->setWordWrap(true);
-    summary_->setTextFormat(Qt::RichText);
-    main->addWidget(summary_);
-    // pestanas bajo la grafica: la recomendacion (con los fijados) y el seguimiento de carrera
-    tabs_ = new QTabWidget;
-    tabs_->setObjectName(QStringLiteral("tabs"));
-    {
-        auto *page = new QWidget;
-        auto *v = new QVBoxLayout(page);
-        v->setContentsMargins(4, 4, 4, 4);
-        table_ = new QTreeWidget;
-        table_->setObjectName(QStringLiteral("advice"));
-        table_->setRootIsDecorated(false);
-        table_->setColumnCount(7);
-        table_->header()->setStretchLastSection(true);
-        connect(table_, &QTreeWidget::itemChanged, this, [this](QTreeWidgetItem *it, int col) {
-            if (col != 0) return;
-            const QString name = it->data(0, Qt::UserRole).toString();
-            const bool hdz = it->data(0, Qt::UserRole + 1).toBool();
-            const bool want = it->checkState(0) == Qt::Checked;
-            // recompute() rehace la tabla: fuera de la senal de este elemento
-            QTimer::singleShot(0, this, [this, name, hdz, want] {
-                if (want != isPinned(name, hdz)) togglePin(name, hdz);
-            });
+    QColor wifi(255, 140, 0, 70), recA = kAnalogColour, recH = kHdzColour;
+    recA.setAlpha(60);
+    recH.setAlpha(60);
+    add(1, 0, swatch(0, hl));
+    add(2, 0, swatch(1, QColor(0xe0, 0x70, 0x30)));
+    add(3, 0, swatch(3, wifi));
+    add(4, 0, swatch(2, QColor(0xd9, 0x48, 0x3b)));
+    add(1, 3, swatch(4, QColor(0x3a, 0xa8, 0x5a)));
+    add(2, 3, swatch(4, QColor(0xe0, 0xa0, 0x20)));
+    add(3, 3, swatch(4, QColor(0xd9, 0x48, 0x3b)));
+    add(4, 3, swatch(3, recA));
+    add(5, 3, swatch(3, recH));
+    add(5, 0, swatch(5, QColor(0xc0, 0x60, 0x00)));
+    add(6, 3, swatch(6, kAnalogColour));
+    add(6, 0, swatch(7, kSweepColour));
+    lg->setColumnMinimumWidth(2, 24);
+    lg->setColumnStretch(5, 1);
+    return box;
+}
+
+// pestana Recomendacion: los canales recomendados y los fijados
+QWidget *ChannelAnalyzer::buildAdvicePage() {
+    auto *page = new QWidget;
+    auto *v = new QVBoxLayout(page);
+    v->setContentsMargins(4, 4, 4, 4);
+    table_ = new QTreeWidget;
+    table_->setObjectName(QStringLiteral("advice"));
+    table_->setRootIsDecorated(false);
+    table_->setColumnCount(7);
+    table_->header()->setStretchLastSection(true);
+    connect(table_, &QTreeWidget::itemChanged, this, [this](QTreeWidgetItem *it, int col) {
+        if (col != 0) return;
+        const QString name = it->data(0, Qt::UserRole).toString();
+        const bool hdz = it->data(0, Qt::UserRole + 1).toBool();
+        const bool want = it->checkState(0) == Qt::Checked;
+        // recompute() rehace la tabla: fuera de la senal de este elemento
+        QTimer::singleShot(0, this, [this, name, hdz, want] {
+            if (want != isPinned(name, hdz)) togglePin(name, hdz);
         });
-        v->addWidget(table_, 1);
-        auto *r = new QHBoxLayout;
-        pinHint_ = new QLabel;
-        pinHint_->setWordWrap(true);
-        r->addWidget(pinHint_, 1);
-        unpinBtn_ = new QPushButton;
-        connect(unpinBtn_, &QPushButton::clicked, this, [this] { setPins({}); });
-        r->addWidget(unpinBtn_);
-        v->addLayout(r);
-        tabs_->addTab(page, QString());
-    }
-    {
-        auto *page = new QWidget;
-        auto *v = new QVBoxLayout(page);
-        v->setContentsMargins(4, 4, 4, 4);
-        auto *top = new QHBoxLayout;
-        raceBox_ = new QCheckBox;
-        raceBox_->setObjectName(QStringLiteral("race"));
-        connect(raceBox_, &QCheckBox::toggled, this, [this](bool on) { setRace(on); });
-        top->addWidget(raceBox_);
-        raceState_ = new QLabel;
-        raceState_->setObjectName(QStringLiteral("raceState"));
-        raceState_->setWordWrap(true);
-        top->addWidget(raceState_, 1);
-        v->addLayout(top);
-        // auto-inicio: se arma y empieza solo cuando estan en el aire los pilotos elegidos (0 = todos los fijados)
-        auto *arm = new QHBoxLayout;
-        armBtn_ = new QPushButton;
-        armBtn_->setObjectName(QStringLiteral("arm"));
-        armBtn_->setCheckable(true);
-        connect(armBtn_, &QPushButton::toggled, this, [this](bool on) { setArmed(on); });
-        arm->addWidget(armBtn_);
-        armLbl_ = new QLabel;
-        arm->addWidget(armLbl_);
-        armCount_ = new AllSpinBox;
-        armCount_->setObjectName(QStringLiteral("armCount"));
-        // guardado: 0 = todos. El rango (1..fijados) lo pone updateRaceControls
-        const int saved = appSettings().value("analyzer/raceAutoPilots", 0).toInt();
-        armAll_ = saved <= 0;
-        armCount_->setRange(1, 16);
-        armCount_->setValue(armAll_ ? 16 : saved);
-        connect(armCount_, &QSpinBox::valueChanged, this, [this](int v) {
-            armAll_ = v >= armCount_->maximum();
-            appSettings().setValue("analyzer/raceAutoPilots", armAll_ ? 0 : v);
-            updateRace();
-        });
-        arm->addWidget(armCount_);
-        autoStop_ = new QCheckBox;
-        autoStop_->setChecked(appSettings().value("analyzer/raceAutoStop", true).toBool());
-        connect(autoStop_, &QCheckBox::toggled, this,
-                [](bool on) { appSettings().setValue("analyzer/raceAutoStop", on); });
-        arm->addSpacing(12);
-        arm->addWidget(autoStop_);
-        arm->addStretch(1);
-        v->addLayout(arm);
-        raceTable_ = new QTreeWidget;
-        raceTable_->setRootIsDecorated(false);
-        raceTable_->setColumnCount(8);
-        raceTable_->header()->setStretchLastSection(true);
-        raceTable_->setSelectionMode(QAbstractItemView::NoSelection);
-        // clic derecho en una fila: aplicar solo la recomendacion de ese canal
-        raceTable_->setContextMenuPolicy(Qt::CustomContextMenu);
-        connect(raceTable_, &QWidget::customContextMenuRequested, this, [this](const QPoint &pos) {
-            QTreeWidgetItem *it = raceTable_->itemAt(pos);
-            if (!it) return;
-            const int row = raceTable_->indexOfTopLevelItem(it);
-            const auto ms = moves_;  // la tabla se rehace en cada barrido: lo de ahora
-            const auto &hs = race_.health();
-            QMenu menu(this);
-            for (const auto &m : ms) {
-                if (m.from != row || m.from >= static_cast<int>(hs.size())) continue;
-                const QString t = QStringLiteral("%1 \u2192 %2").arg(QString::fromStdString(hs[m.from].ch.name),
-                                                                     QString::fromStdString(m.to.name));
-                QAction *a = menu.addAction(canApplyAlone(m) ? tr("Apply %1 only").arg(t)
-                                                             : tr("Apply %1 only (apply the others first)").arg(t));
-                a->setEnabled(canApplyAlone(m));
-                // con el menu abierto siguen llegando barridos: solo si sigue recomendada (y cabe sola)
-                connect(a, &QAction::triggered, this, [this, m] {
-                    const auto v = stillValid({m});
-                    if (!v.empty() && canApplyAlone(v.front())) applyMoves(v);
-                });
-            }
-            if (ms.size() > 1) {
-                QAction *all = menu.addAction(tr("Apply all (%1)").arg(ms.size()));
-                // todas o ninguna: cada una cuenta con las anteriores ya aplicadas
-                connect(all, &QAction::triggered, this, [this, ms] {
-                    const auto v = stillValid(ms);
-                    if (v.size() == ms.size()) applyMoves(v);
-                });
-            }
-            if (!menu.isEmpty()) menu.exec(raceTable_->viewport()->mapToGlobal(pos));
-        });
-        v->addWidget(raceTable_, 1);
-        auto *r = new QHBoxLayout;
-        raceAdvice_ = new QLabel;
-        raceAdvice_->setWordWrap(true);
-        raceAdvice_->setTextFormat(Qt::RichText);
-        r->addWidget(raceAdvice_, 1);
-        applyBtn_ = new QPushButton;
-        applyBtn_->setObjectName(QStringLiteral("apply"));
-        applyBtn_->setVisible(false);
-        connect(applyBtn_, &QPushButton::clicked, this, [this] { applyMoves(moves_); });
-        r->addWidget(applyBtn_);
-        v->addLayout(r);
-        tabs_->addTab(page, QString());
-    }
-    // historial: lo que ha ido avisando y recomendando la carrera, para verlo al final (src/race_history.h)
-    history_ = new RaceHistory;
-    connect(history_, &RaceHistory::eventsChanged, this, &ChannelAnalyzer::updateHistoryTab);
-    connect(history_, &RaceHistory::clearRequested, this, [this] { history_->clear(raceOn_); });
-    tabs_->addTab(history_, QString());
-    main->addWidget(tabs_, 2);
-    // con la pestana oculta el video de cada piloto no se refresca (updateRace): al abrirla, lo de ahora
-    connect(tabs_, &QTabWidget::currentChanged, this, [this](int i) {
-        if (i == 2) history_->refreshPilots();
     });
-    h->addLayout(main, 1);
+    v->addWidget(table_, 1);
+    auto *r = new QHBoxLayout;
+    pinHint_ = new QLabel;
+    pinHint_->setWordWrap(true);
+    r->addWidget(pinHint_, 1);
+    unpinBtn_ = new QPushButton;
+    connect(unpinBtn_, &QPushButton::clicked, this, [this] { setPins({}); });
+    r->addWidget(unpinBtn_);
+    v->addLayout(r);
+    return page;
+}
 
-    pinned_ = parsePins(appSettings().value("analyzer/pinned").toStringList());
-    connect(view_, &SpectrumView::pinToggled, this, &ChannelAnalyzer::togglePin);
-    connect(view_, &SpectrumView::unpinAllRequested, this, [this] { setPins({}); });
-    connect(this, &ChannelAnalyzer::runningChanged, view_, &SpectrumView::setScanning);
-
-    connect(this, &ChannelAnalyzer::requestStart, backend, &Backend::startSurvey);
-    connect(this, &ChannelAnalyzer::requestStop, backend, &Backend::stopSurvey);
-    connect(this, &ChannelAnalyzer::requestMemory, backend, &Backend::setSurveyMemory);
-    emit requestMemory(memory_->currentData().toInt());
-    connect(backend, &Backend::surveyUpdated, this, &ChannelAnalyzer::onSurvey);
-    connect(backend, &Backend::surveyStopped, this, &ChannelAnalyzer::onStopped);
-    connect(backend, &Backend::statusChanged, this, [this](const RadioStatus &s) { setAdapterOpen(s.open); });
-
-    retranslate();
-    state_->setText(tr("Connect the adapter first."));  // hasta el primer estado del backend
-    resize(1000, 640);
-    recompute();
+// pestana Carrera: el seguimiento, el auto-inicio y las recomendaciones de mover
+QWidget *ChannelAnalyzer::buildRacePage() {
+    auto *page = new QWidget;
+    auto *v = new QVBoxLayout(page);
+    v->setContentsMargins(4, 4, 4, 4);
+    auto *top = new QHBoxLayout;
+    raceBox_ = new QCheckBox;
+    raceBox_->setObjectName(QStringLiteral("race"));
+    connect(raceBox_, &QCheckBox::toggled, this, [this](bool on) { setRace(on); });
+    top->addWidget(raceBox_);
+    raceState_ = new QLabel;
+    raceState_->setObjectName(QStringLiteral("raceState"));
+    raceState_->setWordWrap(true);
+    top->addWidget(raceState_, 1);
+    v->addLayout(top);
+    // auto-inicio: se arma y empieza solo cuando estan en el aire los pilotos elegidos (0 = todos los fijados)
+    auto *arm = new QHBoxLayout;
+    armBtn_ = new QPushButton;
+    armBtn_->setObjectName(QStringLiteral("arm"));
+    armBtn_->setCheckable(true);
+    connect(armBtn_, &QPushButton::toggled, this, [this](bool on) { setArmed(on); });
+    arm->addWidget(armBtn_);
+    armLbl_ = new QLabel;
+    arm->addWidget(armLbl_);
+    armCount_ = new AllSpinBox;
+    armCount_->setObjectName(QStringLiteral("armCount"));
+    // guardado: 0 = todos. El rango (1..fijados) lo pone updateRaceControls
+    const int saved = appSettings().value("analyzer/raceAutoPilots", 0).toInt();
+    armAll_ = saved <= 0;
+    armCount_->setRange(1, 16);
+    armCount_->setValue(armAll_ ? 16 : saved);
+    connect(armCount_, &QSpinBox::valueChanged, this, [this](int v) {
+        armAll_ = v >= armCount_->maximum();
+        appSettings().setValue("analyzer/raceAutoPilots", armAll_ ? 0 : v);
+        updateRace();
+    });
+    arm->addWidget(armCount_);
+    autoStop_ = new QCheckBox;
+    autoStop_->setChecked(appSettings().value("analyzer/raceAutoStop", true).toBool());
+    connect(autoStop_, &QCheckBox::toggled, this,
+            [](bool on) { appSettings().setValue("analyzer/raceAutoStop", on); });
+    arm->addSpacing(12);
+    arm->addWidget(autoStop_);
+    arm->addStretch(1);
+    v->addLayout(arm);
+    raceTable_ = new QTreeWidget;
+    raceTable_->setRootIsDecorated(false);
+    raceTable_->setColumnCount(8);
+    raceTable_->header()->setStretchLastSection(true);
+    raceTable_->setSelectionMode(QAbstractItemView::NoSelection);
+    // clic derecho en una fila: aplicar solo la recomendacion de ese canal
+    raceTable_->setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(raceTable_, &QWidget::customContextMenuRequested, this, [this](const QPoint &pos) {
+        QTreeWidgetItem *it = raceTable_->itemAt(pos);
+        if (!it) return;
+        const int row = raceTable_->indexOfTopLevelItem(it);
+        const auto ms = moves_;  // la tabla se rehace en cada barrido: lo de ahora
+        const auto &hs = race_.health();
+        QMenu menu(this);
+        for (const auto &m : ms) {
+            if (m.from != row || m.from >= static_cast<int>(hs.size())) continue;
+            const QString t = QStringLiteral("%1 \u2192 %2").arg(QString::fromStdString(hs[m.from].ch.name),
+                                                                 QString::fromStdString(m.to.name));
+            QAction *a = menu.addAction(canApplyAlone(m) ? tr("Apply %1 only").arg(t)
+                                                         : tr("Apply %1 only (apply the others first)").arg(t));
+            a->setEnabled(canApplyAlone(m));
+            // con el menu abierto siguen llegando barridos: solo si sigue recomendada (y cabe sola)
+            connect(a, &QAction::triggered, this, [this, m] {
+                const auto v = stillValid({m});
+                if (!v.empty() && canApplyAlone(v.front())) applyMoves(v);
+            });
+        }
+        if (ms.size() > 1) {
+            QAction *all = menu.addAction(tr("Apply all (%1)").arg(ms.size()));
+            // todas o ninguna: cada una cuenta con las anteriores ya aplicadas
+            connect(all, &QAction::triggered, this, [this, ms] {
+                const auto v = stillValid(ms);
+                if (v.size() == ms.size()) applyMoves(v);
+            });
+        }
+        if (!menu.isEmpty()) menu.exec(raceTable_->viewport()->mapToGlobal(pos));
+    });
+    v->addWidget(raceTable_, 1);
+    auto *r = new QHBoxLayout;
+    raceAdvice_ = new QLabel;
+    raceAdvice_->setWordWrap(true);
+    raceAdvice_->setTextFormat(Qt::RichText);
+    r->addWidget(raceAdvice_, 1);
+    applyBtn_ = new QPushButton;
+    applyBtn_->setObjectName(QStringLiteral("apply"));
+    applyBtn_->setVisible(false);
+    connect(applyBtn_, &QPushButton::clicked, this, [this] { applyMoves(moves_); });
+    r->addWidget(applyBtn_);
+    v->addLayout(r);
+    return page;
 }
 
 void ChannelAnalyzer::retranslate() {

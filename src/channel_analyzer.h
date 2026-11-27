@@ -101,6 +101,11 @@ protected:
     void changeEvent(QEvent *e) override;
 
 private:
+    // ---- el constructor, por bloques de la ventana ----
+    QWidget *buildSide();
+    QWidget *buildLegend();
+    QWidget *buildAdvicePage();
+    QWidget *buildRacePage();
     void retranslate();
     void toggle();
     void stop();
