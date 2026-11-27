@@ -2,6 +2,8 @@
 #include "elrs_analyzer.h"
 #include "main_window.h"
 #include "app_settings.h"
+#include "pilot_card.h"
+#include "pilot_delegate.h"
 #include "status_text.h"
 #include "theme.h"
 
@@ -119,6 +121,9 @@ QWidget *MainWindow::buildSide() {
     pilotsLabel_ = new QLabel;
     left->addWidget(pilotsLabel_);
     list_ = new QListWidget;
+    list_->setObjectName(QStringLiteral("pilots"));
+    list_->setItemDelegate(new PilotDelegate(list_));
+    list_->setMouseTracking(true);  // borde de la tarjeta bajo el raton
     left->addWidget(list_, 1);
 
     left->addWidget(buildChannelPicker());
@@ -1118,6 +1123,11 @@ void MainWindow::onPilots(const QVector<Pilot> &pilots) {
         }
         auto *it = new QListWidgetItem(QStringLiteral("%1   %2 dB").arg(text).arg(p.snrDb, 0, 'f', 1));
         it->setData(Qt::UserRole, p.freqMHz);
+        const pilotcard::Lines card = pilotcard::lines(p, n);
+        it->setData(PilotDelegate::TitleRole, card.title);
+        it->setData(PilotDelegate::DetailRole, card.detail);
+        it->setData(PilotDelegate::SnrRole, p.snrDb);
+        it->setData(PilotDelegate::DigitalRole, p.isDigital());
         if (ch.ambiguous())
             it->setToolTip(tr("%1 MHz is between several standard channels (%2): from the frequency alone it is not "
                               "possible to tell which one. Right-click to say which one is yours.")

@@ -134,6 +134,7 @@ set(KP_GUI_SRC
   src/race_monitor.cpp src/race_monitor.h src/race_history.cpp src/race_history.h src/analyzer_style.h
   src/channel_names.cpp src/channel_names.h src/status_text.cpp src/status_text.h
   src/i18n.cpp src/i18n.h src/theme.cpp src/theme.h
+  src/pilot_card.cpp src/pilot_card.h src/pilot_delegate.cpp src/pilot_delegate.h
   src/app_settings.h src/survey_session.h
   src/video_recorder.cpp src/video_recorder.h src/video_encoder.h src/video_params.cpp
   assets/icons.qrc
