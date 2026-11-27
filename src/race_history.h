@@ -48,11 +48,6 @@ public:
     // SNR, calidad, cortes...; summary: con los barridos (para el resumen)
     static QString healthText(const race::ChannelHealth &h, bool summary);
 
-    // test/analyzer_logic_test.cpp
-    void showTimeline(bool on);
-    QStringList eventTexts() const;  // lo que dice cada evento (RaceEvent::what)
-    // la tabla por piloto, de mas a menos problemas: "R3>R2: 2 serious, 1 warnings, 1 changes (race 1)"
-    QStringList pilotSummary() const;
 
 signals:
     void eventsChanged(int count);  // para el titulo de la pestana

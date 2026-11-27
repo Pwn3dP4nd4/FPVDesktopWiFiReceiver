@@ -65,6 +65,7 @@ RaceHistory::RaceHistory(QWidget *parent) : QWidget(parent) {
     });
     top->addWidget(histRace_);
     histView_ = new QComboBox;
+    histView_->setObjectName(QStringLiteral("historyView"));
     histView_->addItem(QString());  // por piloto
     histView_->addItem(QString());  // cronologico
     connect(histView_, &QComboBox::currentIndexChanged, this, [this](int i) { histStack_->setCurrentIndex(i); });
@@ -78,6 +79,7 @@ RaceHistory::RaceHistory(QWidget *parent) : QWidget(parent) {
     {
         auto *split = new QSplitter(Qt::Horizontal);
         pilotTable_ = new QTreeWidget;
+        pilotTable_->setObjectName(QStringLiteral("historyPilots"));
         pilotTable_->setRootIsDecorated(false);
         pilotTable_->setColumnCount(7);
         pilotTable_->header()->setStretchLastSection(false);
@@ -105,6 +107,7 @@ RaceHistory::RaceHistory(QWidget *parent) : QWidget(parent) {
         histStack_->addWidget(split);
     }
     histTable_ = new QTreeWidget;
+    histTable_->setObjectName(QStringLiteral("historyTimeline"));
     histTable_->setRootIsDecorated(false);
     histTable_->setColumnCount(5);
     histTable_->header()->setStretchLastSection(true);
@@ -555,28 +558,4 @@ void RaceHistory::save() {
     f.write(historyText(!fn.endsWith(QStringLiteral(".txt"), Qt::CaseInsensitive)).toUtf8());
     KP_LOGI("carrera: historial guardado en %s", qUtf8Printable(fn));
     histHint_->setText(tr("Saved to %1.").arg(QDir::toNativeSeparators(fn)));
-}
-
-void RaceHistory::showTimeline(bool on) { histView_->setCurrentIndex(on ? 1 : 0); }
-
-QStringList RaceHistory::eventTexts() const {
-    QStringList l;
-    for (const RaceEvent &e : events_) l << e.what;
-    return l;
-}
-
-QStringList RaceHistory::pilotSummary() const {
-    // la tabla por piloto tal cual (de mas a menos problemas), con la carrera elegida
-    QStringList out;
-    for (int i = 0; i < pilotTable_->topLevelItemCount(); i++) {
-        const QTreeWidgetItem *it = pilotTable_->topLevelItem(i);
-        const int race = it->data(0, Qt::UserRole).toInt(), pilot = it->data(0, Qt::UserRole + 1).toInt();
-        const RaceRec *rr = raceRec(race);
-        const QString who = pilot < 0 ? QStringLiteral("race")
-                            : rr && pilot < rr->pilots.size() ? rr->pilots[pilot].channels.join(QLatin1Char('>'))
-                                                              : QString::number(pilot);
-        out << QStringLiteral("%1: %2 serious, %3 warnings, %4 changes (race %5)")
-                   .arg(who, it->text(2), it->text(3), it->text(4), QString::number(race));
-    }
-    return out;
 }

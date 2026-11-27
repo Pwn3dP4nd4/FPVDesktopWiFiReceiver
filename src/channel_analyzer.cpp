@@ -561,6 +561,7 @@ ChannelAnalyzer::ChannelAnalyzer(Backend *backend, QWidget *parent) : QDialog(pa
         connect(c, &QCheckBox::toggled, this, &ChannelAnalyzer::bandsChanged);
         // al lado, el desplegable para quitar canales sueltos de la banda
         auto *btn = new QToolButton;
+        btn->setObjectName(QStringLiteral("channels:") + QLatin1Char(*b));  // "channels:R"
         btn->setArrowType(Qt::DownArrow);
         btn->setAutoRaise(true);
         const int band = bandBoxes_.size();
@@ -579,7 +580,9 @@ ChannelAnalyzer::ChannelAnalyzer(Backend *backend, QWidget *parent) : QDialog(pa
     analogLbl_ = new QLabel;
     hdzLbl_ = new QLabel;
     nAnalog_ = new QSpinBox;
+    nAnalog_->setObjectName(QStringLiteral("analogCount"));
     nHdz_ = new QSpinBox;
+    nHdz_->setObjectName(QStringLiteral("hdzeroCount"));
     nAnalog_->setRange(0, 8);
     nHdz_->setRange(0, 8);
     nAnalog_->setValue(appSettings().value("analyzer/analog", 4).toInt());
@@ -640,6 +643,7 @@ ChannelAnalyzer::ChannelAnalyzer(Backend *backend, QWidget *parent) : QDialog(pa
     airTitle_->setStyleSheet(QStringLiteral("font-weight:bold;"));
     side->addWidget(airTitle_);
     air_ = new QListWidget;
+    air_->setObjectName(QStringLiteral("onTheAir"));
     air_->setMaximumHeight(110);
     connect(air_, &QListWidget::itemChanged, this, [this](QListWidgetItem *it) {
         const QString k = it->data(Qt::UserRole).toString();
@@ -650,6 +654,7 @@ ChannelAnalyzer::ChannelAnalyzer(Backend *backend, QWidget *parent) : QDialog(pa
     side->addWidget(air_);
     side->addSpacing(8);
     startBtn_ = new QPushButton;
+    startBtn_->setObjectName(QStringLiteral("start"));
     startBtn_->setEnabled(false);
     connect(startBtn_, &QPushButton::clicked, this, &ChannelAnalyzer::toggle);
     side->addWidget(startBtn_);
@@ -763,16 +768,19 @@ ChannelAnalyzer::ChannelAnalyzer(Backend *backend, QWidget *parent) : QDialog(pa
         main->addWidget(box);
     }
     summary_ = new QLabel;
+    summary_->setObjectName(QStringLiteral("summary"));
     summary_->setWordWrap(true);
     summary_->setTextFormat(Qt::RichText);
     main->addWidget(summary_);
     // pestanas bajo la grafica: la recomendacion (con los fijados) y el seguimiento de carrera
     tabs_ = new QTabWidget;
+    tabs_->setObjectName(QStringLiteral("tabs"));
     {
         auto *page = new QWidget;
         auto *v = new QVBoxLayout(page);
         v->setContentsMargins(4, 4, 4, 4);
         table_ = new QTreeWidget;
+        table_->setObjectName(QStringLiteral("advice"));
         table_->setRootIsDecorated(false);
         table_->setColumnCount(7);
         table_->header()->setStretchLastSection(true);
@@ -803,21 +811,25 @@ ChannelAnalyzer::ChannelAnalyzer(Backend *backend, QWidget *parent) : QDialog(pa
         v->setContentsMargins(4, 4, 4, 4);
         auto *top = new QHBoxLayout;
         raceBox_ = new QCheckBox;
+        raceBox_->setObjectName(QStringLiteral("race"));
         connect(raceBox_, &QCheckBox::toggled, this, [this](bool on) { setRace(on); });
         top->addWidget(raceBox_);
         raceState_ = new QLabel;
+        raceState_->setObjectName(QStringLiteral("raceState"));
         raceState_->setWordWrap(true);
         top->addWidget(raceState_, 1);
         v->addLayout(top);
         // auto-inicio: se arma y empieza solo cuando estan en el aire los pilotos elegidos (0 = todos los fijados)
         auto *arm = new QHBoxLayout;
         armBtn_ = new QPushButton;
+        armBtn_->setObjectName(QStringLiteral("arm"));
         armBtn_->setCheckable(true);
         connect(armBtn_, &QPushButton::toggled, this, [this](bool on) { setArmed(on); });
         arm->addWidget(armBtn_);
         armLbl_ = new QLabel;
         arm->addWidget(armLbl_);
         armCount_ = new AllSpinBox;
+        armCount_->setObjectName(QStringLiteral("armCount"));
         // guardado: 0 = todos. El rango (1..fijados) lo pone updateRaceControls
         const int saved = appSettings().value("analyzer/raceAutoPilots", 0).toInt();
         armAll_ = saved <= 0;
@@ -881,6 +893,7 @@ ChannelAnalyzer::ChannelAnalyzer(Backend *backend, QWidget *parent) : QDialog(pa
         raceAdvice_->setTextFormat(Qt::RichText);
         r->addWidget(raceAdvice_, 1);
         applyBtn_ = new QPushButton;
+        applyBtn_->setObjectName(QStringLiteral("apply"));
         applyBtn_->setVisible(false);
         connect(applyBtn_, &QPushButton::clicked, this, [this] { applyMoves(moves_); });
         r->addWidget(applyBtn_);
@@ -1025,37 +1038,6 @@ void ChannelAnalyzer::setAdapterOpen(bool open) {
                                                   : tr("Connect the adapter first."));
 }
 
-void ChannelAnalyzer::setCounts(int analog, int hdzero) {
-    if (analog >= 0) nAnalog_->setValue(analog);
-    if (hdzero >= 0) nHdz_->setValue(hdzero);
-}
-
-void ChannelAnalyzer::setPinnedForTest(const QStringList &pins) { setPins(parsePins(pins)); }
-
-void ChannelAnalyzer::setMineForTest(const QStringList &keys) {
-    mine_ = keys;
-    updateAir();
-    recompute();
-}
-
-void ChannelAnalyzer::armForTest(int pilots) {
-    tabs_->setCurrentIndex(1);
-    armCount_->setValue(pilots <= 0 ? armCount_->maximum() : pilots);
-    armBtn_->setChecked(true);
-}
-
-void ChannelAnalyzer::showHistoryForTest(bool timeline) {
-    tabs_->setCurrentIndex(2);
-    history_->showTimeline(timeline);
-}
-
-QStringList ChannelAnalyzer::pilotSummaryForTest() const { return history_->pilotSummary(); }
-
-void ChannelAnalyzer::setRaceForTest(bool on) {
-    tabs_->setCurrentIndex(on ? 1 : 0);
-    raceBox_->setChecked(on);
-}
-
 QString ChannelAnalyzer::bands() const {
     QString s;
     for (int i = 0; i < bandBoxes_.size(); i++)
@@ -1132,11 +1114,6 @@ void ChannelAnalyzer::setExcluded(const QStringList &names, bool excluded) {
     updateRace();
 }
 
-void ChannelAnalyzer::setExcludedForTest(const QStringList &names) {
-    setExcluded(excluded_, false);
-    setExcluded(names, true);
-}
-
 void ChannelAnalyzer::updateBandTexts() {
     static const char *titles[] = {"A  Boscam A", "B  Boscam B", "E  Boscam E", "F  Fatshark", "R  Raceband", nullptr};
     for (int i = 0; i < bandBoxes_.size(); i++) {
@@ -1158,6 +1135,7 @@ void ChannelAnalyzer::updateBandTexts() {
 void ChannelAnalyzer::showChannelMenu(int band, QToolButton *anchor) {
     // ventana emergente (no un QMenu, que se cierra a cada clic): una casilla por canal, Todos y Ninguno
     auto *pop = new QFrame(this, Qt::Popup);
+    pop->setObjectName(QStringLiteral("channelMenu"));
     pop->setAttribute(Qt::WA_DeleteOnClose);
     pop->setFrameShape(QFrame::StyledPanel);
     auto *v = new QVBoxLayout(pop);
@@ -1725,14 +1703,6 @@ QString ChannelAnalyzer::pinsText() const {
     for (const Pin &p : pinned_) l << p.name + (p.hdzero ? QStringLiteral(" HDZero") : QString());
     return l.join(QStringLiteral(", "));
 }
-
-QStringList ChannelAnalyzer::pinnedForTest() const {
-    QStringList l;
-    for (const Pin &p : pinned_) l << (p.hdzero ? QStringLiteral("hdz:") : QString()) + p.name;
-    return l;
-}
-
-QStringList ChannelAnalyzer::historyForTest() const { return history_->eventTexts(); }
 
 bool ChannelAnalyzer::isPinned(const QString &name, bool hdzero) const {
     for (const Pin &p : pinned_)

@@ -40,7 +40,8 @@ public:
     QSize sizeHint() const override { return {760, 300}; }
     // analisis en marcha: la barra de barrido se anima; al empezar, lo de antes se olvida
     void setScanning(bool on);
-    // test/analyzer_logic_test.cpp: MHz (de 1 en 1) refrescados en la ultima actualizacion y los ya medidos alguna vez
+    // test/analyzer_logic_test.cpp (solo se ve en los pixeles de la barra): MHz (de 1 en 1) refrescados en la ultima
+    // actualizacion y los ya medidos alguna vez
     QVector<int> sweepHeadForTest() const { return head_; }
     int sweepCellsForTest() const { return int(cellT_.size()); }
 
@@ -83,32 +84,11 @@ public:
     bool isRunning() const { return session_.running(); }
     // el analizador de 2,4 GHz se ha puesto en marcha (el barrido ya es suyo): parar sin pedirselo al backend
     void abandon(const QString &why);
-    // test/analyzer_shot.cpp: pilotos (< 0 = los guardados) y empezar sin clic
-    void setCounts(int analog, int hdzero);
-    void startForTest() { if (!session_.running()) toggle(); }
-    // canales fijados ("R3", "hdz:R3"; se guardan como los del usuario) y activar el seguimiento de carrera
-    void setPinnedForTest(const QStringList &pins);
-    void setRaceForTest(bool on);
-    void applyForTest() { applyMoves(moves_); }  // pulsar Aplicar (todas las recomendaciones)
-    void setExcludedForTest(const QStringList &names);  // canales sin analizar ("R2")
-    void openChannelMenuForTest(int band) { showChannelMenu(band, bandBtns_[band]); }
-    // marcar como mios en "En el aire" (clave: el nombre del piloto o sus MHz); se aplica a lo que ya se ve
-    void setMineForTest(const QStringList &keys);
-    // pulsar "Empezar al salir los pilotos" con este numero de pilotos (<= 0: todos los fijados)
-    void armForTest(int pilots);
-    void showHistoryForTest(bool timeline = false);  // pestana Historial (por piloto o cronologico)
-    // historial por piloto de la ultima carrera, de mas a menos problemas: "R3>R2: 2 serious, 1 warnings, 1 changes"
-    QStringList pilotSummaryForTest() const;
-    SpectrumView *viewForTest() const { return view_; }
-    // test/analyzer_logic_test.cpp: reloj del analisis (s) en lugar del real (< 0: el real) y estado interno
+    // Las pruebas manejan la ventana por sus controles (test/analyzer_driver.h). Esto no se ve en ellos: el reloj del
+    // analisis (s; < 0: el real) y cuantas veces se ha recalculado la recomendacion (una por barrido, no por
+    // actualizacion: test/analyzer_logic_test.cpp)
     void setTimeForTest(double s) { session_.setTimeForTest(s); }
-    bool runningForTest() const { return session_.running(); }
-    bool raceOnForTest() const { return raceOn_; }
-    bool armedForTest() const { return armed_; }
-    int raceSweepsForTest() const { return race_.sweeps(); }
     int recomputesForTest() const { return recomputes_; }
-    QStringList pinnedForTest() const;   // "R3", "hdz:R3", en el orden de pinned_
-    QStringList historyForTest() const;  // lo que dice cada evento del Historial (RaceHistory::eventTexts)
 
 signals:
     void requestStart(double loMHz, double hiMHz);

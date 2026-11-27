@@ -55,15 +55,8 @@ public:
     void setAdapterOpen(bool open);  // tambien llega solo, con el estado del backend
     // el otro analizador se ha puesto en marcha (el barrido ya es suyo): parar sin pedirselo al backend
     void abandon(const QString &why);
-    void startForTest() { if (!session_.running()) toggle(); }
-    const elrs::Report &reportForTest() const { return run_.report; }
-    void setPilotsForTest(int n);
+    // el reloj del analisis (s; < 0: el real); lo demas, por sus controles (test/analyzer_driver.h)
     void setTimeForTest(double s) { session_.setTimeForTest(s); }
-    elrs::Verdict shownVerdictForTest() const { return run_.shownVerdict; }
-    void feedForTest(const SurveyData &d) { onSurvey(d); }
-    bool runningForTest() const { return session_.running(); }
-    void setAutoStopForTest(bool on);
-    QString tipsTextForTest() const;
 
 signals:
     void requestStart(double loMHz, double hiMHz);

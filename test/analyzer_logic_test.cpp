@@ -14,7 +14,7 @@
 #include <cstdio>
 #include <string>
 
-#include "channel_analyzer.h"
+#include "analyzer_driver.h"
 
 namespace {
 int failures = 0;
@@ -86,20 +86,20 @@ int main(int argc, char **argv) {
         FakeBackend b;
         ChannelAnalyzer w(&b);
         open(b);
-        w.setCounts(4, 0);
-        w.setPinnedForTest({QStringLiteral("R1"), QStringLiteral("R3"), QStringLiteral("R6"), QStringLiteral("R8")});
-        w.startForTest();
-        w.setRaceForTest(true);
+        drive::setCounts(w, 4, 0);
+        drive::setPinned(w, {QStringLiteral("R1"), QStringLiteral("R3"), QStringLiteral("R6"), QStringLiteral("R8")});
+        drive::start(w);
+        drive::setRace(w, true);
         const QVector<Pilot> four{pilot(kR1), pilot(kR3), pilot(kR6), pilot(kR8)};
         const int r0 = w.recomputesForTest();
         for (int k = 0; k < 9; k++) emit b.surveyUpdated(survey(k / 3, four));  // 3 barridos, 3 veces cada uno
-        check(w.raceOnForTest() && w.raceSweepsForTest() == 3,
+        check(drive::raceOn(w) && drive::raceSweeps(w) == 3,
               "9 actualizaciones de 3 barridos: el seguimiento cuenta 3 barridos");
         check(w.recomputesForTest() - r0 == 3, "la recomendacion se recalcula una vez por barrido");
         QVector<Pilot> more = four;
         more.push_back(pilot(5769));  // alguien sale en R4 a medio barrido: se recomienda de nuevo
         emit b.surveyUpdated(survey(2, more));
-        check(w.recomputesForTest() - r0 == 4 && w.raceSweepsForTest() == 3,
+        check(w.recomputesForTest() - r0 == 4 && drive::raceSweeps(w) == 3,
               "un piloto nuevo a medio barrido: se recomienda de nuevo, sin contar otro barrido");
     }
     {
@@ -107,21 +107,21 @@ int main(int argc, char **argv) {
         FakeBackend b;
         ChannelAnalyzer w(&b);
         open(b);
-        w.startForTest();
+        drive::start(w);
         emit b.surveyUpdated(survey(0, {}));
         w.close();  // stop(): requestStop; su surveyStopped llega en cola
-        w.startForTest();
+        drive::start(w);
         QCoreApplication::processEvents();
-        check(b.stops == 1 && b.starts == 2 && w.runningForTest(),
+        check(b.stops == 1 && b.starts == 2 && w.isRunning(),
               "Parar y Empezar seguidos: la respuesta del primer Parar no para el segundo");
         emit b.surveyUpdated(survey(0, {}));  // ya barre para esta ventana
         emit b.surveyStopped();  // otra orden (escanear, ver un canal) lo para: eso si
-        check(!w.runningForTest(), "una parada que no ha pedido la ventana si la para");
+        check(!w.isRunning(), "una parada que no ha pedido la ventana si la para");
         b.queued = false;  // respuesta inmediata (backend en el mismo hilo)
-        w.startForTest();
+        drive::start(w);
         w.close();
-        w.startForTest();
-        check(w.runningForTest(), "con respuesta inmediata tambien");
+        drive::start(w);
+        check(w.isRunning(), "con respuesta inmediata tambien");
     }
     {
         // el analizador de 2,4 GHz para (su surveyStopped va en cola) y este empieza antes de que llegue: esa
@@ -129,22 +129,22 @@ int main(int argc, char **argv) {
         FakeBackend b;
         ChannelAnalyzer w(&b);
         open(b);
-        w.startForTest();
+        drive::start(w);
         emit b.surveyStopped();  // la respuesta al Parar de la otra ventana
-        check(w.runningForTest(), "la parada de la otra ventana, antes del primer barrido: sigue en marcha");
+        check(w.isRunning(), "la parada de la otra ventana, antes del primer barrido: sigue en marcha");
     }
     {
         // auto-inicio, aviso de que una senal sola impide el fin automatico, y fin automatico
         FakeBackend b;
         ChannelAnalyzer w(&b);
         open(b);
-        w.setCounts(2, 0);
-        w.setPinnedForTest({QStringLiteral("R1"), QStringLiteral("R3")});
+        drive::setCounts(w, 2, 0);
+        drive::setPinned(w, {QStringLiteral("R1"), QStringLiteral("R3")});
         w.setTimeForTest(0);
-        w.startForTest();
+        drive::start(w);
         emit b.surveyUpdated(survey(0, {}));
-        w.armForTest(0);  // los dos
-        check(w.armedForTest() && !w.raceOnForTest(), "armado: espera a los pilotos");
+        drive::arm(w, 0);  // los dos
+        check(drive::armed(w) && !drive::raceOn(w), "armado: espera a los pilotos");
         double t = 1;
         int sw = 1;
         const auto feed = [&](const QVector<Pilot> &ps, double seconds) {
@@ -155,17 +155,17 @@ int main(int argc, char **argv) {
             }
         };
         feed({pilot(kR1)}, 5);
-        check(w.armedForTest() && !w.raceOnForTest(), "uno de dos en el aire: sigue esperando");
+        check(drive::armed(w) && !drive::raceOn(w), "uno de dos en el aire: sigue esperando");
         feed({pilot(kR1), pilot(kR3)}, 30);
-        check(w.raceOnForTest() && !w.armedForTest(), "los dos en el aire: la carrera empieza sola");
+        check(drive::raceOn(w) && !drive::armed(w), "los dos en el aire: la carrera empieza sola");
         feed({pilot(kR3)}, 90);  // R1 aterriza; en R3 sigue algo (un VTX ajeno, encendido en la mesa...)
-        const QStringList h = w.historyForTest();
-        check(w.raceOnForTest() && h.contains(QStringLiteral("Still on the air: the race will not stop by itself")),
+        const QStringList h = drive::history(w);
+        check(drive::raceOn(w) && h.contains(QStringLiteral("Still on the air: the race will not stop by itself")),
               "uno aterrizado y una senal que sigue: no para sola y lo avisa");
         check(h.count(QStringLiteral("Still on the air: the race will not stop by itself")) == 1,
               "el aviso sale una vez");
         feed({}, 70);
-        check(!w.raceOnForTest() && w.historyForTest().contains(QStringLiteral("Race stopped")),
+        check(!drive::raceOn(w) && drive::history(w).contains(QStringLiteral("Race stopped")),
               "nadie en el aire durante mas de un minuto: para sola");
     }
 
@@ -174,45 +174,45 @@ int main(int argc, char **argv) {
         FakeBackend b;
         ChannelAnalyzer w(&b);
         open(b);
-        w.startForTest();
+        drive::start(w);
         const auto part = [](int sweeps, double lo, double hi, quint32 seqIn, quint32 seqOut) {
             SurveyData d = survey(sweeps, {});
             for (auto &x : d.bins) x.seq = x.mhz >= lo && x.mhz < hi ? seqIn : seqOut;
             return d;
         };
         emit b.surveyUpdated(part(0, 5600, 5700, 1, 0));  // primer tercio medido, el resto aun no
-        const QVector<int> h1 = w.viewForTest()->sweepHeadForTest();
+        const QVector<int> h1 = drive::view(w)->sweepHeadForTest();
         check(!h1.isEmpty() && *std::min_element(h1.begin(), h1.end()) >= 5600 &&
-                  *std::max_element(h1.begin(), h1.end()) < 5700 && w.viewForTest()->sweepCellsForTest() == 100,
+                  *std::max_element(h1.begin(), h1.end()) < 5700 && drive::view(w)->sweepCellsForTest() == 100,
               "barrido: lo recien medido (5600-5700) y nada mas");
         SurveyData d2 = part(0, 5700, 5800, 2, 1);
         for (auto &x : d2.bins)
             if (x.mhz >= 5800) x.seq = 0;
         emit b.surveyUpdated(d2);
-        const QVector<int> h2 = w.viewForTest()->sweepHeadForTest();
+        const QVector<int> h2 = drive::view(w)->sweepHeadForTest();
         check(!h2.isEmpty() && *std::min_element(h2.begin(), h2.end()) >= 5700 &&
                   *std::max_element(h2.begin(), h2.end()) < 5800,
               "barrido: avanza a 5700-5800 (lo de antes no cuenta como nuevo)");
         w.close();
-        w.startForTest();
-        check(w.viewForTest()->sweepCellsForTest() == 0, "barrido: al volver a empezar se olvida lo de antes");
+        drive::start(w);
+        check(drive::view(w)->sweepCellsForTest() == 0, "barrido: al volver a empezar se olvida lo de antes");
     }
     {
         // historial por piloto: un intruso encima de R3 durante la carrera; R1 limpio. R3 sale el primero, con graves
         FakeBackend b;
         ChannelAnalyzer w(&b);
         open(b);
-        w.setCounts(2, 0);
-        w.setPinnedForTest({QStringLiteral("R1"), QStringLiteral("R3")});
-        w.startForTest();
-        w.setRaceForTest(true);
+        drive::setCounts(w, 2, 0);
+        drive::setPinned(w, {QStringLiteral("R1"), QStringLiteral("R3")});
+        drive::start(w);
+        drive::setRace(w, true);
         for (int k = 0; k < 20; k++) {
             QVector<Pilot> ps{pilot(kR1), pilot(kR3)};
             if (k >= 2) ps.push_back(pilot(5748, 18));  // ajeno, encima de R3
             emit b.surveyUpdated(survey(k, ps));
         }
-        w.setRaceForTest(false);
-        const QStringList s = w.pilotSummaryForTest();
+        drive::setRace(w, false);
+        const QStringList s = drive::pilotSummary(w);
         for (const QString &l : s) std::printf("    %s\n", qUtf8Printable(l));
         check(s.size() >= 2 && s[0].startsWith(QStringLiteral("R3:")) && !s[0].startsWith(QStringLiteral("R3: 0 ")),
               "por piloto: R3 (intruso) el primero y con graves");
@@ -220,10 +220,10 @@ int main(int argc, char **argv) {
               "por piloto: R1 sin problemas");
         check(!s.isEmpty() && s.back().startsWith(QStringLiteral("race:")), "lo de toda la carrera, al final");
         check(s.filter(QStringLiteral("(race 1)")).size() == s.size(), "primera carrera: todo en la carrera 1");
-        w.setRaceForTest(true);  // otra carrera, numerada aparte; en esta R3 no sale nunca (VTX apagado)
+        drive::setRace(w, true);  // otra carrera, numerada aparte; en esta R3 no sale nunca (VTX apagado)
         for (int k = 20; k < 24; k++) emit b.surveyUpdated(survey(k, {pilot(kR1)}));
-        w.showHistoryForTest();  // la tabla en vivo (como se ve al abrir la pestaña)
-        const QStringList s2 = w.pilotSummaryForTest();
+        drive::showHistory(w);  // la tabla en vivo (como se ve al abrir la pestaña)
+        const QStringList s2 = drive::pilotSummary(w);
         for (const QString &l : s2) std::printf("    %s\n", qUtf8Printable(l));
         const QStringList r2 = s2.filter(QStringLiteral("(race 2)"));
         check(r2.size() == 3 && r2[0].startsWith(QStringLiteral("R3:")) && r2[1].startsWith(QStringLiteral("R1:")) &&
@@ -238,14 +238,14 @@ int main(int argc, char **argv) {
         FakeBackend b;
         ChannelAnalyzer w(&b);
         open(b);
-        w.setPinnedForTest({});  // los fijados de los casos de antes se guardan en el .ini
-        w.setCounts(3, 0);
-        w.startForTest();
+        drive::setPinned(w, {});  // los fijados de los casos de antes se guardan en el .ini
+        drive::setCounts(w, 3, 0);
+        drive::start(w);
         const QVector<Pilot> air{pilot(kR1), pilot(5769), pilot(kR8)};
         for (int k = 0; k < 4; k++) emit b.surveyUpdated(survey(k, air));
         // la ventana les pone el nombre de su canal (src/channel_names.h): esa es la clave de "mio"
         const QStringList mine{QStringLiteral("R1"), QStringLiteral("R4"), QStringLiteral("R8")};
-        w.setMineForTest(mine);
+        drive::setMine(w, mine);
         QTreeWidget *table = nullptr;
         for (auto *t : w.findChildren<QTreeWidget *>())
             if (t->headerItem()->text(6) == QStringLiteral("Notes")) table = t;
@@ -271,7 +271,7 @@ int main(int argc, char **argv) {
         for (const char *band : {"A", "B", "E", "F", "R"})
             for (int n = 1; n <= 8; n++) others << QStringLiteral("%1%2").arg(QLatin1String(band)).arg(n);
         for (const QString &ch : mine) others.removeAll(ch);
-        w.setExcludedForTest(others);
+        drive::setExcluded(w, others);
         for (int k = 4; k < 8; k++) emit b.surveyUpdated(survey(k, air));
         summary.clear();
         for (auto *l : w.findChildren<QLabel *>())

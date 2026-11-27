@@ -243,6 +243,7 @@ ElrsAnalyzer::ElrsAnalyzer(Backend *backend, QWidget *parent) : QDialog(parent) 
     region_->setCurrentIndex(qBound(0, appSettings().value("elrs/region", 0).toInt(), 1));
     pilotsLbl_ = new QLabel;
     pilots_ = new QSpinBox;
+    pilots_->setObjectName(QStringLiteral("pilots"));
     pilots_->setRange(0, 30);
     pilots_->setValue(appSettings().value("elrs/pilots", 0).toInt());
     memoryLbl_ = new QLabel;
@@ -250,8 +251,10 @@ ElrsAnalyzer::ElrsAnalyzer(Backend *backend, QWidget *parent) : QDialog(parent) 
     for (int n : {5, 10, 20, 40}) memory_->addItem(QString(), n);
     memory_->setCurrentIndex(qBound(0, memory_->findData(appSettings().value("elrs/memory", 20).toInt()), 3));
     startBtn_ = new QPushButton;
+    startBtn_->setObjectName(QStringLiteral("start"));
     startBtn_->setEnabled(false);
     autoStop_ = new QCheckBox;
+    autoStop_->setObjectName(QStringLiteral("autoStop"));
     autoStop_->setChecked(appSettings().value("elrs/autoStop", true).toBool());
     row->addWidget(useLbl_);
     row->addWidget(use_);
@@ -350,6 +353,7 @@ ElrsAnalyzer::ElrsAnalyzer(Backend *backend, QWidget *parent) : QDialog(parent) 
     }
     tv->addWidget(legendNote_);
     summary_ = new QLabel;
+    summary_->setObjectName(QStringLiteral("summary"));
     summary_->setWordWrap(true);
     QFont bold = summary_->font();
     bold.setBold(true);
@@ -374,6 +378,7 @@ ElrsAnalyzer::ElrsAnalyzer(Backend *backend, QWidget *parent) : QDialog(parent) 
     tipsTitle_ = new QLabel;
     tipsTitle_->setFont(bold);
     tips_ = new QTextBrowser;
+    tips_->setObjectName(QStringLiteral("tips"));
     tips_->setOpenExternalLinks(true);
     tl->addWidget(tipsTitle_);
     tl->addWidget(tips_, 1);
@@ -978,8 +983,3 @@ void ElrsAnalyzer::updateTips() {
     run_.tipsT = t;
 }
 
-QString ElrsAnalyzer::tipsTextForTest() const { return tips_->toPlainText(); }
-
-void ElrsAnalyzer::setPilotsForTest(int n) { pilots_->setValue(n); }
-
-void ElrsAnalyzer::setAutoStopForTest(bool on) { autoStop_->setChecked(on); }
