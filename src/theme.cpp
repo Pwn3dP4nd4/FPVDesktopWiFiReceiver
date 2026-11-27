@@ -24,6 +24,8 @@ QPushButton:hover { border-color: palette(highlight); }
 QPushButton:pressed { background: palette(midlight); }
 QPushButton:checked { background: palette(highlight); color: palette(highlighted-text); border-color: palette(highlight); }
 QPushButton:default { border-color: palette(highlight); }
+QPushButton[primary="true"]:enabled { background: palette(highlight); color: palette(highlighted-text); border-color: palette(highlight); }
+QPushButton[primary="true"]:enabled:hover { border-color: palette(highlighted-text); }
 QToolTip { background: palette(tool-tip-base); color: palette(tool-tip-text); border: 1px solid palette(mid); }
 )";
 

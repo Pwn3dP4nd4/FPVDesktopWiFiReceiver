@@ -2,6 +2,7 @@
 #include "elrs_analyzer.h"
 #include "main_window.h"
 #include "app_settings.h"
+#include "icons.h"
 #include "pilot_card.h"
 #include "pilot_delegate.h"
 #include "status_text.h"
@@ -90,6 +91,7 @@ MainWindow::MainWindow(Backend *backend, QWidget *parent) : QMainWindow(parent),
     emit requestDigitalScan(expMode_);
 
     applyDeveloperMode(devModeAct_->isChecked());
+    updateIcons();
     retranslate();
     onOpened(false, {});
     if (!restoreGeometry(appSettings().value("geometry").toByteArray())) resize(1100, 660);
@@ -108,6 +110,7 @@ QWidget *MainWindow::buildSide() {
     recBtn_ = new QPushButton;
     snapBtn_ = new QPushButton;
     dvrBtn_ = new QPushButton;
+    scanBtn_->setProperty("primary", true);  // la accion principal: resaltada en los temas propios (src/theme.cpp)
     left->addWidget(connectBtn_);
     auto *scanRow = new QHBoxLayout;
     scanRow->setSpacing(4);
@@ -573,7 +576,27 @@ void MainWindow::retranslate() {
 
 void MainWindow::changeEvent(QEvent *e) {
     if (e->type() == QEvent::LanguageChange) retranslate();
+    if (e->type() == QEvent::PaletteChange || e->type() == QEvent::StyleChange) updateIcons();  // cambio de tema
     QMainWindow::changeEvent(e);
+}
+
+// iconos de los botones, del color de su texto (src/icons.h): se rehacen al cambiar el tema
+void MainWindow::updateIcons() {
+    if (!connectBtn_ || !dvr_) return;  // StyleChange antes de construir el panel y el video
+    const QColor c = palette().color(QPalette::ButtonText);
+    connectBtn_->setIcon(icons::make(icons::Kind::Plug, c));
+    // Scan, resaltado en los temas propios (fondo del color de seleccion): su icono, del color del texto encima
+    const bool accent = theme::setting() != theme::Theme::System;
+    scanBtn_->setIcon(icons::make(icons::Kind::Scan, accent ? palette().color(QPalette::HighlightedText) : c));
+    stopBtn_->setIcon(icons::make(icons::Kind::Stop, c));
+    snapBtn_->setIcon(icons::make(icons::Kind::Camera, c));
+    recBtn_->setIcon(icons::make(icons::Kind::Wave, c));
+    dvrBtn_->setIcon(dvrIcon());
+}
+
+// grabar video: punto rojo; grabando (boton rojo), cuadrado blanco de parar
+QIcon MainWindow::dvrIcon() const {
+    return dvr_->isRecording() ? icons::make(icons::Kind::Stop, Qt::white) : icons::make(icons::Kind::Record, kBadColour);
 }
 
 void MainWindow::updateConnectButton() {
@@ -830,15 +853,21 @@ void MainWindow::updateMediaButtons() {
     if (rec) {
         const qint64 s = dvr_->elapsedMs() / 1000;
         const QString t = QStringLiteral("%1:%2").arg(s / 60, 2, 10, QLatin1Char('0')).arg(s % 60, 2, 10, QLatin1Char('0'));
-        dvrBtn_->setText(QString(QChar(0x25A0)) + QLatin1Char(' ') + t);  // cuadrado de parar
+        dvrBtn_->setText(t);
         static const QString red = QStringLiteral("QPushButton{color:white;background:#c62828;font-weight:bold;}");
-        if (dvrBtn_->styleSheet() != red) dvrBtn_->setStyleSheet(red);  // cada 250 ms: no repolir si no cambia
+        if (dvrBtn_->styleSheet() != red) {  // cada 250 ms: no repolir si no cambia
+            dvrBtn_->setStyleSheet(red);
+            dvrBtn_->setIcon(dvrIcon());
+        }
         dvrBtn_->setToolTip(tr("Recording to %1. Press again (R) to stop.").arg(QDir::toNativeSeparators(dvr_->path())));
         video_->setRecIndicator(QStringLiteral("REC ") + t);
         dvrAct_->setText(tr("Stop recording the &video") + QStringLiteral("\tR"));
     } else {
-        dvrBtn_->setText(QString(QChar(0x25CF)) + QLatin1Char(' ') + tr("Record video"));  // punto de grabar
-        if (!dvrBtn_->styleSheet().isEmpty()) dvrBtn_->setStyleSheet(QString());
+        dvrBtn_->setText(tr("Record video"));
+        if (!dvrBtn_->styleSheet().isEmpty()) {
+            dvrBtn_->setStyleSheet(QString());
+            dvrBtn_->setIcon(dvrIcon());
+        }
         dvrBtn_->setToolTip(VideoRecorder::available()
                                 ? tr("Record the picture to an MP4 file (R); press again to stop. Folder: %1")
                                       .arg(QDir::toNativeSeparators(videosDir()))

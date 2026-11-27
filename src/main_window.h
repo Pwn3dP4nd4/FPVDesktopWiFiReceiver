@@ -63,6 +63,8 @@ private:
     void buildFileMenu();
     void buildViewMenu();
     void buildThemeMenu();
+    void updateIcons();
+    QIcon dvrIcon() const;
     void buildOptionsMenu();
     void buildLanguageMenu();
     void setupShortcuts();  // F / F11 / Esc / O
