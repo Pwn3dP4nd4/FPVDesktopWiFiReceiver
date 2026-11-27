@@ -45,6 +45,93 @@ float median_of(std::vector<float> v) {
     std::nth_element(v.begin(), v.begin() + v.size() / 2, v.end());
     return v[v.size() / 2];
 }
+
+// Potencia de x en la banda [f0, f1] (sin el 10 % de cada lado: los bordes caen) por rodajas de `frames` FFT de 256
+// (Hann) seguidas. Vacio si la banda no cae en ningun bin.
+std::vector<double> band_power(const cf *x, size_t slices, int frames, double fs, double f0_hz, double f1_hz) {
+    constexpr int kN = 256;
+    const double w = f1_hz - f0_hz;
+    const double a = f0_hz + 0.1 * w, b = f1_hz - 0.1 * w;
+    std::vector<int> bins;
+    for (int k = 0; k < kN; k++) {
+        const double f = (k < kN / 2 ? k : k - kN) * fs / kN;  // sin fftshift
+        if (f >= a && f <= b) bins.push_back(k);
+    }
+    if (bins.empty()) return {};
+    std::vector<float> win(kN);
+    for (int i = 0; i < kN; i++) win[i] = static_cast<float>(0.5 - 0.5 * std::cos(2 * M_PI * i / kN));
+    std::vector<kp::cf> buf(kN);
+    std::vector<double> p(slices, 0);
+    const size_t slice = static_cast<size_t>(kN) * frames;
+    for (size_t s = 0; s < slices; s++) {
+        for (int fr = 0; fr < frames; fr++) {
+            const cf *src = x + s * slice + static_cast<size_t>(fr) * kN;
+            for (int i = 0; i < kN; i++) buf[i] = src[i] * win[i];
+            kp::fft_inplace(buf.data(), kN);
+            for (int k : bins) p[s] += std::norm(buf[k]);
+        }
+    }
+    return p;
+}
+
+// Emitiendo (1) / hueco (0) por rodaja: a medio camino (en dB) entre el ruido (percentil 5: los huecos) y el nivel
+// (percentil 90). Vacio si la senal no destaca lo bastante del ruido.
+std::vector<char> on_off(const std::vector<double> &power) {
+    const size_t n = power.size();
+    std::vector<float> p(n);
+    for (size_t i = 0; i < n; i++) p[i] = static_cast<float>(10 * std::log10(power[i] + 1e-9));
+    std::vector<float> sorted = p;
+    std::sort(sorted.begin(), sorted.end());
+    const float lo = sorted[n * 5 / 100], hi = sorted[n * 90 / 100];
+    if (hi - lo < kMinSnrDb) return {};
+    const float thr = (lo + hi) / 2;
+    std::vector<char> up(n);
+    for (size_t i = 0; i < n; i++) up[i] = p[i] > thr;
+    return up;
+}
+
+// Con poca SNR alguna rodaja de ruido cae bajo el umbral en mitad de una rafaga: huecos de menos de 3 rodajas
+// (~38 us; los de la trama, 80 us o mas) se rellenan.
+void fill_short_gaps(std::vector<char> &up) {
+    const size_t n = up.size();
+    for (size_t i = 1; i < n;) {
+        if (up[i]) {
+            i++;
+            continue;
+        }
+        size_t j = i;
+        while (j < n && !up[j]) j++;
+        if (j < n && up[i - 1] && j - i < 3)
+            for (size_t k = i; k < j; k++) up[k] = 1;
+        i = j;
+    }
+}
+
+// El patron emitir/callar se repite igual un periodo despues, sea como sea la trama (DJI con video: 1.73 + 0.37 ms
+// emitiendo; sin enlace con las gafas: 0.41 + 0.43 ms y un hueco de 1.53 ms). repeat: coincidencias con el desfase
+// descontando las que habria por azar (q^2 + (1-q)^2, q: la parte emitiendo): 1 = identico, 0 = como el WiFi, sin
+// ritmo. El periodo, en rodajas: el primer maximo casi tan bueno como el mejor (2 y 3 periodos tambien coinciden);
+// 0 si no se repite.
+size_t repeat_lag(const std::vector<char> &up, double q, size_t lagLo, size_t lagHi) {
+    const size_t n = up.size();
+    const double chance = q * q + (1 - q) * (1 - q);
+    std::vector<double> repeat(lagHi + 1, -1);
+    double best = -1;
+    for (size_t lag = lagLo; lag <= lagHi; lag++) {
+        size_t same = 0;
+        for (size_t i = 0; i + lag < n; i++) same += up[i] == up[i + lag];
+        const double m = static_cast<double>(same) / static_cast<double>(n - lag);
+        repeat[lag] = (m - chance) / (1 - chance);
+        best = std::max(best, repeat[lag]);
+    }
+    if (best < kTddMinRepeat) return 0;
+    for (size_t lag = lagLo; lag <= lagHi; lag++) {
+        if (repeat[lag] < best - 0.05) continue;
+        while (lag < lagHi && repeat[lag + 1] > repeat[lag]) lag++;
+        return lag;
+    }
+    return 0;
+}
 }  // namespace
 
 std::vector<WideRegion> find_wide_regions(const std::vector<float> &db, double fs, double edge_hz) {
@@ -100,31 +187,13 @@ std::vector<WideRegion> find_wide_regions(const std::vector<float> &db, double f
 }
 
 float band_duty(const cf *x, size_t n, double fs, double f0_hz, double f1_hz) {
-    // rodajas de 4096 muestras (~0.1 ms a 40 MS/s), cada una 16 FFT de 256 (Hann); potencia media en la banda
-    // (sin el 10 % de cada lado: los bordes caen). Presente = a menos de 6 dB del percentil 95 de las rodajas.
-    constexpr int kN = 256, kFrames = 16, kSlice = kN * kFrames;
+    // rodajas de 4096 muestras (~0.1 ms a 40 MS/s), cada una 16 FFT de 256; potencia media en la banda.
+    // Presente = a menos de 6 dB del percentil 95 de las rodajas.
+    constexpr int kFrames = 16, kSlice = 256 * kFrames;
     const size_t slices = n / kSlice;
     if (slices < 8) return 0;
-    const double w = f1_hz - f0_hz;
-    const double a = f0_hz + 0.1 * w, b = f1_hz - 0.1 * w;
-    std::vector<int> bins;
-    for (int k = 0; k < kN; k++) {
-        const double f = (k < kN / 2 ? k : k - kN) * fs / kN;  // sin fftshift
-        if (f >= a && f <= b) bins.push_back(k);
-    }
-    if (bins.empty()) return 0;
-    std::vector<float> win(kN);
-    for (int i = 0; i < kN; i++) win[i] = static_cast<float>(0.5 - 0.5 * std::cos(2 * M_PI * i / kN));
-    std::vector<kp::cf> buf(kN);
-    std::vector<double> p(slices, 0);
-    for (size_t s = 0; s < slices; s++) {
-        for (int fr = 0; fr < kFrames; fr++) {
-            const cf *src = x + s * kSlice + static_cast<size_t>(fr) * kN;
-            for (int i = 0; i < kN; i++) buf[i] = src[i] * win[i];
-            kp::fft_inplace(buf.data(), kN);
-            for (int k : bins) p[s] += std::norm(buf[k]);
-        }
-    }
+    const std::vector<double> p = band_power(x, slices, kFrames, fs, f0_hz, f1_hz);
+    if (p.empty()) return 0;
     std::vector<double> sorted = p;
     std::sort(sorted.begin(), sorted.end());
     const double ref = sorted[std::min(sorted.size() - 1, sorted.size() * 95 / 100)];
@@ -134,81 +203,23 @@ float band_duty(const cf *x, size_t n, double fs, double f0_hz, double f1_hz) {
 }
 
 double tdd_frame(const cf *x, size_t n, double fs, double f0_hz, double f1_hz) {
-    // potencia en la banda (sin el 10 % de cada lado) en rodajas de 2 FFT de 256 (12.8 us a 40 MS/s)
-    constexpr int kN = 256, kFrames = 2, kSlice = kN * kFrames;
+    // potencia en la banda en rodajas de 2 FFT de 256 (12.8 us a 40 MS/s)
+    constexpr int kFrames = 2, kSlice = 256 * kFrames;
     const size_t slices = n / kSlice;
     const double sliceS = kSlice / fs;
     if (slices * sliceS < 3 * kTddMinFrame) return 0;
-    const double w = f1_hz - f0_hz;
-    const double a = f0_hz + 0.1 * w, b = f1_hz - 0.1 * w;
-    std::vector<int> bins;
-    for (int k = 0; k < kN; k++) {
-        const double f = (k < kN / 2 ? k : k - kN) * fs / kN;  // sin fftshift
-        if (f >= a && f <= b) bins.push_back(k);
-    }
-    if (bins.empty()) return 0;
-    std::vector<float> win(kN);
-    for (int i = 0; i < kN; i++) win[i] = static_cast<float>(0.5 - 0.5 * std::cos(2 * M_PI * i / kN));
-    std::vector<kp::cf> buf(kN);
-    std::vector<float> p(slices);
-    for (size_t s = 0; s < slices; s++) {
-        double acc = 0;
-        for (int fr = 0; fr < kFrames; fr++) {
-            const cf *src = x + s * kSlice + static_cast<size_t>(fr) * kN;
-            for (int i = 0; i < kN; i++) buf[i] = src[i] * win[i];
-            kp::fft_inplace(buf.data(), kN);
-            for (int k : bins) acc += std::norm(buf[k]);
-        }
-        p[s] = static_cast<float>(10 * std::log10(acc + 1e-9));
-    }
-    // emitiendo / hueco: a medio camino (en dB) entre el ruido (percentil 5: los huecos) y el nivel (percentil 90)
-    std::vector<float> sorted = p;
-    std::sort(sorted.begin(), sorted.end());
-    const float lo = sorted[slices * 5 / 100], hi = sorted[slices * 90 / 100];
-    if (hi - lo < kMinSnrDb) return 0;
-    const float thr = (lo + hi) / 2;
-    std::vector<char> up(slices);
-    for (size_t i = 0; i < slices; i++) up[i] = p[i] > thr;
-    // con poca SNR alguna rodaja de ruido cae bajo el umbral en mitad de una rafaga: huecos de menos de 3 rodajas
-    // (~38 us; los de la trama, 80 us o mas) se rellenan
-    for (size_t i = 1; i < slices;) {
-        if (up[i]) {
-            i++;
-            continue;
-        }
-        size_t j = i;
-        while (j < slices && !up[j]) j++;
-        if (j < slices && up[i - 1] && j - i < 3)
-            for (size_t k = i; k < j; k++) up[k] = 1;
-        i = j;
-    }
+    const std::vector<double> power = band_power(x, slices, kFrames, fs, f0_hz, f1_hz);
+    if (power.empty()) return 0;
+    std::vector<char> up = on_off(power);
+    if (up.empty()) return 0;
+    fill_short_gaps(up);
     size_t on = 0;
     for (char u : up) on += u;
     const double q = static_cast<double>(on) / static_cast<double>(slices);
     if (q < kTddOnMin || q > kTddOnMax) return 0;
-    // el patron emitir/callar se repite igual un periodo despues, sea como sea la trama (DJI con video: 1.73 + 0.37
-    // ms emitiendo; sin enlace con las gafas: 0.41 + 0.43 ms y un hueco de 1.53 ms). repeat: coincidencias con el
-    // desfase descontando las que habria por azar (q^2 + (1-q)^2): 1 = identico, 0 = como el WiFi, sin ritmo
-    const double chance = q * q + (1 - q) * (1 - q);
     const size_t lagLo = static_cast<size_t>(std::ceil(kTddMinFrame / sliceS));
     const size_t lagHi = std::min(slices / 2, static_cast<size_t>(kTddMaxFrame / sliceS));
-    std::vector<double> repeat(lagHi + 1, -1);
-    double best = -1;
-    for (size_t lag = lagLo; lag <= lagHi; lag++) {
-        size_t same = 0;
-        for (size_t i = 0; i + lag < slices; i++) same += up[i] == up[i + lag];
-        const double m = static_cast<double>(same) / static_cast<double>(slices - lag);
-        repeat[lag] = (m - chance) / (1 - chance);
-        best = std::max(best, repeat[lag]);
-    }
-    if (best < kTddMinRepeat) return 0;
-    // el periodo: el primer maximo casi tan bueno como el mejor (2 y 3 periodos tambien coinciden)
-    for (size_t lag = lagLo; lag <= lagHi; lag++) {
-        if (repeat[lag] < best - 0.05) continue;
-        while (lag < lagHi && repeat[lag + 1] > repeat[lag]) lag++;
-        return static_cast<double>(lag) * sliceS;
-    }
-    return 0;
+    return static_cast<double>(repeat_lag(up, q, lagLo, lagHi)) * sliceS;
 }
 
 const std::vector<double> &hdzero_channels_mhz() {
