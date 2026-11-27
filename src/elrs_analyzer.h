@@ -39,6 +39,9 @@ public:
     QSize sizeHint() const override { return {760, 300}; }
     static constexpr double kLo = 2398, kHi = 2484;
     static constexpr int kFadeMs = 900;  // lo que tarda un MHz recien medido en apagarse en la barra
+    // la etiqueta del cursor en mhz: "2440 MHz · ELRS 41" (su canal, 1..80, si cae en uno) y, si hay un bin
+    // medido a menos de medio MHz, "avg 6 dB · peak 11 dB"
+    static QStringList cursorText(double mhz, const QVector<SpectrumPoint> &bins);
 
 protected:
     void paintEvent(QPaintEvent *) override;

@@ -131,7 +131,13 @@ void ElrsView::paintEvent(QPaintEvent *) {
 
 void ElrsView::drawCursor(QPainter &p, const Geometry &g) const {
     if (!mouseX_ || *mouseX_ < g.left || *mouseX_ > g.right) return;
-    drawFreqCursor(p, palette(), *mouseX_, g.top, g.plotBottom, g.right, g.mhz(*mouseX_));
+    drawFreqCursor(p, palette(), *mouseX_, g.top, g.plotBottom, g.right, cursorText(g.mhz(*mouseX_), bins_));
+}
+
+QStringList ElrsView::cursorText(double mhz, const QVector<SpectrumPoint> &bins) {
+    const int i = int(std::lround(mhz - elrs::kFirstMhz));  // el canal de ELRS que cae ahi (de 1 en 1 MHz)
+    const bool onChannel = i >= 0 && i < elrs::kChannels && std::abs(mhz - elrs::channel_mhz(i)) <= 0.5;
+    return freqCursorText(mhz, onChannel ? QStringLiteral("ELRS %1").arg(i + 1) : QString(), bins);
 }
 
 void ElrsView::mouseMoveEvent(QMouseEvent *e) {

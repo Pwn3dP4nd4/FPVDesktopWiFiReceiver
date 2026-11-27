@@ -48,6 +48,9 @@ public:
     // actualizacion y los ya medidos alguna vez
     QVector<int> sweepHeadForTest() const { return head_; }
     int sweepCellsForTest() const { return int(cellT_.size()); }
+    // la etiqueta del cursor en mhz: "5806 MHz · R5/A4/B5" (canales cerca, src/channel_names.h) y, si hay un MHz
+    // medido ahi (cells: de 1 en 1, como los pinta), "avg 12 dB · peak 20 dB"
+    static QStringList cursorText(double mhz, const QVector<SpectrumPoint> &cells);
 
 signals:
     void pinToggled(const QString &name, bool hdzero);  // fijar si no lo estaba, desfijar si lo estaba

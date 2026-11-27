@@ -351,7 +351,11 @@ void SpectrumView::paintEvent(QPaintEvent *) {
 
 void SpectrumView::drawCursor(QPainter &p, const Geometry &g) const {
     if (!mouseX_ || *mouseX_ < g.left || *mouseX_ > g.right) return;
-    drawFreqCursor(p, palette(), *mouseX_, g.top, g.plotBottom, g.right, g.mhz(*mouseX_));
+    drawFreqCursor(p, palette(), *mouseX_, g.top, g.plotBottom, g.right, cursorText(g.mhz(*mouseX_), data_.bins));
+}
+
+QStringList SpectrumView::cursorText(double mhz, const QVector<SpectrumPoint> &cells) {
+    return freqCursorText(mhz, chnames::resolve(mhz).label(), cells);
 }
 
 void SpectrumView::mouseMoveEvent(QMouseEvent *e) {
