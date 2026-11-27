@@ -1,4 +1,5 @@
 #include "elrs_analyzer.h"
+#include "analyzer_style.h"
 #include "app_settings.h"
 #include "log.h"
 
@@ -14,6 +15,7 @@
 #include <QHeaderView>
 #include <QLabel>
 #include <QLocale>
+#include <QMouseEvent>
 #include <QPainter>
 #include <QPainterPath>
 #include <QPushButton>
@@ -68,6 +70,7 @@ std::vector<elrs::Bin> toBins(const QVector<SpectrumPoint> &in) {
 ElrsView::ElrsView(QWidget *parent) : QWidget(parent) {
     setMinimumHeight(240);
     setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+    setMouseTracking(true);  // el cursor de frecuencia sigue al raton sin pulsar
     clock_.start();
     anim_ = new QTimer(this);
     anim_->setInterval(60);
@@ -123,6 +126,30 @@ void ElrsView::paintEvent(QPaintEvent *) {
     drawSpectrum(p, g);
     drawAxis(p, g);
     drawChannels(p, g);
+    drawCursor(p, g);
+}
+
+void ElrsView::drawCursor(QPainter &p, const Geometry &g) const {
+    if (!mouseX_ || *mouseX_ < g.left || *mouseX_ > g.right) return;
+    drawFreqCursor(p, palette(), *mouseX_, g.top, g.plotBottom, g.right, cursorText(g.mhz(*mouseX_), bins_));
+}
+
+QStringList ElrsView::cursorText(double mhz, const QVector<SpectrumPoint> &bins) {
+    const int i = int(std::lround(mhz - elrs::kFirstMhz));  // el canal de ELRS que cae ahi (de 1 en 1 MHz)
+    const bool onChannel = i >= 0 && i < elrs::kChannels && std::abs(mhz - elrs::channel_mhz(i)) <= 0.5;
+    return freqCursorText(mhz, onChannel ? QStringLiteral("ELRS %1").arg(i + 1) : QString(), bins);
+}
+
+void ElrsView::mouseMoveEvent(QMouseEvent *e) {
+    mouseX_ = e->position().x();
+    update();
+    QWidget::mouseMoveEvent(e);
+}
+
+void ElrsView::leaveEvent(QEvent *e) {
+    mouseX_.reset();
+    update();
+    QWidget::leaveEvent(e);
 }
 
 void ElrsView::drawGrid(QPainter &p, const Geometry &g) const {

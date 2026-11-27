@@ -28,6 +28,7 @@
 #include <QListWidget>
 #include <QLocale>
 #include <QMenu>
+#include <QMouseEvent>
 #include <QPainter>
 #include <QPainterPath>
 #include <QPushButton>
@@ -223,6 +224,7 @@ QPixmap swatch(Swatch kind, const QColor &c) {
 SpectrumView::SpectrumView(QWidget *parent) : QWidget(parent) {
     setMinimumHeight(240);
     setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+    setMouseTracking(true);  // el cursor de frecuencia sigue al raton sin pulsar
     sweepClock_.start();
     anim_ = new QTimer(this);
     anim_->setInterval(150);
@@ -344,6 +346,28 @@ void SpectrumView::paintEvent(QPaintEvent *) {
     drawSweepBar(p, g);
     drawAir(p, g);
     drawChannelRows(p, g);
+    drawCursor(p, g);
+}
+
+void SpectrumView::drawCursor(QPainter &p, const Geometry &g) const {
+    if (!mouseX_ || *mouseX_ < g.left || *mouseX_ > g.right) return;
+    drawFreqCursor(p, palette(), *mouseX_, g.top, g.plotBottom, g.right, cursorText(g.mhz(*mouseX_), data_.bins));
+}
+
+QStringList SpectrumView::cursorText(double mhz, const QVector<SpectrumPoint> &cells) {
+    return freqCursorText(mhz, chnames::resolve(mhz).label(), cells);
+}
+
+void SpectrumView::mouseMoveEvent(QMouseEvent *e) {
+    mouseX_ = e->position().x();
+    update();
+    QWidget::mouseMoveEvent(e);
+}
+
+void SpectrumView::leaveEvent(QEvent *e) {
+    mouseX_.reset();
+    update();
+    QWidget::leaveEvent(e);
 }
 
 // rejilla y ejes: la rejilla, el color del texto muy tenue; los textos, el del texto (QPalette::Mid es casi negro

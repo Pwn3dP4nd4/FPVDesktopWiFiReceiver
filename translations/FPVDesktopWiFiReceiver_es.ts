@@ -1054,6 +1054,13 @@
     </message>
 </context>
 <context>
+    <name>FreqCursor</name>
+    <message>
+        <source>avg %1 dB · peak %2 dB</source>
+        <translation>media %1 dB · pico %2 dB</translation>
+    </message>
+</context>
+<context>
     <name>MainWindow</name>
     <message>
         <source>Desktop shortcut created</source>

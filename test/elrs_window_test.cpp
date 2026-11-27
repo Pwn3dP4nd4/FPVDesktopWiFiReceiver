@@ -215,6 +215,25 @@ int main(int argc, char **argv) {
         }
         check(c.isRunning(), "parar solo desactivado: sigue midiendo");
     }
+    {
+        // cursor: con el raton sobre la grafica, una linea en esa frecuencia; al salir, nada
+        NullBackend backend_h;
+        ElrsAnalyzer h(&backend_h);
+        auto *v = h.findChild<ElrsView *>();
+        v->resize(760, 300);
+        const drive::Hover over = drive::hover(v, 380);
+        check(over.marksColumn(380), "cursor: con el raton encima se marca su frecuencia");
+        check(over.after == over.before, "cursor: al salir el raton no queda nada");
+        const drive::Hover margin = drive::hover(v, 3);
+        check(margin.over == margin.before, "cursor: fuera del eje de frecuencias no se marca nada");
+        // lo que dice: MHz, el canal de ELRS (1..80) si cae en uno y los dB del bin mas cercano
+        const QVector<SpectrumPoint> bins{{2440.3, 5.2f, 9.f, 0.f}, {2440.46, 6.f, 11.f, 0.f}};
+        check(ElrsView::cursorText(2440.4, bins) ==
+                  QStringList({QStringLiteral("2440 MHz · ELRS 41"), QStringLiteral("avg 6 dB · peak 11 dB")}),
+              "cursor: MHz, canal de ELRS y dB medios y de pico");
+        check(ElrsView::cursorText(2399, bins) == QStringList{QStringLiteral("2399 MHz")},
+              "cursor: fuera de los canales y sin medida, solo los MHz");
+    }
     std::printf("\n%s\n", failures ? "FALLAN algunos casos" : "OK");
     return failures ? 1 : 0;
 }

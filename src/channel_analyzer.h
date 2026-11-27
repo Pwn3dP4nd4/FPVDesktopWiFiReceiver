@@ -34,7 +34,7 @@ class QVBoxLayout;
 // coloreados por interferencia, lo que ya hay en el aire y los canales recomendados (los fijados, distintos).
 // Arriba, la barra de barrido: que parte del espectro se acaba de medir (SpectrumPoint::seq), brillante al refrescarse
 // y apagandose hasta la siguiente pasada; donde va ahora el barrido, una franja tenue sobre la grafica.
-// Clic derecho sobre una marca de canal: fijarlo o desfijarlo (pinToggled).
+// Clic derecho sobre una marca de canal: fijarlo o desfijarlo (pinToggled). Con el raton encima, su frecuencia.
 class SpectrumView : public QWidget {
     Q_OBJECT
 public:
@@ -48,6 +48,9 @@ public:
     // actualizacion y los ya medidos alguna vez
     QVector<int> sweepHeadForTest() const { return head_; }
     int sweepCellsForTest() const { return int(cellT_.size()); }
+    // la etiqueta del cursor en mhz: "5806 MHz · R5/A4/B5" (canales cerca, src/channel_names.h) y, si hay un MHz
+    // medido ahi (cells: de 1 en 1, como los pinta), "avg 12 dB · peak 20 dB"
+    static QStringList cursorText(double mhz, const QVector<SpectrumPoint> &cells);
 
 signals:
     void pinToggled(const QString &name, bool hdzero);  // fijar si no lo estaba, desfijar si lo estaba
@@ -56,6 +59,8 @@ signals:
 protected:
     void paintEvent(QPaintEvent *) override;
     void contextMenuEvent(QContextMenuEvent *e) override;
+    void mouseMoveEvent(QMouseEvent *e) override;
+    void leaveEvent(QEvent *e) override;
 
 private:
     bool isPinned(const advisor::Candidate &c) const;
@@ -66,6 +71,7 @@ private:
         double lo = 0, hi = 1, dbMax = 40;
         double x(double mhz) const { return left + (mhz - lo) / (hi - lo) * (right - left); }
         double y(double db) const { return plotBottom - std::clamp(db, 0.0, dbMax) / dbMax * (plotBottom - top); }
+        double mhz(double px) const { return lo + (px - left) / (right - left) * (hi - lo); }
     };
     void drawAxes(QPainter &p, const Geometry &g) const;
     void drawPicks(QPainter &p, const Geometry &g) const;      // los recomendados (franjas) y los fijados
@@ -75,12 +81,14 @@ private:
     void drawSweepHead(QPainter &p, const Geometry &g, qint64 t) const;  // donde va ahora
     void drawAir(QPainter &p, const Geometry &g) const;        // lo que hay en el aire
     void drawChannelRows(QPainter &p, const Geometry &g) const;
+    void drawCursor(QPainter &p, const Geometry &g) const;     // la frecuencia bajo el raton
     SurveyData data_;              // los bins juntados de 1 en 1 MHz (se dibujan mas limpios)
     advisor::Advice advice_;
     QStringList mine_;
     double lo_ = 5640, hi_ = 5950;
     // geometria del ultimo pintado (menu contextual): eje x y filas de canales
     double left_ = 0, right_ = 1, rowsTop_ = 0, rowH_ = 0, plotBottom_ = 0;
+    std::optional<double> mouseX_;  // el raton, si esta sobre la grafica
 
     // ---- barra de barrido: por MHz (floor), el ultimo seq visto y cuando cambio (ms de sweepClock_) ----
     void trackSweep();  // tras juntar data_.bins: que celdas se han medido desde la ultima vez

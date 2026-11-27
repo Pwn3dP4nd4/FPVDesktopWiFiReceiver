@@ -318,6 +318,27 @@ int main(int argc, char **argv) {
         check(here == 3 && !summary.contains(QStringLiteral("must change")),
               "mios: los tres ya en los recomendados (R1, R4, R8): ninguno tiene que cambiar");
     }
+    {
+        // cursor: con el raton sobre la grafica, una linea en esa frecuencia; al salir, nada
+        FakeBackend b;
+        ChannelAnalyzer w(&b);
+        SpectrumView *v = drive::view(w);
+        v->resize(760, 300);
+        const drive::Hover h = drive::hover(v, 380);
+        check(h.marksColumn(380), "cursor: con el raton encima se marca su frecuencia");
+        check(h.after == h.before, "cursor: al salir el raton no queda nada");
+        const drive::Hover margin = drive::hover(v, 3);
+        check(margin.over == margin.before, "cursor: fuera del eje de frecuencias no se marca nada");
+        // lo que dice: MHz y canales cerca (como los pilotos, src/channel_names.h); los dB del MHz medido ahi
+        const QVector<SpectrumPoint> cells{{5804.5, 3.f, 6.f, 0.f}, {5805.5, 12.4f, 20.f, 0.f}};
+        const QStringList t = SpectrumView::cursorText(5805.7, cells);
+        std::printf("    cursor en 5805.7: %s\n", qPrintable(t.join(QStringLiteral(" | "))));
+        check(t.size() == 2 && t[0].startsWith(QStringLiteral("5806 MHz · R5/")) &&
+                  t[1] == QStringLiteral("avg 12 dB · peak 20 dB"),
+              "cursor: MHz, canales cerca y dB medios y de pico");
+        check(SpectrumView::cursorText(5990, cells) == QStringList{QStringLiteral("5990 MHz")},
+              "cursor: sin canal cerca ni medida, solo los MHz");
+    }
     std::printf("\n%s\n", failures ? "HAY FALLOS" : "todo bien");
     return failures ? 1 : 0;
 }

@@ -8,6 +8,7 @@
 #include <QVector>
 
 #include <algorithm>
+#include <optional>
 
 #include "backend.h"
 #include "elrs_advisor.h"
@@ -26,7 +27,8 @@ class QTreeWidget;
 
 // Grafica del analizador de 2,4 GHz: espectro medio y picos (dB sobre el suelo), los canales WiFi detectados (sus
 // 16.6 MHz) y, debajo, los 80 canales de ELRS coloreados por lo ocupados que estan. Arriba, la barra de barrido: cada MHz
-// se ilumina al volver a medirse (SpectrumPoint::seq) y se va apagando; donde va el barrido, una franja tenue.
+// se ilumina al volver a medirse (SpectrumPoint::seq) y se va apagando; donde va el barrido, una franja tenue. Con el
+// raton encima, su frecuencia.
 class ElrsView : public QWidget {
     Q_OBJECT
 public:
@@ -37,9 +39,14 @@ public:
     QSize sizeHint() const override { return {760, 300}; }
     static constexpr double kLo = 2398, kHi = 2484;
     static constexpr int kFadeMs = 900;  // lo que tarda un MHz recien medido en apagarse en la barra
+    // la etiqueta del cursor en mhz: "2440 MHz · ELRS 41" (su canal, 1..80, si cae en uno) y, si hay un bin
+    // medido a menos de medio MHz, "avg 6 dB · peak 11 dB"
+    static QStringList cursorText(double mhz, const QVector<SpectrumPoint> &bins);
 
 protected:
     void paintEvent(QPaintEvent *) override;
+    void mouseMoveEvent(QMouseEvent *e) override;
+    void leaveEvent(QEvent *e) override;
 
 private:
     // ---- paintEvent(), por capas ----
@@ -48,6 +55,7 @@ private:
         int left = 0, right = 0, wifiRowH = 0, elrsRowH = 0, barTop = 0, barH = 0, top = 0, plotBottom = 0;
         double dbMax = 40;
         double x(double mhz) const { return left + (mhz - kLo) / (kHi - kLo) * (right - left); }
+        double mhz(double px) const { return kLo + (px - left) / (right - left) * (kHi - kLo); }
         double y(double db) const { return plotBottom - std::clamp(db, 0.0, dbMax) / dbMax * (plotBottom - top); }
     };
     void drawGrid(QPainter &p, const Geometry &g) const;
@@ -57,6 +65,7 @@ private:
     void drawSpectrum(QPainter &p, const Geometry &g) const;
     void drawAxis(QPainter &p, const Geometry &g) const;
     void drawChannels(QPainter &p, const Geometry &g) const;     // los 80 canales de ELRS
+    void drawCursor(QPainter &p, const Geometry &g) const;       // la frecuencia bajo el raton
     QVector<SpectrumPoint> bins_;
     elrs::Report report_;
     QHash<int, quint32> cellSeq_;  // por MHz: el ultimo seq visto
@@ -64,6 +73,7 @@ private:
     QElapsedTimer clock_;
     QTimer *anim_ = nullptr;
     bool scanning_ = false;
+    std::optional<double> mouseX_;  // el raton, si esta sobre la grafica
 };
 
 // Analizador de 2,4 GHz (Herramientas): barre 2402-2482 MHz sin parar y dice que canales de ELRS estan ocupados, que
