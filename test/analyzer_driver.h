@@ -156,6 +156,26 @@ inline QStringList pilotSummary(const ChannelAnalyzer &w) {
     return out;
 }
 
+// Los eventos del piloto elegido en el Historial: primero lo que dice de el (sin HTML), luego cada grupo con su
+// cuenta y si esta abierto ("Serious (2) [+]", "Info (1) [-]") y debajo sus eventos ("  que | +00:05 | detalle")
+inline QStringList pilotEvents(const ChannelAnalyzer &w) {
+    QStringList out{find<QLabel>(&w, "historyPilotInfo")->text().remove(QRegularExpression(QStringLiteral("<[^>]*>")))};
+    const auto *t = find<QTreeWidget>(&w, "historyEvents");
+    for (int i = 0; i < t->topLevelItemCount(); i++) {
+        const QTreeWidgetItem *g = t->topLevelItem(i);
+        out << g->text(0) + (g->isExpanded() ? QStringLiteral(" [+]") : QStringLiteral(" [-]"));
+        for (int k = 0; k < g->childCount(); k++) {
+            const QTreeWidgetItem *e = g->child(k);
+            out << QStringLiteral("  %1 | %2 | %3").arg(e->text(0), e->text(1), e->text(2));
+        }
+    }
+    return out;
+}
+// Abre o cierra a mano un grupo de eventos del piloto elegido (0 graves, 1 avisos, 2 cambios, 3 informacion)
+inline void setEventGroupOpen(ChannelAnalyzer &w, int group, bool open) {
+    find<QTreeWidget>(&w, "historyEvents")->topLevelItem(group)->setExpanded(open);
+}
+
 // ---- analizador de 2,4 GHz ----
 
 template <class W>

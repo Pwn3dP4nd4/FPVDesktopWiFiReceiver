@@ -94,10 +94,12 @@ RaceHistory::RaceHistory(QWidget *parent) : QWidget(parent) {
         auto *rv = new QVBoxLayout(right);
         rv->setContentsMargins(0, 0, 0, 0);
         pilotInfo_ = new QLabel;
+        pilotInfo_->setObjectName(QStringLiteral("historyPilotInfo"));
         pilotInfo_->setWordWrap(true);
         pilotInfo_->setTextFormat(Qt::RichText);
         rv->addWidget(pilotInfo_);
         pilotEvents_ = new QTreeWidget;
+        pilotEvents_->setObjectName(QStringLiteral("historyEvents"));
         pilotEvents_->setColumnCount(3);
         pilotEvents_->header()->setStretchLastSection(true);
         pilotEvents_->setWordWrap(true);
