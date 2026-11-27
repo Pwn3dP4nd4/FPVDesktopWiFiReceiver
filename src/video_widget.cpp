@@ -79,90 +79,110 @@ void VideoWidget::paintEvent(QPaintEvent *) {
     QPainter p(this);
     p.fillRect(rect(), Qt::black);
     if (frame_.isNull()) {
-        QRect textRect = rect().adjusted(20, 20, -20, -20);
-        if (!logo_.isNull() && height() > 300) {
-            const QSize ls = logo_.size() / logo_.devicePixelRatio();
-            const QRect lr(QPoint((width() - ls.width()) / 2, height() / 2 - ls.height() - 10), ls);
-            p.setOpacity(0.9);
-            p.drawPixmap(lr, logo_);
-            p.setOpacity(1.0);
-            textRect.setTop(lr.bottom() + 20);
-        }
-        if (!placeholder_.isEmpty()) {
-            p.setPen(QColor(180, 180, 180));
-            p.drawText(textRect, Qt::AlignHCenter | Qt::AlignTop | Qt::TextWordWrap, placeholder_);
-        }
+        drawPlaceholder(p);
     } else {
-        // Analogico: 4:3 sea cual sea la resolucion del fotograma; 16:9 para camaras en modo anamorfico
-        QRect r = rect();
-        if (aspect_ != Aspect::Fill) {
-            QSize s = aspect_ == Aspect::R16x9 ? QSize(16, 9) : QSize(4, 3);
-            s.scale(size(), Qt::KeepAspectRatio);
-            r = QRect(QPoint(0, 0), s);
-            r.moveCenter(rect().center());
-        }
-        // Sobrebarrido: como un televisor, fuera los bordes (inicio/fin de linea, medias lineas arriba/abajo)
-        const QRectF src = sourceRect();
-        p.setRenderHint(QPainter::SmoothPixmapTransform);
-        p.drawImage(QRectF(r), frame_, src);
-        if (stale_) {
-            p.fillRect(r, QColor(0, 0, 0, 170));
-            QFont big = font();
-            big.setBold(true);
-            big.setPixelSize(qMax(18, r.height() / 9));
-            p.setFont(big);
-            p.setPen(QColor(255, 80, 60));
-            const QFontMetrics bm(big);
-            QRect nr = r;
-            nr.setBottom(r.center().y() + bm.height() / 2);
-            p.drawText(nr, Qt::AlignHCenter | Qt::AlignBottom, tr("NO SIGNAL"));
-            QFont small = font();
-            small.setPixelSize(qMax(12, r.height() / 30));
-            p.setFont(small);
-            p.setPen(QColor(220, 220, 220));
-            QRect sr = r;
-            sr.setTop(nr.bottom() + 8);
-            p.drawText(sr, Qt::AlignHCenter | Qt::AlignTop,
-                       tr("Last picture %1 s ago").arg(sinceFrame_.elapsed() / 1000.0, 0, 'f', 1));
-        }
+        const QRect r = drawFrame(p);
+        if (stale_) drawNoSignal(p, r);
     }
-    if (osdOn_ && !osd_.isEmpty()) {
-        QFont f = font();
-        f.setPointSizeF(f.pointSizeF() * 1.1);
-        f.setBold(true);
-        p.setFont(f);
-        const QFontMetrics fm(f);
-        const QRect tr = fm.boundingRect(osd_).adjusted(-10, -5, 10, 5).translated(14 + 10, 14 + fm.ascent() + 5);
-        QPainterPath path;
-        path.addRoundedRect(tr, tr.height() / 2.0, tr.height() / 2.0);
-        p.setRenderHint(QPainter::Antialiasing);
-        p.fillPath(path, QColor(0, 0, 0, 150));
-        p.setPen(Qt::white);
-        p.drawText(tr, Qt::AlignCenter, osd_);
-    }
-    if (!rec_.isEmpty()) {  // grabando: tambien en pantalla completa y sin senal
-        QFont f = font();
-        f.setPointSizeF(f.pointSizeF() * 1.1);
-        f.setBold(true);
-        p.setFont(f);
-        const QFontMetrics fm(f);
-        const int dot = fm.height() * 2 / 3;
-        QRect box(0, 0, fm.horizontalAdvance(rec_) + dot + 26, fm.height() + 10);
-        box.moveTopRight(QPoint(width() - 14, 14));  // a la altura del OSD
-        QPainterPath path;
-        path.addRoundedRect(box, box.height() / 2.0, box.height() / 2.0);
-        p.setRenderHint(QPainter::Antialiasing);
-        p.fillPath(path, QColor(0, 0, 0, 150));
-        if ((QDateTime::currentMSecsSinceEpoch() / 500) % 2 == 0) {
-            p.setPen(Qt::NoPen);
-            p.setBrush(QColor(235, 40, 40));
-            p.drawEllipse(QRect(box.left() + 10, box.center().y() - dot / 2, dot, dot));
-        }
-        p.setPen(Qt::white);
-        p.drawText(box.adjusted(dot + 16, 0, -10, 0), Qt::AlignVCenter | Qt::AlignLeft, rec_);
-    }
+    if (osdOn_ && !osd_.isEmpty()) drawOsd(p);
+    if (!rec_.isEmpty()) drawRecording(p);  // grabando: tambien en pantalla completa y sin senal
     p.end();
     if (!frame_.isNull() && pendingProducedNs_) perfPainted(perf_now_ns() - t0);
+}
+
+// sin imagen: el logo (si cabe) y el texto de placeholder_ debajo
+void VideoWidget::drawPlaceholder(QPainter &p) {
+    QRect textRect = rect().adjusted(20, 20, -20, -20);
+    if (!logo_.isNull() && height() > 300) {
+        const QSize ls = logo_.size() / logo_.devicePixelRatio();
+        const QRect lr(QPoint((width() - ls.width()) / 2, height() / 2 - ls.height() - 10), ls);
+        p.setOpacity(0.9);
+        p.drawPixmap(lr, logo_);
+        p.setOpacity(1.0);
+        textRect.setTop(lr.bottom() + 20);
+    }
+    if (!placeholder_.isEmpty()) {
+        p.setPen(QColor(180, 180, 180));
+        p.drawText(textRect, Qt::AlignHCenter | Qt::AlignTop | Qt::TextWordWrap, placeholder_);
+    }
+}
+
+// el fotograma con su forma de pantalla; devuelve donde ha quedado
+QRect VideoWidget::drawFrame(QPainter &p) {
+    // Analogico: 4:3 sea cual sea la resolucion del fotograma; 16:9 para camaras en modo anamorfico
+    QRect r = rect();
+    if (aspect_ != Aspect::Fill) {
+        QSize s = aspect_ == Aspect::R16x9 ? QSize(16, 9) : QSize(4, 3);
+        s.scale(size(), Qt::KeepAspectRatio);
+        r = QRect(QPoint(0, 0), s);
+        r.moveCenter(rect().center());
+    }
+    // Sobrebarrido: como un televisor, fuera los bordes (inicio/fin de linea, medias lineas arriba/abajo)
+    const QRectF src = sourceRect();
+    p.setRenderHint(QPainter::SmoothPixmapTransform);
+    p.drawImage(QRectF(r), frame_, src);
+    return r;
+}
+
+// la ultima imagen, oscurecida, con "SIN SENAL" y cuanto hace de ella
+void VideoWidget::drawNoSignal(QPainter &p, const QRect &r) {
+    p.fillRect(r, QColor(0, 0, 0, 170));
+    QFont big = font();
+    big.setBold(true);
+    big.setPixelSize(qMax(18, r.height() / 9));
+    p.setFont(big);
+    p.setPen(QColor(255, 80, 60));
+    const QFontMetrics bm(big);
+    QRect nr = r;
+    nr.setBottom(r.center().y() + bm.height() / 2);
+    p.drawText(nr, Qt::AlignHCenter | Qt::AlignBottom, tr("NO SIGNAL"));
+    QFont small = font();
+    small.setPixelSize(qMax(12, r.height() / 30));
+    p.setFont(small);
+    p.setPen(QColor(220, 220, 220));
+    QRect sr = r;
+    sr.setTop(nr.bottom() + 8);
+    p.drawText(sr, Qt::AlignHCenter | Qt::AlignTop,
+               tr("Last picture %1 s ago").arg(sinceFrame_.elapsed() / 1000.0, 0, 'f', 1));
+}
+
+// el OSD (canal, MHz, SNR...) arriba a la izquierda, en una pastilla
+void VideoWidget::drawOsd(QPainter &p) {
+    QFont f = font();
+    f.setPointSizeF(f.pointSizeF() * 1.1);
+    f.setBold(true);
+    p.setFont(f);
+    const QFontMetrics fm(f);
+    const QRect tr = fm.boundingRect(osd_).adjusted(-10, -5, 10, 5).translated(14 + 10, 14 + fm.ascent() + 5);
+    QPainterPath path;
+    path.addRoundedRect(tr, tr.height() / 2.0, tr.height() / 2.0);
+    p.setRenderHint(QPainter::Antialiasing);
+    p.fillPath(path, QColor(0, 0, 0, 150));
+    p.setPen(Qt::white);
+    p.drawText(tr, Qt::AlignCenter, osd_);
+}
+
+// grabando: pastilla arriba a la derecha (a la altura del OSD) con un punto rojo que parpadea y rec_
+void VideoWidget::drawRecording(QPainter &p) {
+    QFont f = font();
+    f.setPointSizeF(f.pointSizeF() * 1.1);
+    f.setBold(true);
+    p.setFont(f);
+    const QFontMetrics fm(f);
+    const int dot = fm.height() * 2 / 3;
+    QRect box(0, 0, fm.horizontalAdvance(rec_) + dot + 26, fm.height() + 10);
+    box.moveTopRight(QPoint(width() - 14, 14));
+    QPainterPath path;
+    path.addRoundedRect(box, box.height() / 2.0, box.height() / 2.0);
+    p.setRenderHint(QPainter::Antialiasing);
+    p.fillPath(path, QColor(0, 0, 0, 150));
+    if ((QDateTime::currentMSecsSinceEpoch() / 500) % 2 == 0) {
+        p.setPen(Qt::NoPen);
+        p.setBrush(QColor(235, 40, 40));
+        p.drawEllipse(QRect(box.left() + 10, box.center().y() - dot / 2, dot, dot));
+    }
+    p.setPen(Qt::white);
+    p.drawText(box.adjusted(dot + 16, 0, -10, 0), Qt::AlignVCenter | Qt::AlignLeft, rec_);
 }
 
 void VideoWidget::perfPainted(qint64 paintNs) {

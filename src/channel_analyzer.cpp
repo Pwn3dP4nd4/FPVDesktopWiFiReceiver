@@ -148,6 +148,74 @@ int defaultRegion() {
     return 1;
 }
 
+// Las muestras de la leyenda del analizador (22x12), como se dibuja cada cosa en el espectro
+enum class Swatch {
+    Area,     // relleno y borde arriba (nivel medio)
+    Line,     // linea (pico reciente)
+    DashedV,  // discontinua vertical (piloto en el aire)
+    Band,     // fondo/franja (WiFi, canal recomendado)
+    Mark,     // marca de canal
+    Wifi,     // red WiFi: su canal (barra) y el resto de su bloque (discontinua)
+    Pinned,   // canal fijado: franja con bordes y chincheta
+    Sweep,    // barra de barrido: recien medido a la derecha, apagandose hacia atras
+};
+
+QPixmap swatch(Swatch kind, const QColor &c) {
+    QPixmap px(22, 12);
+    px.fill(Qt::transparent);
+    QPainter p(&px);
+    switch (kind) {
+    case Swatch::Area: {
+        QColor f = c;
+        f.setAlpha(90);
+        p.fillRect(0, 3, 22, 9, f);
+        p.setPen(QPen(c, 1.5));
+        p.drawLine(0, 3, 22, 3);
+        break;
+    }
+    case Swatch::Line:
+        p.setPen(QPen(c, 1.5));
+        p.drawLine(0, 6, 22, 6);
+        break;
+    case Swatch::DashedV:
+        p.setPen(QPen(c, 1.5, Qt::DashLine));
+        p.drawLine(11, 0, 11, 12);
+        break;
+    case Swatch::Band:
+        p.fillRect(0, 0, 22, 12, c);
+        break;
+    case Swatch::Pinned: {
+        QColor f = c;
+        f.setAlpha(80);
+        p.fillRect(3, 0, 16, 12, f);
+        p.setPen(QPen(c, 1.5));
+        p.drawLine(QPointF(3, 0), QPointF(3, 12));
+        p.drawLine(QPointF(19, 0), QPointF(19, 12));
+        drawPin(p, QPointF(11, 11.5), c);
+        break;
+    }
+    case Swatch::Wifi:
+        p.setPen(QPen(c, 1, Qt::DashLine));
+        p.drawLine(0, 6, 22, 6);
+        p.fillRect(7, 4, 8, 4, c);
+        break;
+    case Swatch::Sweep: {
+        QLinearGradient g(0, 0, 20, 0);
+        QColor a = c;
+        a.setAlpha(50);
+        g.setColorAt(0, a);
+        g.setColorAt(1, c);
+        p.fillRect(0, 4, 20, 5, g);
+        p.setPen(QPen(c, 2));
+        p.drawLine(QPointF(20.5, 2), QPointF(20.5, 11));
+        break;
+    }
+    case Swatch::Mark:
+        p.fillRect(9, 1, 5, 10, c);
+        break;
+    }
+    return px;
+}
 }  // namespace
 
 // ---- grafica ------------------------------------------------------------------------------------------------
@@ -677,32 +745,14 @@ void ChannelAnalyzer::addPilotsPanel(QVBoxLayout *side) {
     g->addWidget(nHdz_, 1, 1);
     narrow_ = new QCheckBox;
     narrow_->setChecked(appSettings().value("analyzer/narrow", false).toBool());
-    connect(narrow_, &QCheckBox::toggled, this, [this](bool on) {
-        appSettings().setValue("analyzer/narrow", on);
-        // los HDZero fijados cambian de ancho: el seguimiento tiene que usar el mismo que la recomendacion. Solo
-        // vuelven a empezar ellos; lo de los analogicos sigue
-        if (raceOn_) {
-            moves_.clear();
-            const auto pins = pinnedCandidates();
-            const auto &hs = race_.health();
-            for (int i = 0; i < static_cast<int>(pins.size()) && i < static_cast<int>(hs.size()); i++)
-                if (pins[i].hdzero) race_.moved(i, pins[i]);
-        }
-        recompute();
-        updateRace();
-    });
+    connect(narrow_, &QCheckBox::toggled, this, &ChannelAnalyzer::narrowChanged);
     g->addWidget(narrow_, 2, 0, 1, 2);
     regionLbl_ = new QLabel;
     region_ = new QComboBox;
     region_->addItem(QString(), 0);  // UE
     region_->addItem(QString(), 1);  // EE. UU. y otros
     region_->setCurrentIndex(qBound(0, appSettings().value("analyzer/region", defaultRegion()).toInt(), 1));
-    connect(region_, &QComboBox::currentIndexChanged, this, [this] {
-        appSettings().setValue("analyzer/region", region_->currentData().toInt());
-        wifiMem_.reset();  // los bloques cambian: se vuelve a aprender con el ultimo barrido
-        feedWifi();
-        recompute();
-    });
+    connect(region_, &QComboBox::currentIndexChanged, this, &ChannelAnalyzer::regionChanged);
     g->addWidget(regionLbl_, 3, 0);
     g->addWidget(region_, 3, 1);
     memoryLbl_ = new QLabel;
@@ -716,6 +766,29 @@ void ChannelAnalyzer::addPilotsPanel(QVBoxLayout *side) {
     });
 
     side->addLayout(g);
+}
+
+// modo estrecho de HDZero: los HDZero fijados cambian de ancho y el seguimiento tiene que usar el mismo que la
+// recomendacion. Solo vuelven a empezar ellos; lo de los analogicos sigue
+void ChannelAnalyzer::narrowChanged(bool on) {
+    appSettings().setValue("analyzer/narrow", on);
+    if (raceOn_) {
+        moves_.clear();
+        const auto pins = pinnedCandidates();
+        const auto &hs = race_.health();
+        for (int i = 0; i < static_cast<int>(pins.size()) && i < static_cast<int>(hs.size()); i++)
+            if (pins[i].hdzero) race_.moved(i, pins[i]);
+    }
+    recompute();
+    updateRace();
+}
+
+// normas WiFi (UE / EE. UU.): los bloques cambian, se vuelve a aprender con el ultimo barrido
+void ChannelAnalyzer::regionChanged() {
+    appSettings().setValue("analyzer/region", region_->currentData().toInt());
+    wifiMem_.reset();
+    feedWifi();
+    recompute();
 }
 
 // panel de la izquierda: bandas, pilotos, en el aire, Empezar y el estado
@@ -773,50 +846,6 @@ QWidget *ChannelAnalyzer::buildLegend() {
     lg->setHorizontalSpacing(6);
     lg->setVerticalSpacing(1);
     const QColor hl = palette().color(QPalette::Highlight);
-    const auto swatch = [](int kind, QColor c) {
-        QPixmap px(22, 12);
-        px.fill(Qt::transparent);
-        QPainter p(&px);
-        if (kind == 0) {  // area: relleno y borde arriba
-            QColor f = c;
-            f.setAlpha(90);
-            p.fillRect(0, 3, 22, 9, f);
-            p.setPen(QPen(c, 1.5));
-            p.drawLine(0, 3, 22, 3);
-        } else if (kind == 1) {  // linea
-            p.setPen(QPen(c, 1.5));
-            p.drawLine(0, 6, 22, 6);
-        } else if (kind == 2) {  // discontinua vertical
-            p.setPen(QPen(c, 1.5, Qt::DashLine));
-            p.drawLine(11, 0, 11, 12);
-        } else if (kind == 3) {  // fondo/franja
-            p.fillRect(0, 0, 22, 12, c);
-        } else if (kind == 6) {  // canal fijado: franja con bordes y chincheta
-            QColor f = c;
-            f.setAlpha(80);
-            p.fillRect(3, 0, 16, 12, f);
-            p.setPen(QPen(c, 1.5));
-            p.drawLine(QPointF(3, 0), QPointF(3, 12));
-            p.drawLine(QPointF(19, 0), QPointF(19, 12));
-            drawPin(p, QPointF(11, 11.5), c);
-        } else if (kind == 5) {  // red WiFi: su canal (barra) y el resto de su bloque (discontinua)
-            p.setPen(QPen(c, 1, Qt::DashLine));
-            p.drawLine(0, 6, 22, 6);
-            p.fillRect(7, 4, 8, 4, c);
-        } else if (kind == 7) {  // barra de barrido: recien medido a la derecha, apagandose hacia atras
-            QLinearGradient g(0, 0, 20, 0);
-            QColor a = c;
-            a.setAlpha(50);
-            g.setColorAt(0, a);
-            g.setColorAt(1, c);
-            p.fillRect(0, 4, 20, 5, g);
-            p.setPen(QPen(c, 2));
-            p.drawLine(QPointF(20.5, 2), QPointF(20.5, 11));
-        } else {  // marca de canal
-            p.fillRect(9, 1, 5, 10, c);
-        }
-        return px;
-    };
     const auto add = [&](int row, int col, const QPixmap &px) {
         auto *ic = new QLabel;
         ic->setPixmap(px);
@@ -836,18 +865,18 @@ QWidget *ChannelAnalyzer::buildLegend() {
     QColor wifi(255, 140, 0, 70), recA = kAnalogColour, recH = kHdzColour;
     recA.setAlpha(60);
     recH.setAlpha(60);
-    add(1, 0, swatch(0, hl));
-    add(2, 0, swatch(1, QColor(0xe0, 0x70, 0x30)));
-    add(3, 0, swatch(3, wifi));
-    add(4, 0, swatch(2, QColor(0xd9, 0x48, 0x3b)));
-    add(1, 3, swatch(4, QColor(0x3a, 0xa8, 0x5a)));
-    add(2, 3, swatch(4, QColor(0xe0, 0xa0, 0x20)));
-    add(3, 3, swatch(4, QColor(0xd9, 0x48, 0x3b)));
-    add(4, 3, swatch(3, recA));
-    add(5, 3, swatch(3, recH));
-    add(5, 0, swatch(5, QColor(0xc0, 0x60, 0x00)));
-    add(6, 3, swatch(6, kAnalogColour));
-    add(6, 0, swatch(7, kSweepColour));
+    add(1, 0, swatch(Swatch::Area, hl));
+    add(2, 0, swatch(Swatch::Line, QColor(0xe0, 0x70, 0x30)));
+    add(3, 0, swatch(Swatch::Band, wifi));
+    add(4, 0, swatch(Swatch::DashedV, QColor(0xd9, 0x48, 0x3b)));
+    add(1, 3, swatch(Swatch::Mark, QColor(0x3a, 0xa8, 0x5a)));
+    add(2, 3, swatch(Swatch::Mark, QColor(0xe0, 0xa0, 0x20)));
+    add(3, 3, swatch(Swatch::Mark, QColor(0xd9, 0x48, 0x3b)));
+    add(4, 3, swatch(Swatch::Band, recA));
+    add(5, 3, swatch(Swatch::Band, recH));
+    add(5, 0, swatch(Swatch::Wifi, QColor(0xc0, 0x60, 0x00)));
+    add(6, 3, swatch(Swatch::Pinned, kAnalogColour));
+    add(6, 0, swatch(Swatch::Sweep, kSweepColour));
     lg->setColumnMinimumWidth(2, 24);
     lg->setColumnStretch(5, 1);
     return box;
@@ -900,7 +929,33 @@ QWidget *ChannelAnalyzer::buildRacePage() {
     raceState_->setWordWrap(true);
     top->addWidget(raceState_, 1);
     v->addLayout(top);
-    // auto-inicio: se arma y empieza solo cuando estan en el aire los pilotos elegidos (0 = todos los fijados)
+    v->addLayout(buildArmRow());
+    raceTable_ = new QTreeWidget;
+    raceTable_->setRootIsDecorated(false);
+    raceTable_->setColumnCount(8);
+    raceTable_->header()->setStretchLastSection(true);
+    raceTable_->setSelectionMode(QAbstractItemView::NoSelection);
+    // clic derecho en una fila: aplicar solo la recomendacion de ese canal
+    raceTable_->setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(raceTable_, &QWidget::customContextMenuRequested, this, &ChannelAnalyzer::raceTableMenu);
+    v->addWidget(raceTable_, 1);
+    auto *r = new QHBoxLayout;
+    raceAdvice_ = new QLabel;
+    raceAdvice_->setWordWrap(true);
+    raceAdvice_->setTextFormat(Qt::RichText);
+    r->addWidget(raceAdvice_, 1);
+    applyBtn_ = new QPushButton;
+    applyBtn_->setObjectName(QStringLiteral("apply"));
+    applyBtn_->setVisible(false);
+    connect(applyBtn_, &QPushButton::clicked, this, [this] { applyMoves(moves_); });
+    r->addWidget(applyBtn_);
+    v->addLayout(r);
+    return page;
+}
+
+// auto-inicio: se arma y empieza solo cuando estan en el aire los pilotos elegidos (0 = todos los fijados); y parar
+// sola cuando todos han aterrizado
+QHBoxLayout *ChannelAnalyzer::buildArmRow() {
     auto *arm = new QHBoxLayout;
     armBtn_ = new QPushButton;
     armBtn_->setObjectName(QStringLiteral("arm"));
@@ -929,57 +984,39 @@ QWidget *ChannelAnalyzer::buildRacePage() {
     arm->addSpacing(12);
     arm->addWidget(autoStop_);
     arm->addStretch(1);
-    v->addLayout(arm);
-    raceTable_ = new QTreeWidget;
-    raceTable_->setRootIsDecorated(false);
-    raceTable_->setColumnCount(8);
-    raceTable_->header()->setStretchLastSection(true);
-    raceTable_->setSelectionMode(QAbstractItemView::NoSelection);
-    // clic derecho en una fila: aplicar solo la recomendacion de ese canal
-    raceTable_->setContextMenuPolicy(Qt::CustomContextMenu);
-    connect(raceTable_, &QWidget::customContextMenuRequested, this, [this](const QPoint &pos) {
-        QTreeWidgetItem *it = raceTable_->itemAt(pos);
-        if (!it) return;
-        const int row = raceTable_->indexOfTopLevelItem(it);
-        const auto ms = moves_;  // la tabla se rehace en cada barrido: lo de ahora
-        const auto &hs = race_.health();
-        QMenu menu(this);
-        for (const auto &m : ms) {
-            if (m.from != row || m.from >= static_cast<int>(hs.size())) continue;
-            const QString t = QStringLiteral("%1 \u2192 %2").arg(QString::fromStdString(hs[m.from].ch.name),
-                                                                 QString::fromStdString(m.to.name));
-            QAction *a = menu.addAction(canApplyAlone(m) ? tr("Apply %1 only").arg(t)
-                                                         : tr("Apply %1 only (apply the others first)").arg(t));
-            a->setEnabled(canApplyAlone(m));
-            // con el menu abierto siguen llegando barridos: solo si sigue recomendada (y cabe sola)
-            connect(a, &QAction::triggered, this, [this, m] {
-                const auto v = stillValid({m});
-                if (!v.empty() && canApplyAlone(v.front())) applyMoves(v);
-            });
-        }
-        if (ms.size() > 1) {
-            QAction *all = menu.addAction(tr("Apply all (%1)").arg(ms.size()));
-            // todas o ninguna: cada una cuenta con las anteriores ya aplicadas
-            connect(all, &QAction::triggered, this, [this, ms] {
-                const auto v = stillValid(ms);
-                if (v.size() == ms.size()) applyMoves(v);
-            });
-        }
-        if (!menu.isEmpty()) menu.exec(raceTable_->viewport()->mapToGlobal(pos));
-    });
-    v->addWidget(raceTable_, 1);
-    auto *r = new QHBoxLayout;
-    raceAdvice_ = new QLabel;
-    raceAdvice_->setWordWrap(true);
-    raceAdvice_->setTextFormat(Qt::RichText);
-    r->addWidget(raceAdvice_, 1);
-    applyBtn_ = new QPushButton;
-    applyBtn_->setObjectName(QStringLiteral("apply"));
-    applyBtn_->setVisible(false);
-    connect(applyBtn_, &QPushButton::clicked, this, [this] { applyMoves(moves_); });
-    r->addWidget(applyBtn_);
-    v->addLayout(r);
-    return page;
+    return arm;
+}
+
+// clic derecho en una fila de la tabla de carrera: aplicar solo la recomendacion de ese canal, o todas
+void ChannelAnalyzer::raceTableMenu(const QPoint &pos) {
+    QTreeWidgetItem *it = raceTable_->itemAt(pos);
+    if (!it) return;
+    const int row = raceTable_->indexOfTopLevelItem(it);
+    const auto ms = moves_;  // la tabla se rehace en cada barrido: lo de ahora
+    const auto &hs = race_.health();
+    QMenu menu(this);
+    for (const auto &m : ms) {
+        if (m.from != row || m.from >= static_cast<int>(hs.size())) continue;
+        const QString t = QStringLiteral("%1 \u2192 %2").arg(QString::fromStdString(hs[m.from].ch.name),
+                                                             QString::fromStdString(m.to.name));
+        QAction *a = menu.addAction(canApplyAlone(m) ? tr("Apply %1 only").arg(t)
+                                                     : tr("Apply %1 only (apply the others first)").arg(t));
+        a->setEnabled(canApplyAlone(m));
+        // con el menu abierto siguen llegando barridos: solo si sigue recomendada (y cabe sola)
+        connect(a, &QAction::triggered, this, [this, m] {
+            const auto v = stillValid({m});
+            if (!v.empty() && canApplyAlone(v.front())) applyMoves(v);
+        });
+    }
+    if (ms.size() > 1) {
+        QAction *all = menu.addAction(tr("Apply all (%1)").arg(ms.size()));
+        // todas o ninguna: cada una cuenta con las anteriores ya aplicadas
+        connect(all, &QAction::triggered, this, [this, ms] {
+            const auto v = stillValid(ms);
+            if (v.size() == ms.size()) applyMoves(v);
+        });
+    }
+    if (!menu.isEmpty()) menu.exec(raceTable_->viewport()->mapToGlobal(pos));
 }
 
 void ChannelAnalyzer::retranslate() {

@@ -334,6 +334,75 @@ QHBoxLayout *ElrsAnalyzer::buildControls() {
 }
 
 // la grafica, su leyenda y el resumen
+namespace {
+// las muestras de la leyenda de la grafica (22x12)
+enum class GraphKey { Mean, Peaks, Bursts, Wifi, Sweep };
+
+QPixmap graphSwatch(GraphKey kind, const QPalette &pal) {
+    QPixmap px(22, 12);
+    px.fill(Qt::transparent);
+    QPainter q(&px);
+    const QRect r(0, 0, 22, 12);
+    switch (kind) {
+    case GraphKey::Mean: {
+        QColor hl = pal.color(QPalette::Highlight);
+        hl.setAlpha(90);
+        q.fillRect(r.adjusted(0, 4, 0, 0), hl);
+        q.setPen(QPen(pal.color(QPalette::Highlight), 1.5));
+        q.drawLine(0, 4, 22, 4);
+        break;
+    }
+    case GraphKey::Peaks:
+        q.setPen(QPen(QColor(0xe0, 0x70, 0x30), 2));
+        q.drawLine(0, 8, 7, 3);
+        q.drawLine(7, 3, 14, 9);
+        q.drawLine(14, 9, 22, 2);
+        break;
+    case GraphKey::Bursts:
+        q.fillRect(r, QColor(255, 140, 0, 70));
+        break;
+    case GraphKey::Wifi: {
+        QColor c = kWifiColour;
+        c.setAlpha(60);
+        q.fillRect(r, c);
+        c.setAlpha(220);
+        q.setPen(QPen(c, 2));
+        q.drawLine(0, 1, 22, 1);
+        break;
+    }
+    case GraphKey::Sweep:
+        q.fillRect(r.adjusted(0, 3, 0, -3), kSweepColour);
+        break;
+    }
+    return px;
+}
+
+// la muestra de un nivel de canal de ELRS (una marca de su color)
+QPixmap levelSwatch(elrs::Level l) {
+    QPixmap px(22, 12);
+    px.fill(Qt::transparent);
+    QPainter q(&px);
+    q.fillRect(QRect(0, 0, 22, 12).adjusted(5, 0, -5, 0), levelColour(l));
+    return px;
+}
+}  // namespace
+
+// una fila de la leyenda desde la columna 1: cada muestra con su texto al lado (legendText_, en orden); devuelve la
+// columna siguiente
+int ElrsAnalyzer::addLegendRow(QGridLayout *legend, int row, const QVector<QPixmap> &swatches) {
+    int col = 1;
+    for (const QPixmap &px : swatches) {
+        auto *sw = new QLabel;
+        sw->setPixmap(px);
+        auto *tx = new QLabel;
+        legendText_ << tx;
+        legend->addWidget(sw, row, col);
+        legend->addWidget(tx, row, col + 1);
+        col += 2;
+    }
+    return col;
+}
+
 QWidget *ElrsAnalyzer::buildGraph() {
     auto *top = new QWidget;
     auto *tv = new QVBoxLayout(top);
@@ -345,57 +414,19 @@ QWidget *ElrsAnalyzer::buildGraph() {
     legend->setContentsMargins(4, 2, 4, 0);
     legend->setHorizontalSpacing(6);
     legend->setVerticalSpacing(2);
-    {
-        // fila 0: la grafica; fila 1: los canales de ELRS. Cada muestra, su texto al lado (legendText_, en orden)
-        const auto pix = [](int kind, const QPalette &pal) {
-            QPixmap px(22, 12);
-            px.fill(Qt::transparent);
-            QPainter q(&px);
-            const QRect r(0, 0, 22, 12);
-            QColor hl = pal.color(QPalette::Highlight);
-            switch (kind) {
-            case 0: hl.setAlpha(90); q.fillRect(r.adjusted(0, 4, 0, 0), hl); q.setPen(QPen(pal.color(QPalette::Highlight), 1.5));
-                    q.drawLine(0, 4, 22, 4); break;                                                    // media
-            case 1: q.setPen(QPen(QColor(0xe0, 0x70, 0x30), 2)); q.drawLine(0, 8, 7, 3); q.drawLine(7, 3, 14, 9);
-                    q.drawLine(14, 9, 22, 2); break;                                                   // picos
-            case 2: q.fillRect(r, QColor(255, 140, 0, 70)); break;                                     // rafagas
-            case 3: { QColor c = kWifiColour; c.setAlpha(60); q.fillRect(r, c); c.setAlpha(220); q.setPen(QPen(c, 2));
-                    q.drawLine(0, 1, 22, 1); break; }                                                 // WiFi
-            case 4: q.fillRect(r.adjusted(0, 3, 0, -3), kSweepColour); break;                                    // barrido
-            default: q.fillRect(r.adjusted(5, 0, -5, 0), levelColour(static_cast<elrs::Level>(kind - 5)));  // niveles
-            }
-            return px;
-        };
-        legendGraph_ = new QLabel;
-        legendElrs_ = new QLabel;
-        legend->addWidget(legendGraph_, 0, 0);
-        legend->addWidget(legendElrs_, 1, 0);
-        // 0 media, 1 picos, 2 rafagas, 3 WiFi, 4 barrido | 5+: niveles (Unknown, Clean, Busy, Bad) en el orden limpio..sin medir
-        const int graph[] = {0, 1, 2, 3, 4};
-        const int levels[] = {5 + int(elrs::Level::Clean), 5 + int(elrs::Level::Busy), 5 + int(elrs::Level::Bad),
-                              5 + int(elrs::Level::Unknown)};
-        int col = 1;
-        for (int k : graph) {
-            auto *sw = new QLabel;
-            sw->setPixmap(pix(k, palette()));
-            auto *tx = new QLabel;
-            legendText_ << tx;
-            legend->addWidget(sw, 0, col);
-            legend->addWidget(tx, 0, col + 1);
-            col += 2;
-        }
-        col = 1;
-        for (int k : levels) {
-            auto *sw = new QLabel;
-            sw->setPixmap(pix(k, palette()));
-            auto *tx = new QLabel;
-            legendText_ << tx;
-            legend->addWidget(sw, 1, col);
-            legend->addWidget(tx, 1, col + 1);
-            col += 2;
-        }
-        legend->setColumnStretch(col + 8, 1);
-    }
+    // fila 0: la grafica; fila 1: los canales de ELRS. Cada muestra, su texto al lado (legendText_, en orden)
+    legendGraph_ = new QLabel;
+    legendElrs_ = new QLabel;
+    legend->addWidget(legendGraph_, 0, 0);
+    legend->addWidget(legendElrs_, 1, 0);
+    const QPalette pal = palette();
+    addLegendRow(legend, 0, {graphSwatch(GraphKey::Mean, pal), graphSwatch(GraphKey::Peaks, pal),
+                             graphSwatch(GraphKey::Bursts, pal), graphSwatch(GraphKey::Wifi, pal),
+                             graphSwatch(GraphKey::Sweep, pal)});
+    // los niveles en el orden limpio..sin medir
+    const int col = addLegendRow(legend, 1, {levelSwatch(elrs::Level::Clean), levelSwatch(elrs::Level::Busy),
+                                             levelSwatch(elrs::Level::Bad), levelSwatch(elrs::Level::Unknown)});
+    legend->setColumnStretch(col + 8, 1);
     tv->addLayout(legend);
     legendNote_ = new QLabel;
     legendNote_->setWordWrap(true);
@@ -677,6 +708,22 @@ TipsKey parseKey(const QString &k) {
     for (int i = 1; i < parts.size(); i++) o.tips.insert(parts[i].toInt());
     return o;
 }
+
+// "veredicto limpia -> mucha +Gemini -RateClean ajustes" (para el log)
+QString change_text(const TipsKey &a, const TipsKey &b) {
+    const auto known = [](int v, int n) { return v >= 0 && v < n; };
+    const int nTips = int(std::size(kTipNames));
+    QStringList what;
+    if (a.verdict != b.verdict && known(a.verdict, 4) && known(b.verdict, 4))
+        what << QStringLiteral("veredicto %1 -> %2").arg(QLatin1String(kVerdictNames[a.verdict]),
+                                                        QLatin1String(kVerdictNames[b.verdict]));
+    for (int x : b.tips)
+        if (!a.tips.contains(x) && known(x, nTips)) what << QStringLiteral("+%1").arg(QLatin1String(kTipNames[x]));
+    for (int x : a.tips)
+        if (!b.tips.contains(x) && known(x, nTips)) what << QStringLiteral("-%1").arg(QLatin1String(kTipNames[x]));
+    if (a.rest != b.rest) what << QStringLiteral("ajustes");
+    return what.join(QLatin1Char(' '));
+}
 }  // namespace
 
 void ElrsAnalyzer::checkSteady() {
@@ -686,25 +733,24 @@ void ElrsAnalyzer::checkSteady() {
     const QString key = run_.currentTipsKey;
     const double t = session_.now();
     if (key != run_.steadyKey) {
-        if (!run_.steadyKey.isEmpty()) {
-            const TipsKey a = parseKey(run_.steadyKey), b = parseKey(key);
-            QStringList what;
-            if (a.verdict != b.verdict && a.verdict >= 0 && a.verdict < 4 && b.verdict >= 0 && b.verdict < 4)
-                what << QStringLiteral("veredicto %1 -> %2").arg(QLatin1String(kVerdictNames[a.verdict]),
-                                                                QLatin1String(kVerdictNames[b.verdict]));
-            for (int x : b.tips)
-                if (!a.tips.contains(x) && x >= 0 && x < int(std::size(kTipNames))) what << QStringLiteral("+%1").arg(QLatin1String(kTipNames[x]));
-            for (int x : a.tips)
-                if (!b.tips.contains(x) && x >= 0 && x < int(std::size(kTipNames))) what << QStringLiteral("-%1").arg(QLatin1String(kTipNames[x]));
-            if (a.rest != b.rest) what << QStringLiteral("ajustes");
-            KP_LOGI("elrs: cambia la recomendacion a los %.0f s (barrido %d): %s", t, run_.sweeps,
-                    qUtf8Printable(what.join(QLatin1Char(' '))));
-            run_.lastChange = a.verdict != b.verdict ? tr("the verdict") : tr("which suggestions apply");
-        }
+        if (!run_.steadyKey.isEmpty()) noteChange(run_.steadyKey, key, t);
         run_.steadyKey = key;
         run_.steadySince = t;
     }
-    if (!autoStop_->isChecked()) return;
+    if (autoStop_->isChecked()) stopIfDone(t);
+}
+
+// lo que ha cambiado en la recomendacion (al log, y que fue para el texto de "sigue cambiando")
+void ElrsAnalyzer::noteChange(const QString &from, const QString &to, double t) {
+    const TipsKey a = parseKey(from), b = parseKey(to);
+    KP_LOGI("elrs: cambia la recomendacion a los %.0f s (barrido %d): %s", t, run_.sweeps,
+            qUtf8Printable(change_text(a, b)));
+    run_.lastChange = a.verdict != b.verdict ? tr("the verdict") : tr("which suggestions apply");
+}
+
+// parar solo: con la media llena y un minimo de tiempo, si la recomendacion lleva kSteadyS sin cambiar o si ya van
+// kMaxRunS
+void ElrsAnalyzer::stopIfDone(double t) {
     // la media ya tiene sus barridos y ha corrido un minimo (un AP callado se pilla a ratos)
     const int memory = memory_->currentData().toInt();
     if (run_.sweeps < memory || t < kMinRunS) return;

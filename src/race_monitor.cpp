@@ -281,61 +281,67 @@ std::optional<Move> Monitor::suggest_for(int i, const std::vector<advisor::Candi
                                          const std::vector<Move> &prev) const {
     const ChannelHealth &h = health_[i];
     std::vector<advisor::Candidate> others;
-    int n_a = 0, n_h = 0;
-    for (size_t j = 0; j < chans.size(); j++) {
-        if (static_cast<int>(j) == i) continue;
-        others.push_back(chans[j]);
-        (chans[j].hdzero ? n_h : n_a)++;
-    }
-    (h.ch.hdzero ? n_h : n_a)++;  // el que se busca
-    const std::vector<advisor::Candidate> none;
-    const auto adv = advisor::advise(last_bins_, foreign, h.ch.hdzero ? none : cand, h.ch.hdzero ? cand : none,
-                                     n_a, n_h, &wifi_, others);
-    // el elegido por la busqueda (no fijado) de su sistema; se comprueba que no pisa a los demas por si no
-    // hubiera sitio (advise lo devuelve igual, con complete = false)
-    const auto fits = [&](const advisor::Candidate &c) {
-        bool ok = std::fabs(c.mhz - h.ch.mhz) >= kMatchMhz;
-        for (const auto &o : others) ok = ok && std::fabs(o.mhz - c.mhz) >= advisor::min_spacing(o, c);
-        return ok;
-    };
-    const advisor::Pick *best = nullptr;
-    for (const auto &pk : adv.picks) {
-        if (pk.pinned || pk.r.ch.hdzero != h.ch.hdzero || !fits(pk.r.ch)) continue;
-        if (!best || pk.r.cost < best->r.cost) best = &pk;
-    }
+    for (size_t j = 0; j < chans.size(); j++)
+        if (static_cast<int>(j) != i) others.push_back(chans[j]);
     // lo que se gana: lo atribuible a su canal actual (interferencia e intrusos) contra el coste del nuevo. La
     // SNR baja y los cortes no entran: con el canal limpio no se arreglan cambiando de canal
-    advisor::Candidate to;
-    float gain = -1;
-    if (best) {
-        to = best->r.ch;
-        gain = h.penalty - best->r.cost;
-    }
-    // la anterior se mantiene si sigue valiendo (con menos mejora que para salir: kMoveKeepGainDb) y la nueva no
-    // es claramente mejor
-    bool kept = false;
-    const auto pv = std::find_if(prev.begin(), prev.end(), [&](const Move &m) { return m.from == i; });
-    if (pv != prev.end()) {
-        const advisor::Candidate *pc = nullptr;
-        for (const auto &c : cand)
-            if (c.name == pv->to.name && c.hdzero == pv->to.hdzero) pc = &c;
-        if (pc && fits(*pc)) {
-            const float pg = h.penalty - advisor::rate(*pc, last_bins_, foreign, wifi_).cost;
-            if (pg >= kMoveKeepGainDb && gain < pg + kMoveMinGainDb) {
-                to = *pc;
-                gain = pg;
-                kept = true;
-            }
-        }
-    }
-    if (gain < (kept ? kMoveKeepGainDb : kMoveMinGainDb)) return std::nullopt;
+    Choice c;
+    if (const auto best = best_channel(h.ch, others, cand, foreign)) c = Choice{best->ch, h.penalty - best->cost};
+    keep_previous(i, others, cand, foreign, prev, c);
+    if (c.gain < (c.kept ? kMoveKeepGainDb : kMoveMinGainDb)) return std::nullopt;
     Move mv;
     mv.from = i;
-    mv.to = to;
-    mv.gain_db = gain;
+    mv.to = c.to;
+    mv.gain_db = c.gain;
     mv.cause = static_cast<float>(h.intruders) / static_cast<float>(h.sweeps) > 0.2f ? Cause::Intruder
                                                                                        : Cause::Interference;
     return mv;
+}
+
+// el canal c no es el actual (from) ni pisa a los demas
+bool Monitor::fits(const advisor::Candidate &c, const advisor::Candidate &from,
+                   const std::vector<advisor::Candidate> &others) {
+    bool ok = std::fabs(c.mhz - from.mhz) >= kMatchMhz;
+    for (const auto &o : others) ok = ok && std::fabs(o.mhz - c.mhz) >= advisor::min_spacing(o, c);
+    return ok;
+}
+
+// el elegido por la busqueda (no fijado) del sistema de from, entre cand; se comprueba que no pisa a los demas por
+// si no hubiera sitio (advise lo devuelve igual, con complete = false)
+std::optional<advisor::Rating> Monitor::best_channel(const advisor::Candidate &from,
+                                                     const std::vector<advisor::Candidate> &others,
+                                                     const std::vector<advisor::Candidate> &cand,
+                                                     const std::vector<advisor::Signal> &foreign) const {
+    int n_a = 0, n_h = 0;
+    for (const auto &o : others) (o.hdzero ? n_h : n_a)++;
+    (from.hdzero ? n_h : n_a)++;  // el que se busca
+    const std::vector<advisor::Candidate> none;
+    const auto adv = advisor::advise(last_bins_, foreign, from.hdzero ? none : cand, from.hdzero ? cand : none,
+                                     n_a, n_h, &wifi_, others);
+    const advisor::Pick *best = nullptr;
+    for (const auto &pk : adv.picks) {
+        if (pk.pinned || pk.r.ch.hdzero != from.hdzero || !fits(pk.r.ch, from, others)) continue;
+        if (!best || pk.r.cost < best->r.cost) best = &pk;
+    }
+    if (!best) return std::nullopt;
+    return best->r;
+}
+
+// la recomendacion anterior para el fijado i se mantiene si sigue valiendo (con menos mejora que para salir:
+// kMoveKeepGainDb) y la nueva (c) no es claramente mejor
+void Monitor::keep_previous(int i, const std::vector<advisor::Candidate> &others,
+                            const std::vector<advisor::Candidate> &cand,
+                            const std::vector<advisor::Signal> &foreign, const std::vector<Move> &prev,
+                            Choice &c) const {
+    const ChannelHealth &h = health_[i];
+    const auto pv = std::find_if(prev.begin(), prev.end(), [&](const Move &m) { return m.from == i; });
+    if (pv == prev.end()) return;
+    const advisor::Candidate *pc = nullptr;
+    for (const auto &ch : cand)
+        if (ch.name == pv->to.name && ch.hdzero == pv->to.hdzero) pc = &ch;
+    if (!pc || !fits(*pc, h.ch, others)) return;
+    const float pg = h.penalty - advisor::rate(*pc, last_bins_, foreign, wifi_).cost;
+    if (pg >= kMoveKeepGainDb && c.gain < pg + kMoveMinGainDb) c = Choice{*pc, pg, true};
 }
 
 std::vector<Move> Monitor::suggest_all(const std::vector<advisor::Candidate> &analog,

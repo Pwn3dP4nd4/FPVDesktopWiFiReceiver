@@ -125,9 +125,13 @@ private:
     QWidget *buildSide();
     void addBandsPanel(QVBoxLayout *side);
     void addPilotsPanel(QVBoxLayout *side);
+    void narrowChanged(bool on);
+    void regionChanged();
     QWidget *buildLegend();
     QWidget *buildAdvicePage();
     QWidget *buildRacePage();
+    QHBoxLayout *buildArmRow();
+    void raceTableMenu(const QPoint &pos);
     void retranslate();
     void toggle();
     void stop();

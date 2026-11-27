@@ -276,6 +276,23 @@ bool DigitalScan::wants_timing() const {
 }
 
 std::vector<DigitalSignal> DigitalScan::step_done(double centre_hz) {
+    const std::vector<Abs> now = absolute(centre_hz);
+    cur_.clear();
+    std::vector<Abs> whole;
+    for (const auto &a : now)
+        if (!a.clip_lo && !a.clip_hi) whole.push_back(a);
+    join_halves(now, centre_hz, whole);
+    prev_ = now;
+    prevCentre_ = centre_hz;
+    havePrev_ = true;
+    std::vector<DigitalSignal> out;
+    for (const auto &a : whole)
+        if (const auto sig = accept(a)) out.push_back(*sig);
+    return out;
+}
+
+// los bloques del ultimo analyse(), en frecuencia absoluta (centre_hz: centro real del paso)
+std::vector<DigitalScan::Abs> DigitalScan::absolute(double centre_hz) const {
     std::vector<Abs> now;
     for (const auto &r : cur_) {
         now.push_back(Abs{centre_hz + r.f0_hz, centre_hz + r.f1_hz, r.clip_lo, r.clip_hi, r.snr_db, r.flat, r.duty,
@@ -285,52 +302,47 @@ std::vector<DigitalSignal> DigitalScan::step_done(double centre_hz) {
                 r.clip_lo ? " [cut low]" : "", r.clip_hi ? " [cut high]" : "", r.snr_db, r.flat, r.duty,
                 r.frame_s * 1e3);
     }
-    cur_.clear();
+    return now;
+}
 
-    std::vector<Abs> whole;
+// cortada aqui y en el paso anterior, por lados opuestos, y solapadas: una sola senal (se anade a whole)
+void DigitalScan::join_halves(const std::vector<Abs> &now, double centre_hz, std::vector<Abs> &whole) const {
+    if (!havePrev_ || std::fabs(centre_hz - prevCentre_) > 2 * edge_) return;
+    const bool up = centre_hz > prevCentre_;
     for (const auto &a : now)
-        if (!a.clip_lo && !a.clip_hi) whole.push_back(a);
-    // cortada aqui y en el paso anterior, por lados opuestos, y solapadas: una sola senal
-    if (havePrev_ && std::fabs(centre_hz - prevCentre_) <= 2 * edge_) {
-        const bool up = centre_hz > prevCentre_;
-        for (const auto &a : now)
-            for (const auto &p : prev_) {
-                const Abs &lo = up ? p : a, &hi = up ? a : p;
-                if (!lo.clip_hi || lo.clip_lo || !hi.clip_lo || hi.clip_hi) continue;
-                if (std::min(lo.f1, hi.f1) - std::max(lo.f0, hi.f0) < 1e6) continue;
-                // plano y continuo: el de la mitad mejor. Cada mitad ve la senal junto al borde de su filtro y uno
-                // de los dos pasos la tiene encima de su DC: con un VTX HDZero real en R1 el paso de 5650 MHz media
-                // flat 0.6-0.8 y duty 0.5-0.9 y el de 5670 MHz 0.96 y 1.00 en cada escaneo. El WiFi sigue fuera:
-                // va a rafagas en las dos mitades.
-                whole.push_back(Abs{lo.f0, hi.f1, false, false, std::max(lo.snr, hi.snr), std::max(lo.flat, hi.flat),
-                                    std::max(lo.duty, hi.duty), lo.frame_s > 0 ? lo.frame_s : hi.frame_s});
-            }
-    }
-    prev_ = now;
-    prevCentre_ = centre_hz;
-    havePrev_ = true;
+        for (const auto &p : prev_) {
+            const Abs &lo = up ? p : a, &hi = up ? a : p;
+            if (!lo.clip_hi || lo.clip_lo || !hi.clip_lo || hi.clip_hi) continue;
+            if (std::min(lo.f1, hi.f1) - std::max(lo.f0, hi.f0) < 1e6) continue;
+            // plano y continuo: el de la mitad mejor. Cada mitad ve la senal junto al borde de su filtro y uno
+            // de los dos pasos la tiene encima de su DC: con un VTX HDZero real en R1 el paso de 5650 MHz media
+            // flat 0.6-0.8 y duty 0.5-0.9 y el de 5670 MHz 0.96 y 1.00 en cada escaneo. El WiFi sigue fuera:
+            // va a rafagas en las dos mitades.
+            whole.push_back(Abs{lo.f0, hi.f1, false, false, std::max(lo.snr, hi.snr), std::max(lo.flat, hi.flat),
+                                std::max(lo.duty, hi.duty), lo.frame_s > 0 ? lo.frame_s : hi.frame_s});
+        }
+}
 
-    std::vector<DigitalSignal> out;
-    for (const auto &a : whole) {
-        // con trama TDD regular, los huecos son de la trama (DJI: duty 0.15-0.9): no se exige continuidad, y la trama
-        // ya descarta el FM analogico y el WiFi, asi que basta con menos planitud (DJI real a 1-2 m: a 30-40 dB los
-        // flancos ocupan ~2 MHz por lado y el multitrayecto abomba el bloque ~11 dB; flat 0.34-0.99)
-        // Solo con la trama de DJI: el FM analogico tambien puede dar un "periodo" (el contenido de la imagen; un VTX
-        // real en R4 daba 1.0-1.3 ms con flat 0.14-0.38), asi que cualquier otra trama tiene que ser plana como siempre
-        const bool tdd = a.frame_s > 0;
-        const bool dji = std::fabs(a.frame_s - kDjiFrame) <= kDjiFrameTol;
-        if (a.snr < kMinSnrDb || a.flat < (dji ? kMinFlatTdd : kMinFlat) || (!tdd && a.duty < kMinDuty)) continue;
-        DigitalSignal s;
-        s.centre_hz = (a.f0 + a.f1) / 2;
-        s.width_hz = a.f1 - a.f0;
-        s.snr_db = a.snr;
-        s.kind = classify(s.centre_hz, s.width_hz, a.frame_s);
-        if (s.kind == Kind::None) continue;
-        KP_LOGI("digital: %s at %.1f MHz, %.1f MHz wide, %.1f dB", kind_code(s.kind), s.centre_hz / 1e6,
-                s.width_hz / 1e6, s.snr_db);
-        out.push_back(s);
-    }
-    return out;
+// un bloque entero es una senal digital si es plano, destaca y (sin trama) no tiene huecos, y su ancho y su sitio
+// dicen de que sistema es
+std::optional<DigitalSignal> DigitalScan::accept(const Abs &a) {
+    // con trama TDD regular, los huecos son de la trama (DJI: duty 0.15-0.9): no se exige continuidad, y la trama
+    // ya descarta el FM analogico y el WiFi, asi que basta con menos planitud (DJI real a 1-2 m: a 30-40 dB los
+    // flancos ocupan ~2 MHz por lado y el multitrayecto abomba el bloque ~11 dB; flat 0.34-0.99)
+    // Solo con la trama de DJI: el FM analogico tambien puede dar un "periodo" (el contenido de la imagen; un VTX
+    // real en R4 daba 1.0-1.3 ms con flat 0.14-0.38), asi que cualquier otra trama tiene que ser plana como siempre
+    const bool tdd = a.frame_s > 0;
+    const bool dji = std::fabs(a.frame_s - kDjiFrame) <= kDjiFrameTol;
+    if (a.snr < kMinSnrDb || a.flat < (dji ? kMinFlatTdd : kMinFlat) || (!tdd && a.duty < kMinDuty)) return std::nullopt;
+    DigitalSignal s;
+    s.centre_hz = (a.f0 + a.f1) / 2;
+    s.width_hz = a.f1 - a.f0;
+    s.snr_db = a.snr;
+    s.kind = classify(s.centre_hz, s.width_hz, a.frame_s);
+    if (s.kind == Kind::None) return std::nullopt;
+    KP_LOGI("digital: %s at %.1f MHz, %.1f MHz wide, %.1f dB", kind_code(s.kind), s.centre_hz / 1e6,
+            s.width_hz / 1e6, s.snr_db);
+    return s;
 }
 
 }  // namespace kpx

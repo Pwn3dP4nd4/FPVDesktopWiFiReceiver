@@ -11,6 +11,7 @@
 #pragma once
 #include <complex>
 #include <cstddef>
+#include <optional>
 #include <vector>
 
 namespace kpx {
@@ -73,6 +74,9 @@ private:
         float snr, flat, duty;
         double frame_s;
     };
+    std::vector<Abs> absolute(double centre_hz) const;
+    void join_halves(const std::vector<Abs> &now, double centre_hz, std::vector<Abs> &whole) const;
+    static std::optional<DigitalSignal> accept(const Abs &a);
     std::vector<WideRegion> cur_;
     std::vector<Abs> prev_;
     double prevCentre_ = 0, edge_ = 16.5e6;

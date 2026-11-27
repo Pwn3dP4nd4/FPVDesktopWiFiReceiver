@@ -54,6 +54,17 @@ RaceHistory::Cat RaceHistory::category(Ev k) {
 RaceHistory::RaceHistory(QWidget *parent) : QWidget(parent) {
     auto *v = new QVBoxLayout(this);
     v->setContentsMargins(4, 4, 4, 4);
+    v->addLayout(buildTop());
+    histStack_ = new QStackedWidget;
+    histStack_->addWidget(buildPilotView());
+    histStack_->addWidget(buildTimeline());
+    v->addWidget(histStack_, 1);
+    v->addLayout(buildButtons());
+    retranslate();
+}
+
+// arriba: que carrera, que vista (por piloto / cronologica) y el veredicto
+QHBoxLayout *RaceHistory::buildTop() {
     auto *top = new QHBoxLayout;
     histRaceLbl_ = new QLabel;
     top->addWidget(histRaceLbl_);
@@ -75,40 +86,45 @@ RaceHistory::RaceHistory(QWidget *parent) : QWidget(parent) {
     histVerdict_->setWordWrap(true);
     histVerdict_->setTextFormat(Qt::RichText);
     top->addWidget(histVerdict_, 1);
-    v->addLayout(top);
-    histStack_ = new QStackedWidget;
-    {
-        auto *split = new QSplitter(Qt::Horizontal);
-        pilotTable_ = new QTreeWidget;
-        pilotTable_->setObjectName(QStringLiteral("historyPilots"));
-        pilotTable_->setRootIsDecorated(false);
-        pilotTable_->setColumnCount(7);
-        pilotTable_->header()->setStretchLastSection(false);
-        // rebuildPilotView bloquea las senales: lo que llega aqui lo ha elegido el usuario
-        connect(pilotTable_, &QTreeWidget::currentItemChanged, this, [this] {
-            pilotPicked_ = true;
-            showPilotEvents();
-        });
-        split->addWidget(pilotTable_);
-        auto *right = new QWidget;
-        auto *rv = new QVBoxLayout(right);
-        rv->setContentsMargins(0, 0, 0, 0);
-        pilotInfo_ = new QLabel;
-        pilotInfo_->setObjectName(QStringLiteral("historyPilotInfo"));
-        pilotInfo_->setWordWrap(true);
-        pilotInfo_->setTextFormat(Qt::RichText);
-        rv->addWidget(pilotInfo_);
-        pilotEvents_ = new QTreeWidget;
-        pilotEvents_->setObjectName(QStringLiteral("historyEvents"));
-        pilotEvents_->setColumnCount(3);
-        pilotEvents_->header()->setStretchLastSection(true);
-        pilotEvents_->setWordWrap(true);
-        rv->addWidget(pilotEvents_, 1);
-        split->addWidget(right);
-        split->setStretchFactor(0, 5);
-        split->setStretchFactor(1, 6);
-        histStack_->addWidget(split);
-    }
+    return top;
+}
+
+// por piloto: la tabla de pilotos y, al lado, los eventos del elegido
+QWidget *RaceHistory::buildPilotView() {
+    auto *split = new QSplitter(Qt::Horizontal);
+    pilotTable_ = new QTreeWidget;
+    pilotTable_->setObjectName(QStringLiteral("historyPilots"));
+    pilotTable_->setRootIsDecorated(false);
+    pilotTable_->setColumnCount(7);
+    pilotTable_->header()->setStretchLastSection(false);
+    // rebuildPilotView bloquea las senales: lo que llega aqui lo ha elegido el usuario
+    connect(pilotTable_, &QTreeWidget::currentItemChanged, this, [this] {
+        pilotPicked_ = true;
+        showPilotEvents();
+    });
+    split->addWidget(pilotTable_);
+    auto *right = new QWidget;
+    auto *rv = new QVBoxLayout(right);
+    rv->setContentsMargins(0, 0, 0, 0);
+    pilotInfo_ = new QLabel;
+    pilotInfo_->setObjectName(QStringLiteral("historyPilotInfo"));
+    pilotInfo_->setWordWrap(true);
+    pilotInfo_->setTextFormat(Qt::RichText);
+    rv->addWidget(pilotInfo_);
+    pilotEvents_ = new QTreeWidget;
+    pilotEvents_->setObjectName(QStringLiteral("historyEvents"));
+    pilotEvents_->setColumnCount(3);
+    pilotEvents_->header()->setStretchLastSection(true);
+    pilotEvents_->setWordWrap(true);
+    rv->addWidget(pilotEvents_, 1);
+    split->addWidget(right);
+    split->setStretchFactor(0, 5);
+    split->setStretchFactor(1, 6);
+    return split;
+}
+
+// cronologica: todos los eventos, uno por fila
+QWidget *RaceHistory::buildTimeline() {
     histTable_ = new QTreeWidget;
     histTable_->setObjectName(QStringLiteral("historyTimeline"));
     histTable_->setRootIsDecorated(false);
@@ -116,8 +132,11 @@ RaceHistory::RaceHistory(QWidget *parent) : QWidget(parent) {
     histTable_->header()->setStretchLastSection(true);
     histTable_->setSelectionMode(QAbstractItemView::ExtendedSelection);
     histTable_->setWordWrap(true);
-    histStack_->addWidget(histTable_);
-    v->addWidget(histStack_, 1);
+    return histTable_;
+}
+
+// abajo: la explicacion y copiar, guardar y borrar
+QHBoxLayout *RaceHistory::buildButtons() {
     auto *r = new QHBoxLayout;
     histHint_ = new QLabel;
     histHint_->setWordWrap(true);
@@ -131,8 +150,7 @@ RaceHistory::RaceHistory(QWidget *parent) : QWidget(parent) {
     histClear_ = new QPushButton;
     connect(histClear_, &QPushButton::clicked, this, &RaceHistory::clearRequested);
     r->addWidget(histClear_);
-    v->addLayout(r);
-    retranslate();
+    return r;
 }
 
 void RaceHistory::changeEvent(QEvent *e) {
