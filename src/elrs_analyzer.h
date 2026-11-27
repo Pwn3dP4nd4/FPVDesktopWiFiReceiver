@@ -56,10 +56,10 @@ public:
     // el otro analizador se ha puesto en marcha (el barrido ya es suyo): parar sin pedirselo al backend
     void abandon(const QString &why);
     void startForTest() { if (!session_.running()) toggle(); }
-    const elrs::Report &reportForTest() const { return report_; }
+    const elrs::Report &reportForTest() const { return run_.report; }
     void setPilotsForTest(int n);
     void setTimeForTest(double s) { session_.setTimeForTest(s); }
-    elrs::Verdict shownVerdictForTest() const { return shownVerdict_; }
+    elrs::Verdict shownVerdictForTest() const { return run_.shownVerdict; }
     void feedForTest(const SurveyData &d) { onSurvey(d); }
     bool runningForTest() const { return session_.running(); }
     void setAutoStopForTest(bool on);
@@ -110,34 +110,38 @@ private:
     ElrsView *view_ = nullptr;
     QTreeWidget *detected_ = nullptr;
     QTextBrowser *tips_ = nullptr;
-    SurveyData last_;
-    elrs::Report report_;
     SurveySession session_;  // en marcha, adaptador, paradas pendientes y el reloj del analisis
     // ---- lo que se muestra no salta a cada barrido ----
     static constexpr double kHoldS = 8;      // un veredicto nuevo tiene que durar esto para mostrarse
     static constexpr double kKeepS = 12;     // una sugerencia o algo "en el aire" sigue a la vista esto tras dejar de verse
     static constexpr double kRenderS = 5;    // las sugerencias (sus cifras) se rehacen como mucho cada esto
     static constexpr double kDimS = 5;       // una fila de "En el aire" sin verse esto: mas tenue
-    elrs::Report shownReport_;               // el informe de las cifras del resumen y la tira (= veredicto mostrado)
-    int shownSweep_ = -1;                    // el barrido de shownReport_
     static constexpr double kMinRunS = 30;   // parar solo: al menos esto midiendo (un AP callado se pilla a ratos)
     static constexpr double kSteadyS = 15;   // y el veredicto y las sugerencias no han cambiado en esto
     static constexpr double kMaxRunS = 120;  // y, cambie o no, como mucho esto
-    QString lastChange_;                     // lo ultimo que cambio (para decirlo al parar a los kMaxRunS)
-    QString currentTipsKey_;                 // la estructura de las sugerencias de ahora (updateTips)
-    QString steadyKey_;                      // lo que se ve (veredicto, sugerencias, en el aire) y desde cuando
-    double steadySince_ = 0;
-    elrs::Verdict shownVerdict_ = elrs::Verdict::Unknown, candVerdict_ = elrs::Verdict::Unknown;
-    double candSince_ = 0;
-    QHash<int, double> tipSeen_;             // por sugerencia: la ultima vez que salio
     struct Held {                            // una fila de "En el aire"
         QStringList cols;
         QColor colour;
         double seen = 0;
     };
-    QMap<QString, Held> held_;               // por clave ("wifi:06", "other:1:2450"): ordenadas
-    QStringList shownKeys_;
-    QString tipsKey_, tipsHtml_;              // lo ultimo dibujado en las sugerencias (y su estructura)
-    double tipsT_ = -1e9;
-    int sweeps_ = 0;
+    // Lo de un analisis: al empezar otro se vuelve a los valores de aqui (run_ = Run{}), sin olvidar ninguno
+    struct Run {
+        SurveyData last;
+        elrs::Report report;
+        elrs::Report shownReport;            // el informe de las cifras del resumen y la tira (= veredicto mostrado)
+        int shownSweep = -1;                 // el barrido de shownReport
+        QString lastChange;                  // lo ultimo que cambio (para decirlo al parar a los kMaxRunS)
+        QString currentTipsKey;              // la estructura de las sugerencias de ahora (updateTips)
+        QString steadyKey;                   // lo que se ve (veredicto, sugerencias, en el aire) y desde cuando
+        double steadySince = 0;
+        elrs::Verdict shownVerdict = elrs::Verdict::Unknown, candVerdict = elrs::Verdict::Unknown;
+        double candSince = 0;
+        QHash<int, double> tipSeen;          // por sugerencia: la ultima vez que salio
+        QMap<QString, Held> held;            // por clave ("wifi:06", "other:1:2450"): ordenadas
+        QStringList shownKeys;
+        QString tipsKey, tipsHtml;           // lo ultimo dibujado en las sugerencias (y su estructura)
+        double tipsT = -1e9;
+        int sweeps = 0;
+    };
+    Run run_;
 };
