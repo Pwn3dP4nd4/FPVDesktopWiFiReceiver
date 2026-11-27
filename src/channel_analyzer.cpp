@@ -148,6 +148,74 @@ int defaultRegion() {
     return 1;
 }
 
+// Las muestras de la leyenda del analizador (22x12), como se dibuja cada cosa en el espectro
+enum class Swatch {
+    Area,     // relleno y borde arriba (nivel medio)
+    Line,     // linea (pico reciente)
+    DashedV,  // discontinua vertical (piloto en el aire)
+    Band,     // fondo/franja (WiFi, canal recomendado)
+    Mark,     // marca de canal
+    Wifi,     // red WiFi: su canal (barra) y el resto de su bloque (discontinua)
+    Pinned,   // canal fijado: franja con bordes y chincheta
+    Sweep,    // barra de barrido: recien medido a la derecha, apagandose hacia atras
+};
+
+QPixmap swatch(Swatch kind, const QColor &c) {
+    QPixmap px(22, 12);
+    px.fill(Qt::transparent);
+    QPainter p(&px);
+    switch (kind) {
+    case Swatch::Area: {
+        QColor f = c;
+        f.setAlpha(90);
+        p.fillRect(0, 3, 22, 9, f);
+        p.setPen(QPen(c, 1.5));
+        p.drawLine(0, 3, 22, 3);
+        break;
+    }
+    case Swatch::Line:
+        p.setPen(QPen(c, 1.5));
+        p.drawLine(0, 6, 22, 6);
+        break;
+    case Swatch::DashedV:
+        p.setPen(QPen(c, 1.5, Qt::DashLine));
+        p.drawLine(11, 0, 11, 12);
+        break;
+    case Swatch::Band:
+        p.fillRect(0, 0, 22, 12, c);
+        break;
+    case Swatch::Pinned: {
+        QColor f = c;
+        f.setAlpha(80);
+        p.fillRect(3, 0, 16, 12, f);
+        p.setPen(QPen(c, 1.5));
+        p.drawLine(QPointF(3, 0), QPointF(3, 12));
+        p.drawLine(QPointF(19, 0), QPointF(19, 12));
+        drawPin(p, QPointF(11, 11.5), c);
+        break;
+    }
+    case Swatch::Wifi:
+        p.setPen(QPen(c, 1, Qt::DashLine));
+        p.drawLine(0, 6, 22, 6);
+        p.fillRect(7, 4, 8, 4, c);
+        break;
+    case Swatch::Sweep: {
+        QLinearGradient g(0, 0, 20, 0);
+        QColor a = c;
+        a.setAlpha(50);
+        g.setColorAt(0, a);
+        g.setColorAt(1, c);
+        p.fillRect(0, 4, 20, 5, g);
+        p.setPen(QPen(c, 2));
+        p.drawLine(QPointF(20.5, 2), QPointF(20.5, 11));
+        break;
+    }
+    case Swatch::Mark:
+        p.fillRect(9, 1, 5, 10, c);
+        break;
+    }
+    return px;
+}
 }  // namespace
 
 // ---- grafica ------------------------------------------------------------------------------------------------
@@ -773,50 +841,6 @@ QWidget *ChannelAnalyzer::buildLegend() {
     lg->setHorizontalSpacing(6);
     lg->setVerticalSpacing(1);
     const QColor hl = palette().color(QPalette::Highlight);
-    const auto swatch = [](int kind, QColor c) {
-        QPixmap px(22, 12);
-        px.fill(Qt::transparent);
-        QPainter p(&px);
-        if (kind == 0) {  // area: relleno y borde arriba
-            QColor f = c;
-            f.setAlpha(90);
-            p.fillRect(0, 3, 22, 9, f);
-            p.setPen(QPen(c, 1.5));
-            p.drawLine(0, 3, 22, 3);
-        } else if (kind == 1) {  // linea
-            p.setPen(QPen(c, 1.5));
-            p.drawLine(0, 6, 22, 6);
-        } else if (kind == 2) {  // discontinua vertical
-            p.setPen(QPen(c, 1.5, Qt::DashLine));
-            p.drawLine(11, 0, 11, 12);
-        } else if (kind == 3) {  // fondo/franja
-            p.fillRect(0, 0, 22, 12, c);
-        } else if (kind == 6) {  // canal fijado: franja con bordes y chincheta
-            QColor f = c;
-            f.setAlpha(80);
-            p.fillRect(3, 0, 16, 12, f);
-            p.setPen(QPen(c, 1.5));
-            p.drawLine(QPointF(3, 0), QPointF(3, 12));
-            p.drawLine(QPointF(19, 0), QPointF(19, 12));
-            drawPin(p, QPointF(11, 11.5), c);
-        } else if (kind == 5) {  // red WiFi: su canal (barra) y el resto de su bloque (discontinua)
-            p.setPen(QPen(c, 1, Qt::DashLine));
-            p.drawLine(0, 6, 22, 6);
-            p.fillRect(7, 4, 8, 4, c);
-        } else if (kind == 7) {  // barra de barrido: recien medido a la derecha, apagandose hacia atras
-            QLinearGradient g(0, 0, 20, 0);
-            QColor a = c;
-            a.setAlpha(50);
-            g.setColorAt(0, a);
-            g.setColorAt(1, c);
-            p.fillRect(0, 4, 20, 5, g);
-            p.setPen(QPen(c, 2));
-            p.drawLine(QPointF(20.5, 2), QPointF(20.5, 11));
-        } else {  // marca de canal
-            p.fillRect(9, 1, 5, 10, c);
-        }
-        return px;
-    };
     const auto add = [&](int row, int col, const QPixmap &px) {
         auto *ic = new QLabel;
         ic->setPixmap(px);
@@ -836,18 +860,18 @@ QWidget *ChannelAnalyzer::buildLegend() {
     QColor wifi(255, 140, 0, 70), recA = kAnalogColour, recH = kHdzColour;
     recA.setAlpha(60);
     recH.setAlpha(60);
-    add(1, 0, swatch(0, hl));
-    add(2, 0, swatch(1, QColor(0xe0, 0x70, 0x30)));
-    add(3, 0, swatch(3, wifi));
-    add(4, 0, swatch(2, QColor(0xd9, 0x48, 0x3b)));
-    add(1, 3, swatch(4, QColor(0x3a, 0xa8, 0x5a)));
-    add(2, 3, swatch(4, QColor(0xe0, 0xa0, 0x20)));
-    add(3, 3, swatch(4, QColor(0xd9, 0x48, 0x3b)));
-    add(4, 3, swatch(3, recA));
-    add(5, 3, swatch(3, recH));
-    add(5, 0, swatch(5, QColor(0xc0, 0x60, 0x00)));
-    add(6, 3, swatch(6, kAnalogColour));
-    add(6, 0, swatch(7, kSweepColour));
+    add(1, 0, swatch(Swatch::Area, hl));
+    add(2, 0, swatch(Swatch::Line, QColor(0xe0, 0x70, 0x30)));
+    add(3, 0, swatch(Swatch::Band, wifi));
+    add(4, 0, swatch(Swatch::DashedV, QColor(0xd9, 0x48, 0x3b)));
+    add(1, 3, swatch(Swatch::Mark, QColor(0x3a, 0xa8, 0x5a)));
+    add(2, 3, swatch(Swatch::Mark, QColor(0xe0, 0xa0, 0x20)));
+    add(3, 3, swatch(Swatch::Mark, QColor(0xd9, 0x48, 0x3b)));
+    add(4, 3, swatch(Swatch::Band, recA));
+    add(5, 3, swatch(Swatch::Band, recH));
+    add(5, 0, swatch(Swatch::Wifi, QColor(0xc0, 0x60, 0x00)));
+    add(6, 3, swatch(Swatch::Pinned, kAnalogColour));
+    add(6, 0, swatch(Swatch::Sweep, kSweepColour));
     lg->setColumnMinimumWidth(2, 24);
     lg->setColumnStretch(5, 1);
     return box;
