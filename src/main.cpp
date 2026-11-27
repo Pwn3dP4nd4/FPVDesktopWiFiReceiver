@@ -20,6 +20,7 @@
 #include <mutex>
 
 #include "i18n.h"
+#include "theme.h"
 #include "log.h"
 
 namespace {
@@ -142,6 +143,8 @@ int main(int argc, char **argv) {
     setupApplication();
     // Idioma guardado (o el del sistema) antes de crear ningun texto
     i18n::apply(i18n::setting());
+    // Tema guardado antes de crear ninguna ventana (el del sistema: no se toca nada)
+    theme::apply(theme::setting());
     const Options opt = parseOptions(app);
     openLog(opt.verbose);
 #ifdef _WIN32

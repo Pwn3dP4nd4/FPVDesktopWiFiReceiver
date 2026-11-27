@@ -62,6 +62,7 @@ int main(int argc, char **argv) {
         st.setValue("elrs/pilots", 0);
         st.setValue("elrs/memory", 20);
         st.setValue("elrs/autoStop", false);
+        st.remove("elrs/legend");  // la leyenda, como la primera vez (desplegada)
     }
     qRegisterMetaType<SurveyData>();
     NullBackend backend_w;
@@ -233,6 +234,17 @@ int main(int argc, char **argv) {
               "cursor: MHz, canal de ELRS y dB medios y de pico");
         check(ElrsView::cursorText(2399, bins) == QStringList{QStringLiteral("2399 MHz")},
               "cursor: fuera de los canales y sin medida, solo los MHz");
+    }
+    {
+        // leyenda plegable: se recuerda al volver a abrir la ventana
+        check(drive::legendShown(w), "leyenda: se ve la primera vez");
+        drive::toggleLegend(w);
+        check(!drive::legendShown(w), "leyenda: su boton la pliega");
+        NullBackend b2;
+        ElrsAnalyzer w2(&b2);
+        check(!drive::legendShown(w2), "leyenda: plegada al volver a abrir");
+        drive::toggleLegend(w2);
+        check(drive::legendShown(w2), "leyenda: su boton la despliega");
     }
     std::printf("\n%s\n", failures ? "FALLAN algunos casos" : "OK");
     return failures ? 1 : 0;

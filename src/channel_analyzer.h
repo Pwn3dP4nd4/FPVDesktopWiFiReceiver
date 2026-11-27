@@ -15,6 +15,7 @@
 #include "race_monitor.h"
 #include "survey_session.h"
 
+class Collapsible;
 class QCheckBox;
 class QFont;
 class QComboBox;
@@ -274,6 +275,7 @@ private:
     QLabel *bandsTitle_ = nullptr, *pilotsTitle_ = nullptr, *analogLbl_ = nullptr, *hdzLbl_ = nullptr;
     QLabel *hint_ = nullptr, *state_ = nullptr, *summary_ = nullptr;
     QVector<QLabel *> legendText_;
+    Collapsible *legend_ = nullptr;  // la leyenda, plegable (src/collapsible.h)
     SpectrumView *view_ = nullptr;
     QTreeWidget *table_ = nullptr;
     SurveyData last_;

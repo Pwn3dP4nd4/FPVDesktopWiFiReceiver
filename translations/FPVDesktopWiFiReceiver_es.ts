@@ -60,6 +60,10 @@
         <translation>Barrido: recién medido (brillante), se apaga hasta la siguiente pasada</translation>
     </message>
     <message>
+        <source>Legend</source>
+        <translation>Leyenda</translation>
+    </message>
+    <message>
         <source>System</source>
         <translation>Sistema</translation>
     </message>
@@ -749,6 +753,10 @@
         <translation>Listo: pulsa Empezar el análisis.</translation>
     </message>
     <message>
+        <source>Legend</source>
+        <translation>Leyenda</translation>
+    </message>
+    <message>
         <source>Graph:</source>
         <translation>Gráfica:</translation>
     </message>
@@ -1227,6 +1235,22 @@ S: captura   R: grabar vídeo</translation>
     <message>
         <source>Hide the dirty edges of the analog picture, as a TV does (3 % per side)</source>
         <translation>Oculta los bordes sucios de la imagen analógica, como hace un televisor (3 % por lado)</translation>
+    </message>
+    <message>
+        <source>&amp;Theme</source>
+        <translation>&amp;Tema</translation>
+    </message>
+    <message>
+        <source>System</source>
+        <translation>Sistema</translation>
+    </message>
+    <message>
+        <source>Light</source>
+        <translation>Claro</translation>
+    </message>
+    <message>
+        <source>Dark</source>
+        <translation>Oscuro</translation>
     </message>
     <message>
         <source>Full screen	F</source>

@@ -15,6 +15,7 @@
 #include <string>
 
 #include "analyzer_driver.h"
+#include "analyzer_style.h"  // kAnalogColour
 
 namespace {
 int failures = 0;
@@ -290,6 +291,10 @@ int main(int argc, char **argv) {
             if (l->text().startsWith(QStringLiteral("Recommended:"))) summary = l->text();
         check(table && table->topLevelItemCount() == 3 && !summary.isEmpty(),
               "mios: la tabla con 3 recomendados y el resumen");
+        // cada recomendado, en una pastilla del color de su sistema (analogico: kAnalogColour translucido)
+        const QString chip = QStringLiteral("background-color:rgba(%1,%2,%3,")
+                                 .arg(kAnalogColour.red()).arg(kAnalogColour.green()).arg(kAnalogColour.blue());
+        check(summary.count(chip) == 3, "resumen: los 3 recomendados, en pastillas del color analogico");
         int placed = 0, moving = 0, both = 0;
         for (const QString &ch : mine) {
             bool inRow = false;
@@ -338,6 +343,18 @@ int main(int argc, char **argv) {
               "cursor: MHz, canales cerca y dB medios y de pico");
         check(SpectrumView::cursorText(5990, cells) == QStringList{QStringLiteral("5990 MHz")},
               "cursor: sin canal cerca ni medida, solo los MHz");
+    }
+    {
+        // leyenda plegable: se recuerda al volver a abrir la ventana
+        FakeBackend b;
+        ChannelAnalyzer w(&b);
+        check(drive::legendShown(w), "leyenda: se ve la primera vez");
+        drive::toggleLegend(w);
+        check(!drive::legendShown(w), "leyenda: su boton la pliega");
+        ChannelAnalyzer w2(&b);
+        check(!drive::legendShown(w2), "leyenda: plegada al volver a abrir");
+        drive::toggleLegend(w2);
+        check(drive::legendShown(w2), "leyenda: su boton la despliega");
     }
     std::printf("\n%s\n", failures ? "HAY FALLOS" : "todo bien");
     return failures ? 1 : 0;

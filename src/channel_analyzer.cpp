@@ -1,6 +1,7 @@
 #include "channel_analyzer.h"
 #include "analyzer_style.h"
 #include "app_settings.h"
+#include "collapsible.h"
 #include "channel_names.h"
 #include "spectrum.h"  // kp::fpv_channels()
 #include "log.h"
@@ -91,8 +92,6 @@ QString chName(const advisor::Candidate &c) {
     return QString::fromStdString(c.name) + (c.hdzero ? QStringLiteral(" HDZero") : QString());
 }
 
-// barra de barrido
-const QColor kSweepColour(0x1e, 0x90, 0xff);
 
 // Numero de pilotos para el auto-inicio: el maximo (todos los fijados) se muestra con un texto ("todos")
 class AllSpinBox : public QSpinBox {
@@ -129,9 +128,9 @@ protected:
 };
 
 QColor ratingColour(const advisor::Rating &r) {
-    if (r.busy >= 0 || r.cost >= 8) return QColor(0xd9, 0x48, 0x3b);
-    if (r.cost >= 3) return QColor(0xe0, 0xa0, 0x20);
-    return QColor(0x3a, 0xa8, 0x5a);
+    if (r.busy >= 0 || r.cost >= 8) return kBadColour;
+    if (r.cost >= 3) return kWarnColour;
+    return kGoodColour;
 }
 
 // reglas WiFi por defecto: las de la UE en Europa (UE, EEE, Reino Unido, Suiza), las de EE. UU. fuera
@@ -419,7 +418,7 @@ void SpectrumView::drawSpectrum(QPainter &p, const Geometry &g) const {
         // fondo naranja mas intenso cuanto mas tiempo hay rafagas
         if (b.mhz < lo_ || b.mhz > hi_ || b.duty < 0.02f) continue;
         p.fillRect(QRectF(QPointF(g.x(b.mhz - 0.5), g.top), QPointF(g.x(b.mhz + 0.5), g.plotBottom)),
-                   QColor(255, 140, 0, 25 + int(std::min(1.f, b.duty * 2) * 70)));
+                   withAlpha(kBurstColour, 25 + int(std::min(1.f, b.duty * 2) * 70)));
     }
     QPainterPath peak, mean;
     bool first = true;
@@ -437,7 +436,7 @@ void SpectrumView::drawSpectrum(QPainter &p, const Geometry &g) const {
         first = false;
         lastX = x;
     }
-    p.setPen(QPen(QColor(0xe0, 0x70, 0x30), 1));
+    p.setPen(QPen(kPeakColour, 1));
     p.drawPath(peak);
     QColor fill = pal.color(QPalette::Highlight);
     p.setPen(QPen(fill, 1.5));
@@ -451,7 +450,7 @@ void SpectrumView::drawSpectrum(QPainter &p, const Geometry &g) const {
 // visto (seguidos del mismo bloque: una red en 40/80 MHz, una etiqueta) y discontinua por el resto de su bloque
 // mientras no se sabe su ancho (sin trafico visto)
 void SpectrumView::drawWifi(QPainter &p, const Geometry &g) const {
-    const QColor wc(0xc0, 0x60, 0x00);
+    const QColor wc = kWifiSeenColour;
     const double y = g.top + g.fm.height() + 6;
     const auto clip = [&](double mhz) { return g.x(std::clamp(mhz, lo_, hi_)); };
     for (const auto &grp : advisor::group_wifi(advice_.wifi)) {
@@ -563,7 +562,7 @@ void SpectrumView::drawAir(QPainter &p, const Geometry &g) const {
         const QString shown = pilotShown(s);  // "R5/A4" mientras no se elija
         const QString t = shown + (s.isDigital() ? QLatin1Char(' ') + digitalTag(s, true) : QString()) +
                           (mine ? QStringLiteral(" \u2713") : QString());
-        const QColor c = mine ? QColor(0x3a, 0xa8, 0x5a) : QColor(0xd9, 0x48, 0x3b);  // tuyo: verde
+        const QColor c = mine ? kGoodColour : kBadColour;  // tuyo: verde
         p.setPen(QPen(c, 1.5, Qt::DashLine));
         p.drawLine(QPointF(g.x(s.freqMHz), g.top), QPointF(g.x(s.freqMHz), g.plotBottom));
         p.setPen(c);
@@ -672,7 +671,8 @@ ChannelAnalyzer::ChannelAnalyzer(Backend *backend, QWidget *parent) : QDialog(pa
     auto *main = new QVBoxLayout;
     view_ = new SpectrumView;
     main->addWidget(view_, 3);
-    main->addWidget(buildLegend());
+    legend_ = new Collapsible(buildLegend(), QStringLiteral("legend"), QStringLiteral("analyzer/legend"));
+    main->addWidget(legend_);
     summary_ = new QLabel;
     summary_->setObjectName(QStringLiteral("summary"));
     summary_->setWordWrap(true);
@@ -886,19 +886,19 @@ QWidget *ChannelAnalyzer::buildLegend() {
         legendText_.push_back(h);
         lg->addWidget(h, 0, c, 1, 2);
     }
-    QColor wifi(255, 140, 0, 70), recA = kAnalogColour, recH = kHdzColour;
+    QColor wifi = withAlpha(kBurstColour, 70), recA = kAnalogColour, recH = kHdzColour;
     recA.setAlpha(60);
     recH.setAlpha(60);
     add(1, 0, swatch(Swatch::Area, hl));
-    add(2, 0, swatch(Swatch::Line, QColor(0xe0, 0x70, 0x30)));
+    add(2, 0, swatch(Swatch::Line, kPeakColour));
     add(3, 0, swatch(Swatch::Band, wifi));
-    add(4, 0, swatch(Swatch::DashedV, QColor(0xd9, 0x48, 0x3b)));
-    add(1, 3, swatch(Swatch::Mark, QColor(0x3a, 0xa8, 0x5a)));
-    add(2, 3, swatch(Swatch::Mark, QColor(0xe0, 0xa0, 0x20)));
-    add(3, 3, swatch(Swatch::Mark, QColor(0xd9, 0x48, 0x3b)));
+    add(4, 0, swatch(Swatch::DashedV, kBadColour));
+    add(1, 3, swatch(Swatch::Mark, kGoodColour));
+    add(2, 3, swatch(Swatch::Mark, kWarnColour));
+    add(3, 3, swatch(Swatch::Mark, kBadColour));
     add(4, 3, swatch(Swatch::Band, recA));
     add(5, 3, swatch(Swatch::Band, recH));
-    add(5, 0, swatch(Swatch::Wifi, QColor(0xc0, 0x60, 0x00)));
+    add(5, 0, swatch(Swatch::Wifi, kWifiSeenColour));
     add(6, 3, swatch(Swatch::Pinned, kAnalogColour));
     add(6, 0, swatch(Swatch::Sweep, kSweepColour));
     lg->setColumnMinimumWidth(2, 24);
@@ -1083,6 +1083,7 @@ void ChannelAnalyzer::retranslate() {
                             tr("Pinned channel (right-click a mark to pin)"),
                             tr("Sweep: just measured (bright), fading until the next pass")};
         for (int i = 0; i < legendText_.size() && i < t.size(); i++) legendText_[i]->setText(t[i]);
+        legend_->setTitle(tr("Legend"));
     }
     table_->setHeaderLabels({tr("Pin"), tr("System"), tr("Channel"), tr("MHz"), tr("Interference"), tr("Bursts"),
                              tr("Notes")});
@@ -1620,8 +1621,15 @@ advisor::Advice ChannelAnalyzer::pinnedOnlyAdvice() const {
 }
 
 namespace {
+// un canal en el resumen: una pastilla del color de su sistema (el de la franja de la grafica), translucida para que
+// el texto se lea con cualquier tema. El texto enriquecido de QLabel no redondea esquinas.
 QString pinLabel(const QString &name, bool hdz) {
-    return QStringLiteral("<b>%1</b>%2").arg(name, hdz ? QStringLiteral(" (HDZero)") : QString());
+    const QColor c = hdz ? kHdzColour : kAnalogColour;
+    return QStringLiteral("<span style='background-color:rgba(%1,%2,%3,70)'>&nbsp;<b>%4</b>%5&nbsp;</span>")
+        .arg(c.red())
+        .arg(c.green())
+        .arg(c.blue())
+        .arg(name, hdz ? QStringLiteral(" HDZero") : QString());
 }
 }  // namespace
 
@@ -1692,8 +1700,8 @@ QString ChannelAnalyzer::summaryText(const advisor::Advice &a, const QStringList
     float worstSuggested = 0;
     for (const auto &p : a.picks)
         if (!p.pinned) worstSuggested = std::max(worstSuggested, p.r.noise_db);
-    const auto span = [](const char *colour, const QString &text) {
-        return QStringLiteral(" <span style='color:%1'>").arg(QLatin1String(colour)) + text +
+    const auto span = [](const QColor &colour, const QString &text) {
+        return QStringLiteral(" <span style='color:%1'>").arg(colour.name()) + text +
                QStringLiteral("</span>");
     };
     QString s;
@@ -1703,13 +1711,13 @@ QString ChannelAnalyzer::summaryText(const advisor::Advice &a, const QStringList
     else s = tr("Pinned: %1. Suggested for the rest: %2.").arg(pinnedNames.join(QStringLiteral(", ")),
                                                                   names.join(QStringLiteral(", ")));
     if (!a.complete)
-        s += span("#d9483b", pinnedNames.isEmpty()
+        s += span(kBadColour, pinnedNames.isEmpty()
                                  ? tr("Not enough room for that many pilots in these bands with safe spacing: add "
                                       "bands or fly fewer at once.")
                                  : tr("Not enough room for that many pilots with safe spacing next to the pinned "
                                       "channels: unpin some, add bands or fly fewer at once."));
     else if (worstSuggested >= 8)
-        s += span("#e0a020", tr("Even the best channels have noticeable interference here."));
+        s += span(kWarnColour, tr("Even the best channels have noticeable interference here."));
     if (!a.wifi.empty())
         s += QStringLiteral(" ") + tr("WiFi seen on channel(s) %1: it counts against the channels it covers, "
                                       "even while quiet.").arg(wifiChannels(a.wifi, QStringLiteral("\u2013"))
@@ -1717,7 +1725,7 @@ QString ChannelAnalyzer::summaryText(const advisor::Advice &a, const QStringList
     if (!toMove.isEmpty() && !a.picks.empty()) {
         QStringList bold;
         for (const QString &m : toMove) bold << QStringLiteral("<b>%1</b>").arg(m);
-        s += span("#e0a020",
+        s += span(kWarnColour,
                   (toMove.size() == 1
                        ? tr("%1 must change to one of the suggested channels (or pin its channel if it stays).")
                        : tr("%1 must change to the suggested channels (or pin their channels if they stay)."))
@@ -2048,7 +2056,7 @@ void ChannelAnalyzer::updateHistoryTab(int events) {
 void ChannelAnalyzer::rowAdvice(int i, QString &rec, QString &tip, QColor &col, bool &noBetter) const {
     // recomendacion de este canal, de un vistazo: "-> F3", o por que no se mueve
     const race::ChannelHealth &h = race_.health()[i];
-    const QColor red(0xd9, 0x48, 0x3b), orange(0xe0, 0xa0, 0x20), green(0x3a, 0xa8, 0x5a);
+    const QColor &red = kBadColour, &orange = kWarnColour, &green = kGoodColour;
     rec.clear();
     tip.clear();
     col = QColor();
@@ -2116,7 +2124,7 @@ void ChannelAnalyzer::logRaceRow(int i, const QString &rec, const QString &tip, 
             h.sweeps > 0 ? qRound(100.0 * h.intruders / h.sweeps) : 0, h.channel_cost, h.sweeps);
     const QString stats = RaceHistory::healthText(h, false);
     const bool noBetter = i < noBetter_.size() && noBetter_[i];
-    addEvent(mv ? Ev::Move : col == QColor(0x3a, 0xa8, 0x5a) ? Ev::Ok : noBetter ? Ev::Problem : Ev::Warn,
+    addEvent(mv ? Ev::Move : col == kGoodColour ? Ev::Ok : noBetter ? Ev::Problem : Ev::Warn,
              chName(h.ch), rec, tip.isEmpty() ? stats : tip + QLatin1Char(' ') + stats, i);
 }
 
@@ -2174,12 +2182,12 @@ bool ChannelAnalyzer::addRaceRow(int i, bool worst, const QFont &bold) {
     it->setFont(7, bold);
     if (worst) {
         for (int c = 0; c < raceTable_->columnCount(); c++) {
-            it->setBackground(c, QColor(0xd9, 0x48, 0x3b, 50));
+            it->setBackground(c, withAlpha(kBadColour, 50));
             if (c != 7) it->setFont(c, bold);
         }
         it->setToolTip(0, tr("The worst video so far"));
     }
-    return rec.isEmpty() || col == QColor(0x3a, 0xa8, 0x5a);  // OK (verde) o sin nada que decir
+    return rec.isEmpty() || col == kGoodColour;  // OK (verde) o sin nada que decir
 }
 
 QString ChannelAnalyzer::raceAdviceText(bool allOk) const {
@@ -2212,7 +2220,7 @@ void ChannelAnalyzer::updateRace() {
         history_->syncHealth(race_.health());
         if (tabs_->currentIndex() == 2) history_->refreshPilots();  // su video, en vivo
     }
-    raceAdvice_->setStyleSheet(moves_.empty() ? QString() : QStringLiteral("color:#d9483b;"));
+    raceAdvice_->setStyleSheet(moves_.empty() ? QString() : QStringLiteral("color:%1;").arg(kBadColour.name()));
     applyBtn_->setText(moves_.size() > 1 ? tr("Apply all (%1)").arg(moves_.size()) : tr("Apply"));
     applyBtn_->setVisible(!moves_.empty());
 }

@@ -1,14 +1,12 @@
 // Captura del analizador de canales con el backend de demostracion (sin adaptador), para revisar la ventana:
 //   analyzer_shot SALIDA.png [ANALOGICOS HDZERO [SEGUNDOS]] [--pin R1,R3,hdz:R6] [--race] [--auto N] [--history] [--idle] [--exclude R2,R7] [--menu R] [--apply] [--mine R4/A6/B3]
-//   [--qm TRADUCCION.qm] [--dark] [--tab N] [--cursor F]
+//   [--qm TRADUCCION.qm] [--theme dark|light] [--tab N] [--cursor F]
 // (QT_QPA_PLATFORM=offscreen: sin pantalla). --pin: canales fijados (hdz: = HDZero); --race: escenario de carrera
 // del backend de demo y el seguimiento de carrera activado; --apply: pulsa Aplicar 1.5 s antes de la captura; --mine: pilotos marcados como mios en "En el aire"
-// (su nombre o sus MHz, a los 2 s); --dark: tema oscuro (Fusion); --qm: textos traducidos (build/x/*_es.qm). Usa su
+// (su nombre o sus MHz, a los 2 s); --theme: tema propio (src/theme.h); --qm: textos traducidos (build/x/*_es.qm). Usa su
 // propio .ini (en la carpeta temporal), no el del usuario. --tab: la pestana que se ve (0 recomendacion, 1 carrera, 2
 // historial). --cursor: el raton sobre la grafica, a esa fraccion de su ancho (0.5: en medio).
 #include <QApplication>
-#include <QPalette>
-#include <QStyleFactory>
 #include <QDir>
 #include <QSettings>
 #include <QThread>
@@ -17,6 +15,7 @@
 
 #include "analyzer_driver.h"
 #include "stub_backend.h"
+#include "theme.h"
 
 int main(int argc, char **argv) {
     QApplication app(argc, argv);
@@ -26,6 +25,7 @@ int main(int argc, char **argv) {
     int tab = -1;  // --tab N
     int autoN = -1;  // --auto N: armar el auto-inicio (0 = todos los fijados) en vez de --race
     double cursor = -1;  // --cursor F
+    theme::Theme look = theme::Theme::System;
     QTranslator tr;
     for (int i = 1; i < argc; i++) {
         const QString a = QString::fromLocal8Bit(argv[i]);
@@ -44,21 +44,9 @@ int main(int argc, char **argv) {
         else if (a == QLatin1String("--apply")) apply = true;
         else if (a == QLatin1String("--pin") && i + 1 < argc)
             pins = QString::fromLocal8Bit(argv[++i]).split(QLatin1Char(','), Qt::SkipEmptyParts);
-        else if (a == QLatin1String("--dark")) {
-            QApplication::setStyle(QStyleFactory::create(QStringLiteral("Fusion")));
-            QPalette d;
-            const QColor win(45, 45, 48), base(30, 30, 32), text(230, 230, 230);
-            d.setColor(QPalette::Window, win);
-            d.setColor(QPalette::WindowText, text);
-            d.setColor(QPalette::Base, base);
-            d.setColor(QPalette::AlternateBase, win);
-            d.setColor(QPalette::Text, text);
-            d.setColor(QPalette::Button, win);
-            d.setColor(QPalette::ButtonText, text);
-            d.setColor(QPalette::Mid, QColor(20, 20, 20));
-            d.setColor(QPalette::Highlight, QColor(42, 130, 218));
-            QApplication::setPalette(d);
-        } else if (a == QLatin1String("--mine") && i + 1 < argc)
+        else if (a == QLatin1String("--theme") && i + 1 < argc)
+            look = theme::parse(QString::fromLocal8Bit(argv[++i]));
+        else if (a == QLatin1String("--mine") && i + 1 < argc)
             mine = QString::fromLocal8Bit(argv[++i]).split(QLatin1Char(','), Qt::SkipEmptyParts);
         else if (a == QLatin1String("--qm") && i + 1 < argc) {
             if (tr.load(QString::fromLocal8Bit(argv[++i]))) QCoreApplication::installTranslator(&tr);
@@ -66,6 +54,7 @@ int main(int argc, char **argv) {
     }
     if (pos.isEmpty()) return 2;
     QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, QDir::tempPath() + QStringLiteral("/analyzer_shot"));
+    theme::apply(look);  // tras setPath: guarda el ajuste en el .ini de la captura
     qRegisterMetaType<SurveyData>();
     qRegisterMetaType<RadioStatus>();
     StubBackend backend;

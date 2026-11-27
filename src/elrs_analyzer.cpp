@@ -1,6 +1,7 @@
 #include "elrs_analyzer.h"
 #include "analyzer_style.h"
 #include "app_settings.h"
+#include "collapsible.h"
 #include "log.h"
 
 #include <QCloseEvent>
@@ -37,17 +38,15 @@ constexpr double kSurveyLo = 2402, kSurveyHi = 2482;
 
 QColor levelColour(elrs::Level l) {
     switch (l) {
-    case elrs::Level::Clean: return QColor(0x3c, 0xb0, 0x4a);
-    case elrs::Level::Busy: return QColor(0xe8, 0xb0, 0x20);
-    case elrs::Level::Bad: return QColor(0xd8, 0x3c, 0x30);
+    case elrs::Level::Clean: return kGoodColour;
+    case elrs::Level::Busy: return kWarnColour;
+    case elrs::Level::Bad: return kBadColour;
     case elrs::Level::Unknown: break;
     }
-    return QColor(0x90, 0x90, 0x90);
+    return kNeutralColour;
 }
 
 const QColor kWifiColour(0x40, 0x80, 0xe0);
-// la barra de barrido, siempre azul (el color de resalte del sistema puede ser cualquiera: gris, verde...)
-const QColor kSweepColour(0x1e, 0x78, 0xe6);
 
 QString pct(double f) {
     const double v = f * 100;
@@ -220,7 +219,7 @@ void ElrsView::drawSpectrum(QPainter &p, const Geometry &g) const {
     for (const auto &b : bins_) {
         if (b.mhz < kLo || b.mhz > kHi || b.duty < 0.02f) continue;
         p.fillRect(QRectF(QPointF(g.x(b.mhz - 0.08), g.top), QPointF(g.x(b.mhz + 0.08), g.plotBottom)),
-                   QColor(255, 140, 0, 20 + int(std::min(1.f, b.duty * 2) * 60)));
+                   withAlpha(kBurstColour, 20 + int(std::min(1.f, b.duty * 2) * 60)));
     }
     QPainterPath peak, mean;
     bool first = true;
@@ -240,7 +239,7 @@ void ElrsView::drawSpectrum(QPainter &p, const Geometry &g) const {
         lastMhz = b.mhz;
     }
     if (!first) mean.lineTo(g.x(lastMhz), g.plotBottom);
-    p.setPen(QPen(QColor(0xe0, 0x70, 0x30), 1));
+    p.setPen(QPen(kPeakColour, 1));
     p.drawPath(peak);
     QColor fill = pal.color(QPalette::Highlight);
     p.setPen(QPen(fill, 1.5));
@@ -380,13 +379,13 @@ QPixmap graphSwatch(GraphKey kind, const QPalette &pal) {
         break;
     }
     case GraphKey::Peaks:
-        q.setPen(QPen(QColor(0xe0, 0x70, 0x30), 2));
+        q.setPen(QPen(kPeakColour, 2));
         q.drawLine(0, 8, 7, 3);
         q.drawLine(7, 3, 14, 9);
         q.drawLine(14, 9, 22, 2);
         break;
     case GraphKey::Bursts:
-        q.fillRect(r, QColor(255, 140, 0, 70));
+        q.fillRect(r, withAlpha(kBurstColour, 70));
         break;
     case GraphKey::Wifi: {
         QColor c = kWifiColour;
@@ -454,7 +453,10 @@ QWidget *ElrsAnalyzer::buildGraph() {
     const int col = addLegendRow(legend, 1, {levelSwatch(elrs::Level::Clean), levelSwatch(elrs::Level::Busy),
                                              levelSwatch(elrs::Level::Bad), levelSwatch(elrs::Level::Unknown)});
     legend->setColumnStretch(col + 8, 1);
-    tv->addLayout(legend);
+    auto *legendBox = new QWidget;  // muestras y nota, plegables
+    auto *lv = new QVBoxLayout(legendBox);
+    lv->setContentsMargins(0, 0, 0, 0);
+    lv->addLayout(legend);
     legendNote_ = new QLabel;
     legendNote_->setWordWrap(true);
     {
@@ -467,7 +469,9 @@ QWidget *ElrsAnalyzer::buildGraph() {
         f.setPointSizeF(f.pointSizeF() * 0.9);
         legendNote_->setFont(f);
     }
-    tv->addWidget(legendNote_);
+    lv->addWidget(legendNote_);
+    legend_ = new Collapsible(legendBox, QStringLiteral("legend"), QStringLiteral("elrs/legend"));
+    tv->addWidget(legend_);
     summary_ = new QLabel;
     summary_->setObjectName(QStringLiteral("summary"));
     summary_->setWordWrap(true);
@@ -597,6 +601,7 @@ void ElrsAnalyzer::updateAutoStopTip() {
 
 void ElrsAnalyzer::buildLegend() {
     if (!legendGraph_ || legendText_.size() < 9) return;
+    legend_->setTitle(tr("Legend"));
     legendGraph_->setText(tr("Graph:"));
     legendElrs_->setText(tr("ELRS channels:"));
     const QString t[] = {tr("average level"), tr("peaks"),        tr("bursts"),  tr("WiFi network"), tr("sweep"),

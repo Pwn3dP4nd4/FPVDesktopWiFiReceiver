@@ -14,6 +14,7 @@
 #include "elrs_advisor.h"
 #include "survey_session.h"
 
+class Collapsible;
 class QCheckBox;
 class QComboBox;
 class QGridLayout;
@@ -142,6 +143,7 @@ private:
     QLabel *state_ = nullptr, *summary_ = nullptr, *detectedTitle_ = nullptr, *tipsTitle_ = nullptr;
     // leyenda: muestras de color con su texto (dos filas) y una nota debajo
     QVector<QLabel *> legendText_;
+    Collapsible *legend_ = nullptr;  // la leyenda y su nota, plegables (src/collapsible.h)
     QLabel *legendGraph_ = nullptr, *legendElrs_ = nullptr, *legendNote_ = nullptr;
     ElrsView *view_ = nullptr;
     QTreeWidget *detected_ = nullptr;

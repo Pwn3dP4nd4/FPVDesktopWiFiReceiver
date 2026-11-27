@@ -2,7 +2,11 @@
 #include "elrs_analyzer.h"
 #include "main_window.h"
 #include "app_settings.h"
+#include "icons.h"
+#include "pilot_card.h"
+#include "pilot_delegate.h"
 #include "status_text.h"
+#include "theme.h"
 
 #include <QActionGroup>
 #include <QApplication>
@@ -87,6 +91,7 @@ MainWindow::MainWindow(Backend *backend, QWidget *parent) : QMainWindow(parent),
     emit requestDigitalScan(expMode_);
 
     applyDeveloperMode(devModeAct_->isChecked());
+    updateIcons();
     retranslate();
     onOpened(false, {});
     if (!restoreGeometry(appSettings().value("geometry").toByteArray())) resize(1100, 660);
@@ -105,6 +110,7 @@ QWidget *MainWindow::buildSide() {
     recBtn_ = new QPushButton;
     snapBtn_ = new QPushButton;
     dvrBtn_ = new QPushButton;
+    scanBtn_->setProperty("primary", true);  // la accion principal: resaltada en los temas propios (src/theme.cpp)
     left->addWidget(connectBtn_);
     auto *scanRow = new QHBoxLayout;
     scanRow->setSpacing(4);
@@ -118,6 +124,9 @@ QWidget *MainWindow::buildSide() {
     pilotsLabel_ = new QLabel;
     left->addWidget(pilotsLabel_);
     list_ = new QListWidget;
+    list_->setObjectName(QStringLiteral("pilots"));
+    list_->setItemDelegate(new PilotDelegate(list_));
+    list_->setMouseTracking(true);  // borde de la tarjeta bajo el raton
     left->addWidget(list_, 1);
 
     left->addWidget(buildChannelPicker());
@@ -357,8 +366,29 @@ void MainWindow::buildViewMenu() {
         video_->setCropOverscan(on);
     });
     viewMenu_->addSeparator();
+    buildThemeMenu();
+    viewMenu_->addSeparator();
     fullScreenAct_ = viewMenu_->addAction(QString(), this, &MainWindow::toggleFullScreen);
     fullScreenAct_->setShortcutVisibleInContextMenu(true);
+}
+
+// Ver > Tema: el del sistema, claro u oscuro (src/theme.h); cambia al momento y se guarda
+void MainWindow::buildThemeMenu() {
+    themeMenu_ = viewMenu_->addMenu(QString());
+    auto *grp = new QActionGroup(this);
+    const theme::Theme all[] = {theme::Theme::System, theme::Theme::Light, theme::Theme::Dark};
+    const QLatin1String names[] = {QLatin1String("themeSystem"), QLatin1String("themeLight"),
+                                   QLatin1String("themeDark")};
+    for (int i = 0; i < 3; ++i) {
+        themeActs_[i] = themeMenu_->addAction(QString());
+        themeActs_[i]->setObjectName(names[i]);
+        themeActs_[i]->setCheckable(true);
+        themeActs_[i]->setData(static_cast<int>(all[i]));
+        themeActs_[i]->setChecked(all[i] == theme::setting());
+        grp->addAction(themeActs_[i]);
+    }
+    connect(grp, &QActionGroup::triggered, this,
+            [](QAction *a) { theme::apply(static_cast<theme::Theme>(a->data().toInt())); });
 }
 
 // Opciones: conectar al abrir, modo desarrollador, modo experimental...
@@ -513,6 +543,10 @@ void MainWindow::retranslate() {
     aspectActs_[2]->setText(tr("Stretch to the window"));
     cropAct_->setText(tr("Crop the borders (overscan)"));
     cropAct_->setToolTip(tr("Hide the dirty edges of the analog picture, as a TV does (3 % per side)"));
+    themeMenu_->setTitle(tr("&Theme"));
+    themeActs_[0]->setText(tr("System"));
+    themeActs_[1]->setText(tr("Light"));
+    themeActs_[2]->setText(tr("Dark"));
     fullScreenAct_->setText(tr("Full screen	F"));
     optMenu_->setTitle(tr("&Options"));
     autoConnectAct_->setText(tr("&Connect the adapter on startup"));
@@ -542,7 +576,27 @@ void MainWindow::retranslate() {
 
 void MainWindow::changeEvent(QEvent *e) {
     if (e->type() == QEvent::LanguageChange) retranslate();
+    if (e->type() == QEvent::PaletteChange || e->type() == QEvent::StyleChange) updateIcons();  // cambio de tema
     QMainWindow::changeEvent(e);
+}
+
+// iconos de los botones, del color de su texto (src/icons.h): se rehacen al cambiar el tema
+void MainWindow::updateIcons() {
+    if (!connectBtn_ || !dvr_) return;  // StyleChange antes de construir el panel y el video
+    const QColor c = palette().color(QPalette::ButtonText);
+    connectBtn_->setIcon(icons::make(icons::Kind::Plug, c));
+    // Scan, resaltado en los temas propios (fondo del color de seleccion): su icono, del color del texto encima
+    const bool accent = theme::setting() != theme::Theme::System;
+    scanBtn_->setIcon(icons::make(icons::Kind::Scan, accent ? palette().color(QPalette::HighlightedText) : c));
+    stopBtn_->setIcon(icons::make(icons::Kind::Stop, c));
+    snapBtn_->setIcon(icons::make(icons::Kind::Camera, c));
+    recBtn_->setIcon(icons::make(icons::Kind::Wave, c));
+    dvrBtn_->setIcon(dvrIcon());
+}
+
+// grabar video: punto rojo; grabando (boton rojo), cuadrado blanco de parar
+QIcon MainWindow::dvrIcon() const {
+    return dvr_->isRecording() ? icons::make(icons::Kind::Stop, Qt::white) : icons::make(icons::Kind::Record, kBadColour);
 }
 
 void MainWindow::updateConnectButton() {
@@ -799,15 +853,21 @@ void MainWindow::updateMediaButtons() {
     if (rec) {
         const qint64 s = dvr_->elapsedMs() / 1000;
         const QString t = QStringLiteral("%1:%2").arg(s / 60, 2, 10, QLatin1Char('0')).arg(s % 60, 2, 10, QLatin1Char('0'));
-        dvrBtn_->setText(QString(QChar(0x25A0)) + QLatin1Char(' ') + t);  // cuadrado de parar
+        dvrBtn_->setText(t);
         static const QString red = QStringLiteral("QPushButton{color:white;background:#c62828;font-weight:bold;}");
-        if (dvrBtn_->styleSheet() != red) dvrBtn_->setStyleSheet(red);  // cada 250 ms: no repolir si no cambia
+        if (dvrBtn_->styleSheet() != red) {  // cada 250 ms: no repolir si no cambia
+            dvrBtn_->setStyleSheet(red);
+            dvrBtn_->setIcon(dvrIcon());
+        }
         dvrBtn_->setToolTip(tr("Recording to %1. Press again (R) to stop.").arg(QDir::toNativeSeparators(dvr_->path())));
         video_->setRecIndicator(QStringLiteral("REC ") + t);
         dvrAct_->setText(tr("Stop recording the &video") + QStringLiteral("\tR"));
     } else {
-        dvrBtn_->setText(QString(QChar(0x25CF)) + QLatin1Char(' ') + tr("Record video"));  // punto de grabar
-        if (!dvrBtn_->styleSheet().isEmpty()) dvrBtn_->setStyleSheet(QString());
+        dvrBtn_->setText(tr("Record video"));
+        if (!dvrBtn_->styleSheet().isEmpty()) {
+            dvrBtn_->setStyleSheet(QString());
+            dvrBtn_->setIcon(dvrIcon());
+        }
         dvrBtn_->setToolTip(VideoRecorder::available()
                                 ? tr("Record the picture to an MP4 file (R); press again to stop. Folder: %1")
                                       .arg(QDir::toNativeSeparators(videosDir()))
@@ -1092,6 +1152,11 @@ void MainWindow::onPilots(const QVector<Pilot> &pilots) {
         }
         auto *it = new QListWidgetItem(QStringLiteral("%1   %2 dB").arg(text).arg(p.snrDb, 0, 'f', 1));
         it->setData(Qt::UserRole, p.freqMHz);
+        const pilotcard::Lines card = pilotcard::lines(p, n);
+        it->setData(PilotDelegate::TitleRole, card.title);
+        it->setData(PilotDelegate::DetailRole, card.detail);
+        it->setData(PilotDelegate::SnrRole, p.snrDb);
+        it->setData(PilotDelegate::DigitalRole, p.isDigital());
         if (ch.ambiguous())
             it->setToolTip(tr("%1 MHz is between several standard channels (%2): from the frequency alone it is not "
                               "possible to tell which one. Right-click to say which one is yours.")

@@ -31,8 +31,7 @@ QString raceTime(double s) {
 }
 
 QColor catColour(int c) {  // Cat: graves, avisos, cambios, informacion
-    static const QColor cs[] = {QColor(0xd9, 0x48, 0x3b), QColor(0xe0, 0xa0, 0x20), QColor(0x2f, 0x80, 0xed),
-                                QColor(0x80, 0x80, 0x80)};
+    static const QColor cs[] = {kBadColour, kWarnColour, kInfoColour, kNeutralColour};
     return cs[std::clamp(c, 0, 3)];
 }
 }  // namespace
@@ -297,7 +296,7 @@ void RaceHistory::addHistRow(const RaceEvent &e) {
     it->setText(4, e.detail);
     it->setToolTip(4, e.detail);
     it->setToolTip(2, pilotLabel(e.race, e.pilot, true));
-    const QColor red(0xd9, 0x48, 0x3b), orange(0xe0, 0xa0, 0x20), green(0x3a, 0xa8, 0x5a), blue(0x2f, 0x80, 0xed);
+    const QColor &red = kBadColour, &orange = kWarnColour, &green = kGoodColour, &blue = kInfoColour;
     QColor col;
     switch (kind) {
     case Ev::Ok: col = green; break;
@@ -317,7 +316,7 @@ void RaceHistory::addHistRow(const RaceEvent &e) {
     }
     // donde empieza cada carrera (tambien la que sigue a cambiar los fijados a mano)
     if (kind == Ev::Start)
-        for (int c = 0; c < histTable_->columnCount(); c++) it->setBackground(c, QColor(0x80, 0x80, 0x80, 40));
+        for (int c = 0; c < histTable_->columnCount(); c++) it->setBackground(c, withAlpha(kNeutralColour, 40));
     for (int c = 0; c < 4; c++) histTable_->resizeColumnToContents(c);
 }
 
@@ -446,7 +445,7 @@ void RaceHistory::rebuildPilotView() {
     const auto worst = std::find_if(rows.begin(), rows.end(), [](const PilotRow &r) { return r.pilot >= 0; });
     if (worst != rows.end() && worst->score() > 0) {
         QTreeWidgetItem *w = pilotTable_->topLevelItem(0);
-        for (int c = 0; c < pilotTable_->columnCount(); c++) w->setBackground(c, QColor(0xd9, 0x48, 0x3b, 50));
+        for (int c = 0; c < pilotTable_->columnCount(); c++) w->setBackground(c, withAlpha(kBadColour, 50));
         w->setFont(0, bold);
         w->setToolTip(0, tr("The most trouble"));
     }
@@ -520,7 +519,7 @@ std::array<int, RaceHistory::kGroups> RaceHistory::addPilotEvents(int race, int 
                               tr("Sweep %1").arg(e.sweep));
         it->setText(2, e.detail);
         it->setToolTip(2, e.detail);
-        if (e.kind == Ev::Ok) it->setForeground(0, QColor(0x3a, 0xa8, 0x5a));
+        if (e.kind == Ev::Ok) it->setForeground(0, kGoodColour);
     }
     return count;
 }
