@@ -105,75 +105,94 @@ void ElrsView::setData(const QVector<SpectrumPoint> &bins, const elrs::Report &r
 void ElrsView::paintEvent(QPaintEvent *) {
     QPainter p(this);
     p.setRenderHint(QPainter::Antialiasing);
-    const QPalette pal = palette();
-    p.fillRect(rect(), pal.base());
+    p.fillRect(rect(), palette().base());
     const QFontMetrics fm(font());
-    const int left = fm.horizontalAdvance(QStringLiteral("ELRS")) + 12, right = width() - 8;
-    const int wifiRowH = fm.height() + 4, elrsRowH = fm.height() + 6;
-    const int barTop = 5, barH = 6;
-    const int top = barTop + barH + 6 + wifiRowH + 4;
-    const int plotBottom = height() - elrsRowH - fm.height() - 12;
-    const double dbMax = 40;
-    const auto X = [&](double mhz) { return left + (mhz - kLo) / (kHi - kLo) * (right - left); };
-    const auto Y = [&](double db) { return plotBottom - std::clamp(db, 0.0, dbMax) / dbMax * (plotBottom - top); };
+    Geometry g{fm};
+    g.left = fm.horizontalAdvance(QStringLiteral("ELRS")) + 12;
+    g.right = width() - 8;
+    g.wifiRowH = fm.height() + 4;
+    g.elrsRowH = fm.height() + 6;
+    g.barTop = 5;
+    g.barH = 6;
+    g.top = g.barTop + g.barH + 6 + g.wifiRowH + 4;
+    g.plotBottom = height() - g.elrsRowH - fm.height() - 12;
+    drawGrid(p, g);
+    drawSweepBar(p, g);
+    drawUnreachable(p, g);
+    drawWifi(p, g);
+    drawSpectrum(p, g);
+    drawAxis(p, g);
+    drawChannels(p, g);
+}
 
+void ElrsView::drawGrid(QPainter &p, const Geometry &g) const {
+    const QPalette pal = palette();
     QColor grid = pal.color(QPalette::Text);
     grid.setAlpha(70);
     for (int db = 10; db <= 40; db += 10) {
         p.setPen(QPen(grid, 1, Qt::DotLine));
-        p.drawLine(QPointF(left, Y(db)), QPointF(right, Y(db)));
+        p.drawLine(QPointF(g.left, g.y(db)), QPointF(g.right, g.y(db)));
         p.setPen(pal.color(QPalette::Text));
-        p.drawText(QRectF(0, Y(db) - fm.height() / 2.0, left - 4, fm.height()), Qt::AlignRight | Qt::AlignVCenter,
+        p.drawText(QRectF(0, g.y(db) - g.fm.height() / 2.0, g.left - 4, g.fm.height()), Qt::AlignRight | Qt::AlignVCenter,
                    QString::number(db));
     }
+}
 
-    // barra de barrido: cada MHz, brillante al volver a medirse y apagandose; donde va ahora, una franja tenue
-    {
-        const qint64 t = clock_.elapsed();
-        QColor off = pal.color(QPalette::Text);
-        off.setAlpha(30);
-        for (int c = int(kSurveyLo); c < int(kSurveyHi); c++) {
-            const QRectF cell(QPointF(X(c), barTop), QPointF(X(c + 1), barTop + barH));
-            const auto it = cellT_.find(c);
-            const double a = it == cellT_.end() ? 0 : std::clamp(1.0 - (t - it.value()) / double(kFadeMs), 0.0, 1.0);
-            if (it == cellT_.end()) {
-                p.fillRect(cell, off);
-                continue;
-            }
-            QColor on = kSweepColour;
-            on.setAlpha(60 + int(195 * a));
-            p.fillRect(cell, on);
-            if (scanning_ && a > 0.75) {
-                QColor head = kSweepColour;
-                head.setAlpha(int(45 * (a - 0.75) / 0.25));
-                p.fillRect(QRectF(QPointF(X(c), barTop + barH), QPointF(X(c + 1), height() - elrsRowH - 4)), head);
-            }
+// barra de barrido: cada MHz, brillante al volver a medirse y apagandose; donde va ahora, una franja tenue
+void ElrsView::drawSweepBar(QPainter &p, const Geometry &g) const {
+    const QPalette pal = palette();
+    const qint64 t = clock_.elapsed();
+    QColor off = pal.color(QPalette::Text);
+    off.setAlpha(30);
+    for (int c = int(kSurveyLo); c < int(kSurveyHi); c++) {
+        const QRectF cell(QPointF(g.x(c), g.barTop), QPointF(g.x(c + 1), g.barTop + g.barH));
+        const auto it = cellT_.find(c);
+        const double a = it == cellT_.end() ? 0 : std::clamp(1.0 - (t - it.value()) / double(kFadeMs), 0.0, 1.0);
+        if (it == cellT_.end()) {
+            p.fillRect(cell, off);
+            continue;
+        }
+        QColor on = kSweepColour;
+        on.setAlpha(60 + int(195 * a));
+        p.fillRect(cell, on);
+        if (scanning_ && a > 0.75) {
+            QColor head = kSweepColour;
+            head.setAlpha(int(45 * (a - 0.75) / 0.25));
+            p.fillRect(QRectF(QPointF(g.x(c), g.barTop + g.barH), QPointF(g.x(c + 1), height() - g.elrsRowH - 4)), head);
         }
     }
+}
 
-    // lo que el adaptador no alcanza: sombreado
+// lo que el adaptador no alcanza: sombreado
+void ElrsView::drawUnreachable(QPainter &p, const Geometry &g) const {
+    const QPalette pal = palette();
     QColor shade = pal.color(QPalette::Text);
     shade.setAlpha(25);
-    p.fillRect(QRectF(QPointF(X(kLo), top), QPointF(X(kSurveyLo), plotBottom)), shade);
-    p.fillRect(QRectF(QPointF(X(kSurveyHi), top), QPointF(X(kHi), plotBottom)), shade);
+    p.fillRect(QRectF(QPointF(g.x(kLo), g.top), QPointF(g.x(kSurveyLo), g.plotBottom)), shade);
+    p.fillRect(QRectF(QPointF(g.x(kSurveyHi), g.top), QPointF(g.x(kHi), g.plotBottom)), shade);
+}
 
-    // canales WiFi detectados: su ancho, tenue, y su numero arriba
+// canales WiFi detectados: su ancho, tenue, y su numero arriba
+void ElrsView::drawWifi(QPainter &p, const Geometry &g) const {
     for (const auto &w : report_.wifi) {
         QColor c = kWifiColour;
         c.setAlpha(w.traffic ? 55 : 30);
-        const QRectF band(QPointF(X(w.mhz - 8.3), top), QPointF(X(w.mhz + 8.3), plotBottom));
+        const QRectF band(QPointF(g.x(w.mhz - 8.3), g.top), QPointF(g.x(w.mhz + 8.3), g.plotBottom));
         p.fillRect(band, c);
         c.setAlpha(220);
         p.setPen(QPen(c, 1.5));
-        p.drawLine(QPointF(band.left(), top - 2), QPointF(band.right(), top - 2));
-        p.drawText(QRectF(band.left(), barTop + barH + 4, band.width(), wifiRowH), Qt::AlignCenter,
+        p.drawLine(QPointF(band.left(), g.top - 2), QPointF(band.right(), g.top - 2));
+        p.drawText(QRectF(band.left(), g.barTop + g.barH + 4, band.width(), g.wifiRowH), Qt::AlignCenter,
                    QStringLiteral("WiFi %1").arg(w.ch));
     }
+}
 
-    // espectro: rafagas (fondo naranja), picos (linea) y media (area)
+// espectro: rafagas (fondo naranja), picos (linea) y media (area)
+void ElrsView::drawSpectrum(QPainter &p, const Geometry &g) const {
+    const QPalette pal = palette();
     for (const auto &b : bins_) {
         if (b.mhz < kLo || b.mhz > kHi || b.duty < 0.02f) continue;
-        p.fillRect(QRectF(QPointF(X(b.mhz - 0.08), top), QPointF(X(b.mhz + 0.08), plotBottom)),
+        p.fillRect(QRectF(QPointF(g.x(b.mhz - 0.08), g.top), QPointF(g.x(b.mhz + 0.08), g.plotBottom)),
                    QColor(255, 140, 0, 20 + int(std::min(1.f, b.duty * 2) * 60)));
     }
     QPainterPath peak, mean;
@@ -181,19 +200,19 @@ void ElrsView::paintEvent(QPaintEvent *) {
     double lastMhz = 0;
     for (const auto &b : bins_) {
         if (b.mhz < kLo || b.mhz > kHi) continue;
-        const double x = X(b.mhz);
+        const double x = g.x(b.mhz);
         if (first || b.mhz - lastMhz > 0.5) {  // hueco (sin datos): otro tramo
-            if (!first) mean.lineTo(X(lastMhz), plotBottom);
-            peak.moveTo(x, Y(b.peakDb));
-            mean.moveTo(x, plotBottom);
+            if (!first) mean.lineTo(g.x(lastMhz), g.plotBottom);
+            peak.moveTo(x, g.y(b.peakDb));
+            mean.moveTo(x, g.plotBottom);
         } else {
-            peak.lineTo(x, Y(b.peakDb));
+            peak.lineTo(x, g.y(b.peakDb));
         }
-        mean.lineTo(x, Y(b.meanDb));
+        mean.lineTo(x, g.y(b.meanDb));
         first = false;
         lastMhz = b.mhz;
     }
-    if (!first) mean.lineTo(X(lastMhz), plotBottom);
+    if (!first) mean.lineTo(g.x(lastMhz), g.plotBottom);
     p.setPen(QPen(QColor(0xe0, 0x70, 0x30), 1));
     p.drawPath(peak);
     QColor fill = pal.color(QPalette::Highlight);
@@ -202,26 +221,31 @@ void ElrsView::paintEvent(QPaintEvent *) {
     p.setBrush(fill);
     p.drawPath(mean);
     p.setBrush(Qt::NoBrush);
+}
 
-    // eje de frecuencias
+// eje de frecuencias
+void ElrsView::drawAxis(QPainter &p, const Geometry &g) const {
+    const QPalette pal = palette();
     p.setPen(pal.color(QPalette::Text));
-    p.drawLine(QPointF(left, plotBottom), QPointF(right, plotBottom));
+    p.drawLine(QPointF(g.left, g.plotBottom), QPointF(g.right, g.plotBottom));
     for (int f = 2400; f <= kHi; f += 10) {
-        p.drawLine(QPointF(X(f), plotBottom), QPointF(X(f), plotBottom + 3));
-        p.drawText(QRectF(X(f) - 30, plotBottom + 3, 60, fm.height()), Qt::AlignCenter, QString::number(f));
+        p.drawLine(QPointF(g.x(f), g.plotBottom), QPointF(g.x(f), g.plotBottom + 3));
+        p.drawText(QRectF(g.x(f) - 30, g.plotBottom + 3, 60, g.fm.height()), Qt::AlignCenter, QString::number(f));
     }
+}
 
-    // los 80 canales de ELRS
-    const double rowTop = plotBottom + fm.height() + 8;
-    p.drawText(QRectF(0, rowTop, left - 4, elrsRowH), Qt::AlignRight | Qt::AlignVCenter, QStringLiteral("ELRS"));
+// los 80 canales de ELRS
+void ElrsView::drawChannels(QPainter &p, const Geometry &g) const {
+    const double rowTop = g.plotBottom + g.fm.height() + 8;
+    p.drawText(QRectF(0, rowTop, g.left - 4, g.elrsRowH), Qt::AlignRight | Qt::AlignVCenter, QStringLiteral("ELRS"));
     for (const auto &c : report_.channels) {
-        const QRectF cell(QPointF(X(c.mhz - 0.45), rowTop), QPointF(X(c.mhz + 0.45), rowTop + elrsRowH));
+        const QRectF cell(QPointF(g.x(c.mhz - 0.45), rowTop), QPointF(g.x(c.mhz + 0.45), rowTop + g.elrsRowH));
         p.fillRect(cell, levelColour(c.measured ? c.level : elrs::Level::Unknown));
     }
     if (report_.channels.empty())
         for (int i = 0; i < elrs::kChannels; i++) {
             const double m = elrs::channel_mhz(i);
-            p.fillRect(QRectF(QPointF(X(m - 0.45), rowTop), QPointF(X(m + 0.45), rowTop + elrsRowH)),
+            p.fillRect(QRectF(QPointF(g.x(m - 0.45), rowTop), QPointF(g.x(m + 0.45), rowTop + g.elrsRowH)),
                        levelColour(elrs::Level::Unknown));
         }
 }

@@ -2,7 +2,10 @@
 #include <QDialog>
 #include <QElapsedTimer>
 #include <QHash>
+#include <QFontMetrics>
 #include <QMap>
+
+#include <algorithm>
 
 #include "backend.h"
 #include "elrs_advisor.h"
@@ -35,6 +38,21 @@ protected:
     void paintEvent(QPaintEvent *) override;
 
 private:
+    // ---- paintEvent(), por capas ----
+    struct Geometry {  // ejes del pintado: x por MHz (kLo..kHi), y por dB (0..dbMax); fila de WiFi arriba, ELRS abajo
+        QFontMetrics fm;
+        int left = 0, right = 0, wifiRowH = 0, elrsRowH = 0, barTop = 0, barH = 0, top = 0, plotBottom = 0;
+        double dbMax = 40;
+        double x(double mhz) const { return left + (mhz - kLo) / (kHi - kLo) * (right - left); }
+        double y(double db) const { return plotBottom - std::clamp(db, 0.0, dbMax) / dbMax * (plotBottom - top); }
+    };
+    void drawGrid(QPainter &p, const Geometry &g) const;
+    void drawSweepBar(QPainter &p, const Geometry &g) const;     // que parte se acaba de medir
+    void drawUnreachable(QPainter &p, const Geometry &g) const;  // lo que el adaptador no alcanza
+    void drawWifi(QPainter &p, const Geometry &g) const;
+    void drawSpectrum(QPainter &p, const Geometry &g) const;
+    void drawAxis(QPainter &p, const Geometry &g) const;
+    void drawChannels(QPainter &p, const Geometry &g) const;     // los 80 canales de ELRS
     QVector<SpectrumPoint> bins_;
     elrs::Report report_;
     QHash<int, quint32> cellSeq_;  // por MHz: el ultimo seq visto
