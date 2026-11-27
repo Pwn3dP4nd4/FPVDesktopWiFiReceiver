@@ -1,4 +1,5 @@
 #include "channel_analyzer.h"
+#include "app_settings.h"
 #include "channel_names.h"
 #include "spectrum.h"  // kp::fpv_channels()
 #include "log.h"
@@ -166,12 +167,6 @@ int defaultRegion() {
     return 1;
 }
 
-// el mismo fichero que MainWindow::settings() (sin depender de la ventana principal: test/analyzer_shot.cpp)
-QSettings &settings() {
-    static QSettings s(QSettings::IniFormat, QSettings::UserScope, QStringLiteral("FPVDesktopWiFiReceiver"),
-                       QStringLiteral("FPVDesktopWiFiReceiver"));
-    return s;
-}
 }  // namespace
 
 // ---- grafica ------------------------------------------------------------------------------------------------
@@ -576,8 +571,8 @@ ChannelAnalyzer::ChannelAnalyzer(Backend *backend, QWidget *parent) : QDialog(pa
     bandsTitle_ = new QLabel;
     bandsTitle_->setStyleSheet(QStringLiteral("font-weight:bold;"));
     side->addWidget(bandsTitle_);
-    const QString saved = settings().value("analyzer/bands", QStringLiteral("ABEFR")).toString();
-    excluded_ = settings().value("analyzer/excluded").toStringList();
+    const QString saved = appSettings().value("analyzer/bands", QStringLiteral("ABEFR")).toString();
+    excluded_ = appSettings().value("analyzer/excluded").toStringList();
     for (const char *b = kBands; *b; b++) {
         auto *row = new QHBoxLayout;
         auto *c = new QCheckBox;
@@ -606,12 +601,12 @@ ChannelAnalyzer::ChannelAnalyzer(Backend *backend, QWidget *parent) : QDialog(pa
     nHdz_ = new QSpinBox;
     nAnalog_->setRange(0, 8);
     nHdz_->setRange(0, 8);
-    nAnalog_->setValue(settings().value("analyzer/analog", 4).toInt());
-    nHdz_->setValue(settings().value("analyzer/hdzero", 0).toInt());
+    nAnalog_->setValue(appSettings().value("analyzer/analog", 4).toInt());
+    nHdz_->setValue(appSettings().value("analyzer/hdzero", 0).toInt());
     for (QSpinBox *s : {nAnalog_, nHdz_})
         connect(s, &QSpinBox::valueChanged, this, [this] {
-            settings().setValue("analyzer/analog", nAnalog_->value());
-            settings().setValue("analyzer/hdzero", nHdz_->value());
+            appSettings().setValue("analyzer/analog", nAnalog_->value());
+            appSettings().setValue("analyzer/hdzero", nHdz_->value());
             recompute();
         });
     g->addWidget(analogLbl_, 0, 0);
@@ -619,9 +614,9 @@ ChannelAnalyzer::ChannelAnalyzer(Backend *backend, QWidget *parent) : QDialog(pa
     g->addWidget(hdzLbl_, 1, 0);
     g->addWidget(nHdz_, 1, 1);
     narrow_ = new QCheckBox;
-    narrow_->setChecked(settings().value("analyzer/narrow", false).toBool());
+    narrow_->setChecked(appSettings().value("analyzer/narrow", false).toBool());
     connect(narrow_, &QCheckBox::toggled, this, [this](bool on) {
-        settings().setValue("analyzer/narrow", on);
+        appSettings().setValue("analyzer/narrow", on);
         // los HDZero fijados cambian de ancho: el seguimiento tiene que usar el mismo que la recomendacion. Solo
         // vuelven a empezar ellos; lo de los analogicos sigue
         if (raceOn_) {
@@ -639,9 +634,9 @@ ChannelAnalyzer::ChannelAnalyzer(Backend *backend, QWidget *parent) : QDialog(pa
     region_ = new QComboBox;
     region_->addItem(QString(), 0);  // UE
     region_->addItem(QString(), 1);  // EE. UU. y otros
-    region_->setCurrentIndex(qBound(0, settings().value("analyzer/region", defaultRegion()).toInt(), 1));
+    region_->setCurrentIndex(qBound(0, appSettings().value("analyzer/region", defaultRegion()).toInt(), 1));
     connect(region_, &QComboBox::currentIndexChanged, this, [this] {
-        settings().setValue("analyzer/region", region_->currentData().toInt());
+        appSettings().setValue("analyzer/region", region_->currentData().toInt());
         wifiMem_.reset();  // los bloques cambian: se vuelve a aprender con el ultimo barrido
         feedWifi();
         recompute();
@@ -651,10 +646,10 @@ ChannelAnalyzer::ChannelAnalyzer(Backend *backend, QWidget *parent) : QDialog(pa
     memoryLbl_ = new QLabel;
     memory_ = new QComboBox;
     for (int n : {5, 10, 20, 40}) memory_->addItem(QString(), n);
-    memory_->setCurrentIndex(qBound(0, memory_->findData(settings().value("analyzer/memory", 20).toInt()), 3));
+    memory_->setCurrentIndex(qBound(0, memory_->findData(appSettings().value("analyzer/memory", 20).toInt()), 3));
     connect(memory_, &QComboBox::currentIndexChanged, this, [this] {
         const int n = memory_->currentData().toInt();
-        settings().setValue("analyzer/memory", n);
+        appSettings().setValue("analyzer/memory", n);
         emit requestMemory(n);
     });
 
@@ -843,20 +838,20 @@ ChannelAnalyzer::ChannelAnalyzer(Backend *backend, QWidget *parent) : QDialog(pa
         arm->addWidget(armLbl_);
         armCount_ = new AllSpinBox;
         // guardado: 0 = todos. El rango (1..fijados) lo pone updateRaceControls
-        const int saved = settings().value("analyzer/raceAutoPilots", 0).toInt();
+        const int saved = appSettings().value("analyzer/raceAutoPilots", 0).toInt();
         armAll_ = saved <= 0;
         armCount_->setRange(1, 16);
         armCount_->setValue(armAll_ ? 16 : saved);
         connect(armCount_, &QSpinBox::valueChanged, this, [this](int v) {
             armAll_ = v >= armCount_->maximum();
-            settings().setValue("analyzer/raceAutoPilots", armAll_ ? 0 : v);
+            appSettings().setValue("analyzer/raceAutoPilots", armAll_ ? 0 : v);
             updateRace();
         });
         arm->addWidget(armCount_);
         autoStop_ = new QCheckBox;
-        autoStop_->setChecked(settings().value("analyzer/raceAutoStop", true).toBool());
+        autoStop_->setChecked(appSettings().value("analyzer/raceAutoStop", true).toBool());
         connect(autoStop_, &QCheckBox::toggled, this,
-                [](bool on) { settings().setValue("analyzer/raceAutoStop", on); });
+                [](bool on) { appSettings().setValue("analyzer/raceAutoStop", on); });
         arm->addSpacing(12);
         arm->addWidget(autoStop_);
         arm->addStretch(1);
@@ -1006,7 +1001,7 @@ ChannelAnalyzer::ChannelAnalyzer(Backend *backend, QWidget *parent) : QDialog(pa
     });
     h->addLayout(main, 1);
 
-    pinned_ = parsePins(settings().value("analyzer/pinned").toStringList());
+    pinned_ = parsePins(appSettings().value("analyzer/pinned").toStringList());
     connect(view_, &SpectrumView::pinToggled, this, &ChannelAnalyzer::togglePin);
     connect(view_, &SpectrumView::unpinAllRequested, this, [this] { setPins({}); });
     connect(this, &ChannelAnalyzer::runningChanged, view_, &SpectrumView::setScanning);
@@ -1229,8 +1224,8 @@ std::vector<advisor::Candidate> ChannelAnalyzer::hdzCands() const {
 bool ChannelAnalyzer::haveChannels() const { return !analogCands().empty() || !hdzCands().empty(); }
 
 void ChannelAnalyzer::bandsChanged() {
-    settings().setValue("analyzer/bands", bands());
-    settings().setValue("analyzer/excluded", excluded_);
+    appSettings().setValue("analyzer/bands", bands());
+    appSettings().setValue("analyzer/excluded", excluded_);
     updateBandTexts();
     startBtn_->setEnabled(open_ && haveChannels());
     if (running_) {  // otra zona que barrer: se empieza de nuevo
@@ -1274,7 +1269,7 @@ void ChannelAnalyzer::setExcluded(const QStringList &names, bool excluded) {
         return;
     }
     // la misma zona: no hace falta volver a barrer, solo cambian los candidatos
-    settings().setValue("analyzer/excluded", excluded_);
+    appSettings().setValue("analyzer/excluded", excluded_);
     updateBandTexts();
     startBtn_->setEnabled(open_ && haveChannels());
     recompute();
@@ -1896,7 +1891,7 @@ bool ChannelAnalyzer::isPinned(const QString &name, bool hdzero) const {
 void ChannelAnalyzer::savePins() const {
     QStringList l;
     for (const Pin &p : pinned_) l << (p.hdzero ? QStringLiteral("hdz:") : QString()) + p.name;
-    settings().setValue("analyzer/pinned", l);
+    appSettings().setValue("analyzer/pinned", l);
 }
 
 void ChannelAnalyzer::setPins(const QVector<Pin> &pins) {

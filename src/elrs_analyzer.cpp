@@ -1,4 +1,5 @@
 #include "elrs_analyzer.h"
+#include "app_settings.h"
 #include "log.h"
 
 #include <QCloseEvent>
@@ -31,13 +32,6 @@
 namespace {
 // La banda que se barre: lo que el adaptador alcanza a 2,4 GHz (src/scan_plan.h, survey_plan_24)
 constexpr double kSurveyLo = 2402, kSurveyHi = 2482;
-
-// el mismo fichero que MainWindow::settings() (como en src/channel_analyzer.cpp)
-QSettings &settings() {
-    static QSettings s(QSettings::IniFormat, QSettings::UserScope, QStringLiteral("FPVDesktopWiFiReceiver"),
-                       QStringLiteral("FPVDesktopWiFiReceiver"));
-    return s;
-}
 
 QColor levelColour(elrs::Level l) {
     switch (l) {
@@ -242,23 +236,23 @@ ElrsAnalyzer::ElrsAnalyzer(Backend *backend, QWidget *parent) : QDialog(parent) 
     useLbl_ = new QLabel;
     use_ = new QComboBox;
     for (int i = 0; i < 3; i++) use_->addItem(QString(), i);
-    use_->setCurrentIndex(qBound(0, settings().value("elrs/use", 1).toInt(), 2));
+    use_->setCurrentIndex(qBound(0, appSettings().value("elrs/use", 1).toInt(), 2));
     regionLbl_ = new QLabel;
     region_ = new QComboBox;
     for (int i = 0; i < 2; i++) region_->addItem(QString(), i);
-    region_->setCurrentIndex(qBound(0, settings().value("elrs/region", 0).toInt(), 1));
+    region_->setCurrentIndex(qBound(0, appSettings().value("elrs/region", 0).toInt(), 1));
     pilotsLbl_ = new QLabel;
     pilots_ = new QSpinBox;
     pilots_->setRange(0, 30);
-    pilots_->setValue(settings().value("elrs/pilots", 0).toInt());
+    pilots_->setValue(appSettings().value("elrs/pilots", 0).toInt());
     memoryLbl_ = new QLabel;
     memory_ = new QComboBox;
     for (int n : {5, 10, 20, 40}) memory_->addItem(QString(), n);
-    memory_->setCurrentIndex(qBound(0, memory_->findData(settings().value("elrs/memory", 20).toInt()), 3));
+    memory_->setCurrentIndex(qBound(0, memory_->findData(appSettings().value("elrs/memory", 20).toInt()), 3));
     startBtn_ = new QPushButton;
     startBtn_->setEnabled(false);
     autoStop_ = new QCheckBox;
-    autoStop_->setChecked(settings().value("elrs/autoStop", true).toBool());
+    autoStop_->setChecked(appSettings().value("elrs/autoStop", true).toBool());
     row->addWidget(useLbl_);
     row->addWidget(use_);
     row->addSpacing(12);
@@ -391,27 +385,27 @@ ElrsAnalyzer::ElrsAnalyzer(Backend *backend, QWidget *parent) : QDialog(parent) 
 
     connect(startBtn_, &QPushButton::clicked, this, &ElrsAnalyzer::toggle);
     connect(use_, &QComboBox::currentIndexChanged, this, [this] {
-        settings().setValue("elrs/use", use_->currentIndex());
+        appSettings().setValue("elrs/use", use_->currentIndex());
         candVerdict_ = elrs::Verdict::Unknown;  // al momento, sin esperar
         tipsT_ = -1e9;
         recompute();
     });
     connect(pilots_, &QSpinBox::valueChanged, this, [this](int n) {
-        settings().setValue("elrs/pilots", n);
+        appSettings().setValue("elrs/pilots", n);
         candVerdict_ = elrs::Verdict::Unknown;  // al momento, sin esperar
         tipsT_ = -1e9;
         recompute();
     });
     connect(region_, &QComboBox::currentIndexChanged, this, [this] {
-        settings().setValue("elrs/region", region_->currentIndex());
+        appSettings().setValue("elrs/region", region_->currentIndex());
         candVerdict_ = elrs::Verdict::Unknown;  // al momento, sin esperar
         tipsT_ = -1e9;
         recompute();
     });
-    connect(autoStop_, &QCheckBox::toggled, this, [](bool on) { settings().setValue("elrs/autoStop", on); });
+    connect(autoStop_, &QCheckBox::toggled, this, [](bool on) { appSettings().setValue("elrs/autoStop", on); });
     connect(memory_, &QComboBox::currentIndexChanged, this, [this] {
         const int n = memory_->currentData().toInt();
-        settings().setValue("elrs/memory", n);
+        appSettings().setValue("elrs/memory", n);
         if (running_) emit requestMemory(n);
         updateAutoStopTip();  // dice cuantos barridos
     });

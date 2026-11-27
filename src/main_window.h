@@ -32,7 +32,6 @@ public:
     // Arranque: conecta si el ajuste "Conectar el adaptador al abrir" esta activo (por defecto) o si se pidio
     // por linea de comandos. Tras conectar: watchMHz > 0 -> ese canal; si no, el ultimo canal visto o un escaneo.
     void startup(bool autoConnect, double watchMHz, bool forceScan);
-    static QSettings &settings();
     void toggleFullScreen();
 
 signals:
