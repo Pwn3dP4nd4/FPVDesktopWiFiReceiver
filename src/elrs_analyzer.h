@@ -100,6 +100,9 @@ private:
     void onStopped();
     void recompute();
     void updateDetected();
+    void holdReport(double t);
+    void setDetectedRows(const QStringList &keys, double t);
+    void showDetectedTexts(const QStringList &keys, double t);
     void updateTips();
     QString tipText(elrs::Tip t) const;
     QString rateAdvice(elrs::Verdict v) const;
