@@ -29,6 +29,8 @@ inline const QColor kInfoColour(0x2f, 0x80, 0xed);
 inline const QColor kNeutralColour(0x80, 0x80, 0x80);
 // picos (rafaga mas fuerte reciente), rafagas (WiFi: se pinta translucido), WiFi visto (marca)
 inline const QColor kPeakColour(0xe0, 0x70, 0x30), kBurstColour(255, 140, 0), kWifiSeenColour(0xc0, 0x60, 0x00);
+// la barra de barrido (5,8 y 2,4 GHz), siempre azul: el color de resalte del sistema puede ser cualquiera (gris, verde...)
+inline const QColor kSweepColour(0x1e, 0x90, 0xff);
 
 inline QColor withAlpha(QColor c, int alpha) {
     c.setAlpha(alpha);

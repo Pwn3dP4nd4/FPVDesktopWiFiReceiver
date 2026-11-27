@@ -37,17 +37,15 @@ constexpr double kSurveyLo = 2402, kSurveyHi = 2482;
 
 QColor levelColour(elrs::Level l) {
     switch (l) {
-    case elrs::Level::Clean: return QColor(0x3c, 0xb0, 0x4a);
-    case elrs::Level::Busy: return QColor(0xe8, 0xb0, 0x20);
-    case elrs::Level::Bad: return QColor(0xd8, 0x3c, 0x30);
+    case elrs::Level::Clean: return kGoodColour;
+    case elrs::Level::Busy: return kWarnColour;
+    case elrs::Level::Bad: return kBadColour;
     case elrs::Level::Unknown: break;
     }
-    return QColor(0x90, 0x90, 0x90);
+    return kNeutralColour;
 }
 
 const QColor kWifiColour(0x40, 0x80, 0xe0);
-// la barra de barrido, siempre azul (el color de resalte del sistema puede ser cualquiera: gris, verde...)
-const QColor kSweepColour(0x1e, 0x78, 0xe6);
 
 QString pct(double f) {
     const double v = f * 100;

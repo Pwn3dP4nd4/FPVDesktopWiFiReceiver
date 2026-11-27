@@ -91,8 +91,6 @@ QString chName(const advisor::Candidate &c) {
     return QString::fromStdString(c.name) + (c.hdzero ? QStringLiteral(" HDZero") : QString());
 }
 
-// barra de barrido
-const QColor kSweepColour(0x1e, 0x90, 0xff);
 
 // Numero de pilotos para el auto-inicio: el maximo (todos los fijados) se muestra con un texto ("todos")
 class AllSpinBox : public QSpinBox {
