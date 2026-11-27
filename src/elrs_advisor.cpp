@@ -69,23 +69,18 @@ float packet_loss(const Mode &m, float hit, int others) {
     return static_cast<float>(std::pow(q, m.freqs));  // DVDA: pisados los envios de todas sus frecuencias
 }
 
-Report analyse(const std::vector<Bin> &bins, Use use, Region region, int others) {
-    Report r;
-    r.others = std::max(0, others);
-    r.pilot_hit = 1 - static_cast<float>(std::pow(1 - pilot_collision(mode(ModeId::Hz500)), r.others));
+namespace {
+std::vector<ModeId> modes_for(Use use) {
     switch (use) {
-    case Use::Racing: r.modes = {ModeId::F1000, ModeId::F500, ModeId::Hz500, ModeId::D500, ModeId::D250}; break;
-    case Use::Freestyle: r.modes = {ModeId::Hz500, ModeId::F500, ModeId::Hz250, ModeId::D500, ModeId::D250}; break;
-    case Use::LongRange: r.modes = {ModeId::Hz250, ModeId::Hz150, ModeId::Hz100Full, ModeId::Hz50}; break;
+    case Use::Racing: return {ModeId::F1000, ModeId::F500, ModeId::Hz500, ModeId::D500, ModeId::D250};
+    case Use::Freestyle: return {ModeId::Hz500, ModeId::F500, ModeId::Hz250, ModeId::D500, ModeId::D250};
+    case Use::LongRange: return {ModeId::Hz250, ModeId::Hz150, ModeId::Hz100Full, ModeId::Hz50};
     }
-    std::vector<float> allPeak;
-    for (const auto &b : bins) {
-        allPeak.push_back(b.peak_db);
-        r.worst_peak = std::max(r.worst_peak, b.peak_db);
-    }
-    const float lit = std::max(kWifiPeakMin, percentile(allPeak, 0.25) + kWifiOverNoise);
+    return {};
+}
 
-    // ---- redes WiFi: un canal con su ancho encendido (las dos mitades: el de al lado solo enciende una) ----
+// redes WiFi: un canal con su ancho encendido (las dos mitades: el de al lado solo enciende una); de mas a menos fuerte
+std::vector<Wifi> find_wifi(const std::vector<Bin> &bins, float lit) {
     struct Cand {
         Wifi w;
         float score;
@@ -124,20 +119,25 @@ Report analyse(const std::vector<Bin> &bins, Use use, Region region, int others)
         cands.push_back({w, peakSum / static_cast<float>(peak.size()) + w.mean_db});
     }
     std::sort(cands.begin(), cands.end(), [](const Cand &a, const Cand &b) { return a.score > b.score; });
+    std::vector<Wifi> wifi;
     for (const auto &c : cands) {
         // el canal de al lado de uno mas fuerte es el mismo WiFi visto 5 MHz movido
-        if (std::any_of(r.wifi.begin(), r.wifi.end(), [&](const Wifi &w) { return std::abs(w.ch - c.w.ch) <= 1; }))
+        if (std::any_of(wifi.begin(), wifi.end(), [&](const Wifi &w) { return std::abs(w.ch - c.w.ch) <= 1; }))
             continue;
-        r.wifi.push_back(c.w);
+        wifi.push_back(c.w);
     }
-    const auto underWifi = [&](double mhz) {
-        int best = -1;
-        for (size_t i = 0; i < r.wifi.size(); i++)
-            if (std::fabs(mhz - r.wifi[i].mhz) <= kWifiHalfMhz && best < 0) best = static_cast<int>(i);
-        return best;  // r.wifi va de mas a menos fuerte: el primero que lo pisa
-    };
+    return wifi;
+}
 
-    // ---- los 80 canales de ELRS ----
+// el WiFi que pisa estos MHz (indice en wifi, que va de mas a menos fuerte: el primero); -1 = ninguno
+int wifi_under(const std::vector<Wifi> &wifi, double mhz) {
+    for (size_t i = 0; i < wifi.size(); i++)
+        if (std::fabs(mhz - wifi[i].mhz) <= kWifiHalfMhz) return static_cast<int>(i);
+    return -1;
+}
+
+// los 80 canales de ELRS: r.channels, los recuentos por nivel y r.hit
+void measure_channels(const std::vector<Bin> &bins, Report &r) {
     float hitSum = 0;
     for (int i = 0; i < kChannels; i++) {
         Channel ch;
@@ -156,7 +156,7 @@ Report analyse(const std::vector<Bin> &bins, Use use, Region region, int others)
             ch.mean_db = median(mean);
             ch.peak_db = median(peak);
             ch.duty = std::clamp((median(duty) - kNoiseDuty) / (1 - kNoiseDuty), 0.f, 1.f);
-            ch.wifi = underWifi(ch.mhz);
+            ch.wifi = wifi_under(r.wifi, ch.mhz);
             // por la parte del tiempo ocupada (un suelo levantado mas de 6 dB sale con duty ~1) y por los picos
             if (ch.duty >= kBadDuty) ch.level = Level::Bad;
             else if (ch.duty >= kBusyDuty || ch.peak_db >= kBusyPeakDb) ch.level = Level::Busy;
@@ -168,72 +168,92 @@ Report analyse(const std::vector<Bin> &bins, Use use, Region region, int others)
         r.channels.push_back(ch);
     }
     r.hit = r.measured > 0 ? hitSum / r.measured : 0;
+}
 
-    // ---- otras emisiones ----
-    {
-        int n = 0, hop = 0;
-        std::vector<float> pk;
-        for (const auto &c : r.channels) {
-            if (!c.measured || c.wifi >= 0) continue;
-            n++;
-            // picos sobre el ruido (umbral fijo: con un ELRS por toda la banda el percentil de los picos sube) y
-            // poco tiempo encendido; la media no cuenta (la suben las rafagas fuertes)
-            if (c.peak_db >= std::max(kNoisePeakDb, lit - 3) && c.duty < kHopperDuty) {
-                hop++;
-                pk.push_back(c.peak_db);
-            }
-        }
-        if (hop >= kHopperMinChannels && hop >= kHopperShare * n) {
-            Emission e;
-            e.kind = Other::Hoppers;
-            e.lo_mhz = channel_mhz(0);
-            e.hi_mhz = channel_mhz(kChannels - 1);
-            e.peak_db = median(pk);
-            e.share = static_cast<float>(hop) / static_cast<float>(n);
-            r.other.push_back(e);
+// emisoras que saltan (Bluetooth, otros ELRS): picos cortos en muchos canales fuera de los WiFi
+void find_hoppers(float lit, Report &r) {
+    int n = 0, hop = 0;
+    std::vector<float> pk;
+    for (const auto &c : r.channels) {
+        if (!c.measured || c.wifi >= 0) continue;
+        n++;
+        // picos sobre el ruido (umbral fijo: con un ELRS por toda la banda el percentil de los picos sube) y
+        // poco tiempo encendido; la media no cuenta (la suben las rafagas fuertes)
+        if (c.peak_db >= std::max(kNoisePeakDb, lit - 3) && c.duty < kHopperDuty) {
+            hop++;
+            pk.push_back(c.peak_db);
         }
     }
-    {
-        // tramos encendidos sin parar fuera de los WiFi
-        double lo = 0, hi = 0, prev = -1e9;
-        float pk = 0;
-        const auto flush = [&] {
-            if (hi - lo >= kContMinMhz) r.other.push_back({Other::Continuous, lo, hi, pk, 0});
-        };
-        for (const auto &b : bins) {
-            const bool on = b.duty >= kContDuty && b.mean_db >= kContMeanDb && underWifi(b.mhz) < 0;
-            if (!on) continue;
-            if (b.mhz - prev > 0.5) {
-                if (prev > -1e8) flush();
-                lo = b.mhz;
-                pk = 0;
-            }
-            hi = b.mhz;
-            prev = b.mhz;
-            pk = std::max(pk, b.peak_db);
-        }
-        if (prev > -1e8) flush();
-    }
-    if (r.worst_peak >= kStrongDb) {
-        double at = 0;
-        for (const auto &b : bins)
-            if (b.peak_db == r.worst_peak) at = b.mhz;
-        r.other.push_back({Other::Strong, at - 1, at + 1, r.worst_peak, 0});
-    }
+    if (hop < kHopperMinChannels || hop < kHopperShare * n) return;
+    Emission e;
+    e.kind = Other::Hoppers;
+    e.lo_mhz = channel_mhz(0);
+    e.hi_mhz = channel_mhz(kChannels - 1);
+    e.peak_db = median(pk);
+    e.share = static_cast<float>(hop) / static_cast<float>(n);
+    r.other.push_back(e);
+}
 
-    // ---- veredicto y sugerencias ----
-    if (r.measured < kMinMeasured) {
-        r.verdict = Verdict::Unknown;
-        return r;
+// tramos encendidos sin parar fuera de los WiFi
+void find_continuous(const std::vector<Bin> &bins, Report &r) {
+    double lo = 0, hi = 0, prev = -1e9;
+    float pk = 0;
+    const auto flush = [&] {
+        if (hi - lo >= kContMinMhz) r.other.push_back({Other::Continuous, lo, hi, pk, 0});
+    };
+    for (const auto &b : bins) {
+        const bool on = b.duty >= kContDuty && b.mean_db >= kContMeanDb && wifi_under(r.wifi, b.mhz) < 0;
+        if (!on) continue;
+        if (b.mhz - prev > 0.5) {
+            if (prev > -1e8) flush();
+            lo = b.mhz;
+            pk = 0;
+        }
+        hi = b.mhz;
+        prev = b.mhz;
+        pk = std::max(pk, b.peak_db);
     }
+    if (prev > -1e8) flush();
+}
+
+// una senal muy fuerte (r.worst_peak): donde
+void find_strong(const std::vector<Bin> &bins, Report &r) {
+    if (r.worst_peak < kStrongDb) return;
+    double at = 0;
+    for (const auto &b : bins)
+        if (b.peak_db == r.worst_peak) at = b.mhz;
+    r.other.push_back({Other::Strong, at - 1, at + 1, r.worst_peak, 0});
+}
+
+// por la parte de los saltos que caen ocupados: lo medido y los pilotos que van a volar a la vez (a 500 Hz)
+Verdict verdict_for(const Report &r) {
+    if (r.measured < kMinMeasured) return Verdict::Unknown;
     const float badShare = static_cast<float>(r.bad) / static_cast<float>(r.measured);
-    // lo medido y los pilotos que van a volar a la vez (a 500 Hz)
     const float hit = 1 - (1 - r.hit) * (1 - r.pilot_hit);
-    if (hit >= kHeavyHit || badShare >= kHeavyBadShare) r.verdict = Verdict::Heavy;
-    else if (hit < kCleanHit && r.bad <= 2) r.verdict = Verdict::Clean;
-    else r.verdict = Verdict::Moderate;
+    if (hit >= kHeavyHit || badShare >= kHeavyBadShare) return Verdict::Heavy;
+    if (hit < kCleanHit && r.bad <= 2) return Verdict::Clean;
+    return Verdict::Moderate;
+}
+}  // namespace
 
-    r.tips = tips_for(r, region);
+Report analyse(const std::vector<Bin> &bins, Use use, Region region, int others) {
+    Report r;
+    r.others = std::max(0, others);
+    r.pilot_hit = 1 - static_cast<float>(std::pow(1 - pilot_collision(mode(ModeId::Hz500)), r.others));
+    r.modes = modes_for(use);
+    std::vector<float> allPeak;
+    for (const auto &b : bins) {
+        allPeak.push_back(b.peak_db);
+        r.worst_peak = std::max(r.worst_peak, b.peak_db);
+    }
+    const float lit = std::max(kWifiPeakMin, percentile(allPeak, 0.25) + kWifiOverNoise);
+    r.wifi = find_wifi(bins, lit);
+    measure_channels(bins, r);
+    find_hoppers(lit, r);
+    find_continuous(bins, r);
+    find_strong(bins, r);
+    r.verdict = verdict_for(r);
+    if (r.verdict != Verdict::Unknown) r.tips = tips_for(r, region);
     return r;
 }
 
